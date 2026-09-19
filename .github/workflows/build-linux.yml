@@ -1,0 +1,80 @@
+name: Build patched Linux package
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/openai-modern-models
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev ruby-dev build-essential
+          sudo gem install fpm --version 1.17.0 --no-document
+          test "$(fpm --version)" = "1.17.0"
+
+      - name: Install pinned Flutter SDK
+        run: |
+          git clone --depth 1 --branch 3.38.5 https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Test OpenAI model compatibility
+        run: flutter test test/openai_request_builder_test.dart
+
+      - name: Build Linux release
+        run: flutter build linux --release
+
+      - name: Package Debian artifact
+        run: |
+          test -x build/linux/x64/release/bundle/llmtary
+          test -f linux/LLMtary.desktop
+          test -f linux/llmtary.png
+          rm -rf staging
+          mkdir -p staging/opt/LLMtary staging/usr/bin staging/usr/share/applications staging/usr/share/pixmaps
+          cp -r build/linux/x64/release/bundle/* staging/opt/LLMtary/
+          ln -s /opt/LLMtary/llmtary staging/usr/bin/LLMtary
+          cp linux/LLMtary.desktop staging/usr/share/applications/
+          cp linux/llmtary.png staging/usr/share/pixmaps/LLMtary.png
+          chmod +x staging/opt/LLMtary/llmtary
+          fpm -s dir -t deb \
+            --name llmtary \
+            --version 1.0.9+violetx.1 \
+            --architecture amd64 \
+            --depends libgtk-3-0 \
+            --description "LLMtary Security Tool - VioletX OpenAI compatibility patch" \
+            --maintainer "VioletX" \
+            --after-install linux/post-install.sh \
+            -p llmtary_1.0.9+violetx.1_amd64.deb \
+            -C staging .
+          test "$(readlink staging/usr/bin/LLMtary)" = "/opt/LLMtary/llmtary"
+          dpkg-deb --info llmtary_1.0.9+violetx.1_amd64.deb
+          dpkg-deb --contents llmtary_1.0.9+violetx.1_amd64.deb | grep -Fq './opt/LLMtary/llmtary'
+          dpkg-deb --contents llmtary_1.0.9+violetx.1_amd64.deb | grep -Fq './usr/share/applications/LLMtary.desktop'
+          dpkg-deb --contents llmtary_1.0.9+violetx.1_amd64.deb | grep -Fq './usr/share/pixmaps/LLMtary.png'
+          rm -rf package-check
+          dpkg-deb --extract llmtary_1.0.9+violetx.1_amd64.deb package-check
+          test -x package-check/opt/LLMtary/llmtary
+          test "$(readlink package-check/usr/bin/LLMtary)" = "/opt/LLMtary/llmtary"
+          cmp linux/LLMtary.desktop package-check/usr/share/applications/LLMtary.desktop
+          cmp linux/llmtary.png package-check/usr/share/pixmaps/LLMtary.png
+          sha256sum llmtary_1.0.9+violetx.1_amd64.deb > llmtary_1.0.9+violetx.1_amd64.deb.sha256
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: llmtary-1.0.9-violetx.1-linux-amd64
+          path: |
+            llmtary_1.0.9+violetx.1_amd64.deb
+            llmtary_1.0.9+violetx.1_amd64.deb.sha256
+          if-no-files-found: error

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../models/llm_settings.dart';
 import '../models/llm_provider.dart';
 import '../utils/app_exceptions.dart';
+import 'openai_request_builder.dart';
 
 /// Phase A.3: Simple counting semaphore for limiting concurrent LLM calls.
 ///
@@ -393,16 +394,12 @@ class LLMService {
 
   /// ChatGPT: send full conversation message list.
   Future<String> _sendChatGPTMessages(LLMSettings settings, List<Map<String, String>> messages, Duration timeout, {void Function(int, int)? onTokensUsed}) async {
-    final body = <String, dynamic>{
-      'model': settings.modelName,
-      'messages': messages,
-      'temperature': settings.temperature,
-      'max_tokens': settings.maxTokens,
-      'store': false,
-    };
-    if (settings.modelName.contains('gpt-4o') || settings.modelName.contains('gpt-4-turbo')) {
-      body['response_format'] = {'type': 'json_object'};
-    }
+    final body = buildOpenAIChatRequest(
+      model: settings.modelName,
+      messages: messages,
+      temperature: settings.temperature,
+      maxTokens: settings.maxTokens,
+    );
     final response = await _sendHttpPost(
       'https://api.openai.com/v1/chat/completions',
       {'Content-Type': 'application/json', 'Authorization': 'Bearer ${settings.apiKey ?? ''}'},
@@ -577,18 +574,12 @@ class LLMService {
   }
 
   Future<String> _sendChatGPT(LLMSettings settings, String message, Duration timeout, String? systemPrompt, {void Function(int, int)? onTokensUsed}) async {
-    final body = <String, dynamic>{
-      'model': settings.modelName,
-      'messages': _buildChatMessages(message, systemPrompt),
-      'temperature': settings.temperature,
-      'max_tokens': settings.maxTokens,
-      'store': false,
-    };
-
-    // Enable structured outputs for supported models
-    if (settings.modelName.contains('gpt-4o') || settings.modelName.contains('gpt-4-turbo')) {
-      body['response_format'] = {'type': 'json_object'};
-    }
+    final body = buildOpenAIChatRequest(
+      model: settings.modelName,
+      messages: _buildChatMessages(message, systemPrompt),
+      temperature: settings.temperature,
+      maxTokens: settings.maxTokens,
+    );
 
     final response = await _sendHttpPost(
       'https://api.openai.com/v1/chat/completions',
