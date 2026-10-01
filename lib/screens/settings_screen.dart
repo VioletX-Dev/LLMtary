@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:dropdown_button2/dropdown_button2.dart';
 import '../utils/file_dialog.dart';
 import '../models/llm_provider.dart';
 import '../models/llm_settings.dart';
@@ -289,82 +288,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
               ),
               const SizedBox(height: 12),
-              _availableModels.isEmpty
-                  ? TextField(
-                      controller: _modelController,
-                      style: const TextStyle(color: Colors.white, fontFamily: 'monospace'),
-                      decoration: InputDecoration(
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(color: Color(0xFF00F5FF)),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: const Color(0xFF00F5FF).withOpacity(0.3)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(color: Color(0xFF00F5FF), width: 2),
-                        ),
-                        filled: true,
-                        fillColor: const Color(0xFF0A0E27),
-                      ),
-                    )
-                  : Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF0A0E27),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFF00F5FF).withOpacity(0.3)),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton2<String>(
-                          isExpanded: true,
-                          hint: const Text('Select Model', style: TextStyle(color: Colors.white70)),
-                          valueListenable: _modelNotifier,
-                          items: _availableModels.map((model) => DropdownItem(value: model, child: Text(model, style: const TextStyle(color: Colors.white)))).toList(),
-                          onChanged: (v) {
-                            if (v != null) {
-                              setState(() => _modelController.text = v);
-                              _modelNotifier.value = v;
-                            }
-                          },
-                          buttonStyleData: const ButtonStyleData(height: 50, padding: EdgeInsets.symmetric(horizontal: 12)),
-                          dropdownStyleData: DropdownStyleData(
-                            maxHeight: 300,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1A1F3A),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: const Color(0xFF00F5FF).withOpacity(0.3)),
-                            ),
-                          ),
-                          dropdownSearchData: DropdownSearchData(
-                            searchController: _modelSearchController,
-                            searchBarWidgetHeight: 50,
-                            searchBarWidget: Container(
-                              padding: const EdgeInsets.all(8),
-                              child: TextField(
-                                controller: _modelSearchController,
-                                style: const TextStyle(color: Colors.white),
-                                decoration: InputDecoration(
-                                  hintText: 'Search models...',
-                                  hintStyle: const TextStyle(color: Colors.white38),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                    borderSide: BorderSide(color: const Color(0xFF00F5FF).withOpacity(0.3)),
-                                  ),
-                                  filled: true,
-                                  fillColor: const Color(0xFF0A0E27),
-                                ),
-                              ),
-                            ),
-                            searchMatchFn: (item, searchValue) => item.value.toString().toLowerCase().contains(searchValue.toLowerCase()),
-                          ),
-                          onMenuStateChange: (isOpen) {
-                            if (!isOpen) _modelSearchController.clear();
-                          },
-                        ),
-                      ),
-                    ),
+              // Keep the model ID editable even after refreshing provider models.
+              // Providers can expose newly released, aliased, private, or deployment-
+              // specific IDs that are not present in the discovery response.
+              TextField(
+                controller: _modelController,
+                onChanged: (value) => _modelNotifier.value = value.trim().isEmpty ? null : value,
+                style: const TextStyle(color: Colors.white, fontFamily: 'monospace'),
+                decoration: InputDecoration(
+                  hintText: 'Enter any model ID (for example, provider/model-name)',
+                  hintStyle: const TextStyle(color: Colors.white38),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFF00F5FF)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: const Color(0xFF00F5FF).withOpacity(0.3)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFF00F5FF), width: 2),
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFF0A0E27),
+                ),
+              ),
+              if (_availableModels.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Discovered models (optional):',
+                    style: TextStyle(color: Colors.white.withOpacity(0.65), fontSize: 11),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: _availableModels.map((model) => ActionChip(
+                    label: Text(model, style: const TextStyle(fontSize: 11)),
+                    onPressed: () {
+                      setState(() => _modelController.text = model);
+                      _modelNotifier.value = model;
+                    },
+                  )).toList(),
+                ),
+              ],
               const SizedBox(height: 24),
               const Text('TEMPERATURE', style: TextStyle(color: Color(0xFF00F5FF), fontWeight: FontWeight.bold, fontSize: 12)),
               const SizedBox(height: 8),
