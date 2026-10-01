@@ -46,6 +46,7 @@ class _ScopeReconTabState extends State<ScopeReconTab> {
   late final TextEditingController _scopeCtrl;
   late final TextEditingController _exclusionsCtrl;
   late final TextEditingController _notesCtrl;
+  late final TextEditingController _customerRequestsCtrl;
 
   @override
   void initState() {
@@ -53,6 +54,7 @@ class _ScopeReconTabState extends State<ScopeReconTab> {
     _scopeCtrl = TextEditingController();
     _exclusionsCtrl = TextEditingController();
     _notesCtrl = TextEditingController();
+    _customerRequestsCtrl = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadScope());
   }
 
@@ -61,6 +63,7 @@ class _ScopeReconTabState extends State<ScopeReconTab> {
     _scopeCtrl.dispose();
     _exclusionsCtrl.dispose();
     _notesCtrl.dispose();
+    _customerRequestsCtrl.dispose();
     super.dispose();
   }
 
@@ -71,6 +74,7 @@ class _ScopeReconTabState extends State<ScopeReconTab> {
     _scopeCtrl.text = project.scope ?? '';
     _exclusionsCtrl.text = project.scopeExclusions ?? '';
     _notesCtrl.text = project.scopeNotes ?? '';
+    _customerRequestsCtrl.text = project.customerTestingRequests ?? '';
     if (mounted) setState(() {});
   }
 
@@ -81,8 +85,9 @@ class _ScopeReconTabState extends State<ScopeReconTab> {
     final scope = _scopeCtrl.text.trim().isEmpty ? null : _scopeCtrl.text.trim();
     final exclusions = _exclusionsCtrl.text.trim().isEmpty ? null : _exclusionsCtrl.text.trim();
     final notes = _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim();
-    await DatabaseHelper.updateProjectScope(project!.id!, scope: scope, scopeExclusions: exclusions, scopeNotes: notes);
-    appState.updateCurrentProject(project.copyWith(scope: scope, scopeExclusions: exclusions, scopeNotes: notes));
+    final customerRequests = _customerRequestsCtrl.text.trim().isEmpty ? null : _customerRequestsCtrl.text.trim();
+    await DatabaseHelper.updateProjectScope(project!.id!, scope: scope, scopeExclusions: exclusions, scopeNotes: notes, customerTestingRequests: customerRequests);
+    appState.updateCurrentProject(project.copyWith(scope: scope, scopeExclusions: exclusions, scopeNotes: notes, customerTestingRequests: customerRequests));
   }
 
   void _onScopeChanged() {
@@ -155,6 +160,7 @@ class _ScopeReconTabState extends State<ScopeReconTab> {
                       scopeCtrl: _scopeCtrl,
                       exclusionsCtrl: _exclusionsCtrl,
                       notesCtrl: _notesCtrl,
+                      customerRequestsCtrl: _customerRequestsCtrl,
                       onChanged: _onScopeChanged,
                       onPickFile: () async {
                         await panelState?.pickFileIntoController(_scopeCtrl);
@@ -306,6 +312,7 @@ class _ScopePanel extends StatelessWidget {
   final TextEditingController scopeCtrl;
   final TextEditingController exclusionsCtrl;
   final TextEditingController notesCtrl;
+  final TextEditingController customerRequestsCtrl;
   final VoidCallback onChanged;
   final VoidCallback onPickFile;
   final bool isScanning;
@@ -327,6 +334,7 @@ class _ScopePanel extends StatelessWidget {
     required this.scopeCtrl,
     required this.exclusionsCtrl,
     required this.notesCtrl,
+    required this.customerRequestsCtrl,
     required this.onChanged,
     required this.onPickFile,
     required this.isScanning,
@@ -439,6 +447,15 @@ class _ScopePanel extends StatelessWidget {
             _label('RULES OF ENGAGEMENT'),
             const SizedBox(height: 6),
             _field(notesCtrl, 'e.g. No DoS, business hours only', 3),
+            const SizedBox(height: 16),
+            _label('CUSTOMER TESTING REQUESTS'),
+            const SizedBox(height: 6),
+            const Text(
+              'Optional customer priorities passed to the web-testing AI. Scope and safety rules still apply.',
+              style: TextStyle(color: _hint, fontSize: 10),
+            ),
+            const SizedBox(height: 6),
+            _field(customerRequestsCtrl, 'e.g. Test checkout authorization and password reset', 4),
             // Bottom action button: STOP while scanning, RESUME after stop
             if (isScanning) ...[
               const SizedBox(height: 14),
