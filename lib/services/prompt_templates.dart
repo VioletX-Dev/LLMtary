@@ -29,7 +29,11 @@ v1 (initial): Original prompt templates.
   ///
   /// Intelligence source: HTTP/HTTPS port data, response headers, technologies array, CNAME values.
   /// Attacker objective: gain unauthorized access via injection, authentication bypass, or access control flaws.
-  static String webAppCorePrompt(String deviceJson, {TargetScope scope = TargetScope.internal, bool hasSsrfParams = false}) {
+  static String webAppCorePrompt(
+    String deviceJson, {
+    TargetScope scope = TargetScope.internal,
+    bool hasSsrfParams = false,
+  }) {
     final isExternal = scope == TargetScope.external;
     final extraScope = isExternal ? _externalTargetScopeFull() : '';
     return '''
@@ -157,6 +161,7 @@ Testing methodology: the attack surface exists wherever user input is stored in 
 - Description MUST include: URL path, HTTP method, parameter name, and the attacker's goal
 - Assign LOW confidence to any finding where evidence is indirect or inferred
 
+${_outputFormatBlock()}
 ''';
   }
 
@@ -265,18 +270,27 @@ If the server follows redirects, point the initial URL to an attacker-controlled
   /// API surface and authentication protocol attack analysis.
   /// Covers: CORS, GraphQL, JWT, REST API authorization, OAuth 2.0, WebSocket, Prototype Pollution.
   /// Fire when HTTP/HTTPS ports are present (same condition as webAppCorePrompt).
-  static String webAppApiAuthPrompt(String deviceJson, {TargetScope scope = TargetScope.internal, bool hasGraphql = false, bool hasSsrfParams = false}) {
+  static String webAppApiAuthPrompt(
+    String deviceJson, {
+    TargetScope scope = TargetScope.internal,
+    bool hasGraphql = false,
+    bool hasSsrfParams = false,
+  }) {
     final isExternal = scope == TargetScope.external;
     final extraScope = isExternal ? _externalTargetScopeCompact() : '';
-    final graphqlContext = hasGraphql ? '''
+    final graphqlContext = hasGraphql
+        ? '''
 
 ## GRAPHQL CONFIRMED:
-GraphQL endpoint indicators were detected in the recon data. Treat GraphQL findings as MEDIUM confidence minimum — the attack surface is confirmed present. Prioritize: schema enumeration via introspection and field suggestions, alias-based batching on authentication mutations, and field-level authorization testing.''' : '';
-    final apiSsrfBypassBlock = hasSsrfParams ? '''
+GraphQL endpoint indicators were detected in the recon data. Treat GraphQL findings as MEDIUM confidence minimum — the attack surface is confirmed present. Prioritize: schema enumeration via introspection and field suggestions, alias-based batching on authentication mutations, and field-level authorization testing.'''
+        : '';
+    final apiSsrfBypassBlock = hasSsrfParams
+        ? '''
 
 ### SSRF via API Endpoints — Filter Bypass Techniques
 Apply the same SSRF bypass techniques (IP notation alternatives, DNS rebinding, redirect chains, URL encoding, credential embedding) to API parameters: webhook_url, callback, import, fetch, proxy, redirect, OAuth redirect_uri.
-Severity: CRITICAL when cloud metadata is reachable; HIGH for internal service access''' : '';
+Severity: CRITICAL when cloud metadata is reachable; HIGH for internal service access'''
+        : '';
     return '''
 You are an expert web-application penetration tester. Analyze the device data below and identify EXPLOITABLE vulnerabilities in API surfaces and authentication protocols.
 
@@ -435,9 +449,14 @@ $apiSsrfBypassBlock
   /// Covers: Business logic/race conditions, SSTI, Host Header Injection, HTTP Request Smuggling,
   /// Open Redirects, CRLF Injection, HTTP Security Headers, Cookie Security Attributes.
   /// Fire when HTTP/HTTPS ports are present (same condition as webAppCorePrompt).
-  static String webAppLogicHeadersPrompt(String deviceJson, {TargetScope scope = TargetScope.internal, bool hasOAuth = false}) {
+  static String webAppLogicHeadersPrompt(
+    String deviceJson, {
+    TargetScope scope = TargetScope.internal,
+    bool hasOAuth = false,
+  }) {
     final isExternal = scope == TargetScope.external;
-    final oauthBoost = hasOAuth ? '''
+    final oauthBoost = hasOAuth
+        ? '''
 
 ## OAUTH/OIDC SURFACE DETECTED:
 OAuth/OpenID Connect indicators are present. Prioritize and expand coverage of:
@@ -446,7 +465,8 @@ OAuth/OpenID Connect indicators are present. Prioritize and expand coverage of:
 - JWT signature bypass (alg:none, weak secret, kid injection)
 - Implicit flow misuse, token substitution attacks, and cross-client token reuse
 - SSRF via redirect_uri or token endpoint abuse
-''' : '';
+'''
+        : '';
     final extraScope = isExternal ? _externalTargetScopeCompact() : '';
     return '''
 You are an expert web-application penetration tester. Analyze the device data below and identify EXPLOITABLE vulnerabilities in business logic, application state, and HTTP-level attack surfaces.
@@ -542,7 +562,8 @@ Evidence: Set-Cookie headers in captured HTTP responses. Each distinct misconfig
 
   /// Network-service focused analysis prompt.
   /// Only fire when non-web service ports are present.
-  static String networkServiceAnalysisPrompt(String deviceJson) => '''
+  static String networkServiceAnalysisPrompt(String deviceJson) =>
+      '''
 You are an expert network penetration tester. Analyze the device data below and identify EXPLOITABLE network-service vulnerabilities only.
 
 ## DEVICE DATA:
@@ -648,7 +669,8 @@ Generate these findings at LOW confidence when the relevant protocol is present 
   ///
   /// Intelligence source: service banners, port listings, version strings.
   /// Attacker objective: exploit directly exposed services that should not be internet-facing.
-  static String externalNetworkServicePrompt(String deviceJson) => '''
+  static String externalNetworkServicePrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester analyzing an EXTERNAL (internet-facing) target that has non-web service ports directly accessible from the internet. This is unusual and high-priority — these services should rarely be internet-facing.
 
 ## DEVICE DATA:
@@ -686,7 +708,10 @@ These service categories are high-value when exposed externally:
   ///
   /// Intelligence source: service banners, version strings, vulners/vulscan output.
   /// Attacker objective: identify exploitable software versions and CVEs.
-  static String cveVersionAnalysisPrompt(String deviceJson, {TargetScope scope = TargetScope.internal}) {
+  static String cveVersionAnalysisPrompt(
+    String deviceJson, {
+    TargetScope scope = TargetScope.internal,
+  }) {
     final isExternal = scope == TargetScope.external;
     final scopeNote = isExternal
         ? '\n## EXTERNAL TARGET: Do NOT generate SMB (445), RDP (3389), or other LAN-only service findings unless those ports are explicitly listed as open in the device data.\n## DO NOT generate DoS findings against third-party infrastructure (CDNs, cloud providers, email gateways) that the client does not own — these are not actionable pentest findings.'
@@ -758,7 +783,8 @@ Only generate speculative findings if:
   ///
   /// Intelligence source: SSL/TLS scan output, certificate data, cipher suite lists.
   /// Attacker objective: decrypt traffic, forge certificates, or exploit protocol weaknesses.
-  static String sslTlsAnalysisPrompt(String deviceJson) => '''
+  static String sslTlsAnalysisPrompt(String deviceJson) =>
+      '''
 You are an expert in SSL/TLS security. Analyze the device data below and identify EXPLOITABLE SSL/TLS vulnerabilities only.
 
 ## DEVICE DATA:
@@ -798,7 +824,8 @@ $deviceJson
   ///
   /// Intelligence source: DNS records, WHOIS, CNAME chains, MX, SPF/DKIM/DMARC, TXT records.
   /// Attacker objective: discover attack surface invisible to port scanners.
-  static String dnsOsintAnalysisPrompt(String deviceJson) => '''
+  static String dnsOsintAnalysisPrompt(String deviceJson) =>
+      '''
 You are an expert in DNS security and OSINT analysis for external penetration testing. Analyze the DNS and domain intelligence data below to identify attack surface that port scanners cannot see.
 
 ## DEVICE DATA:
@@ -864,7 +891,8 @@ Identify SaaS platforms from TXT verification records:
   ///
   /// Intelligence source: MX records, SPF TXT records, DMARC TXT records, SMTP server data.
   /// Attacker objective: send spoofed email from the target domain; identify phishing paths.
-  static String emailSecurityPrompt(String deviceJson) => '''
+  static String emailSecurityPrompt(String deviceJson) =>
+      '''
 You are an expert in email security and penetration testing. Analyze the email infrastructure data below to identify email-based attack vectors against this organization.
 
 ## DEVICE DATA:
@@ -922,7 +950,8 @@ Given the organization's visible infrastructure, identify the highest-value phis
   /// Intelligence source: response headers, CDN indicators, URL parameter observations.
   /// Attacker objective: inject a malicious cached response that is served to all subsequent
   /// users who request the same cache-keyed resource.
-  static String webCachePoisoningPrompt(String deviceJson) => '''
+  static String webCachePoisoningPrompt(String deviceJson) =>
+      '''
 You are an expert web penetration tester specialising in caching infrastructure attacks. Analyze the device data below and identify EXPLOITABLE web cache poisoning vulnerabilities.
 
 ## DEVICE DATA:
@@ -1142,15 +1171,20 @@ Evidence: SPA framework; URL parameters merged into application configuration ob
   ///
   /// Intelligence source: CNAME chains, HTTP server headers, hosting platform indicators.
   /// Attacker objective: bypass CDN/WAF, exploit platform-specific misconfigurations.
-  static String cloudHostingAnalysisPrompt(String deviceJson, {TargetScope scope = TargetScope.external}) {
+  static String cloudHostingAnalysisPrompt(
+    String deviceJson, {
+    TargetScope scope = TargetScope.external,
+  }) {
     final isExternal = scope == TargetScope.external;
-    final scopeContext = isExternal ? '''
+    final scopeContext = isExternal
+        ? '''
 
 ## EXTERNAL SCOPE — FOCUS ON:
 - SSRF to IMDS (requires SSRF vector on the application to reach 169.254.169.254)
 - Subdomain takeover via cloud storage (dangling CNAME to unclaimed bucket/container)
 - Publicly accessible storage buckets (no authentication required)
-- Exposed serverless function URLs without authentication''' : '''
+- Exposed serverless function URLs without authentication'''
+        : '''
 
 ## INTERNAL SCOPE — FOCUS ON:
 - IMDS direct access from the host (169.254.169.254 reachable without SSRF)
@@ -1224,15 +1258,22 @@ Evidence to look for: serverless platform domains in CNAME or response headers, 
 
   /// Comprehensive AD analysis — credential collection, privilege escalation, and lateral movement.
   /// Fire condition: AD indicators detected (ports 88, 389, 636, 445 with domain context).
-  static String adComprehensivePrompt(String deviceJson, {TargetScope scope = TargetScope.internal, bool hasCrossForest = false}) {
+  static String adComprehensivePrompt(
+    String deviceJson, {
+    TargetScope scope = TargetScope.internal,
+    bool hasCrossForest = false,
+  }) {
     final isExternal = scope == TargetScope.external;
-    final externalNote = isExternal ? '''
+    final externalNote = isExternal
+        ? '''
 
 ## INTERNET-EXPOSED AD — SEVERITY ESCALATION:
 AD services on public internet. Escalate ALL findings by one severity level:
 - Password spraying/AS-REP Roasting/Kerberoasting over internet-facing Kerberos: CRITICAL
-- LDAP null bind on internet-facing DC: HIGH to CRITICAL''' : '';
-    final crossForestBlock = hasCrossForest ? '''
+- LDAP null bind on internet-facing DC: HIGH to CRITICAL'''
+        : '';
+    final crossForestBlock = hasCrossForest
+        ? '''
 
 ### Cross-Forest Trust Abuse
 Attacker objective: move from compromised forest into trusted forest.
@@ -1241,7 +1282,8 @@ Attacker objective: move from compromised forest into trusted forest.
 - **Cross-forest constrained delegation:** msDS-AllowedToDelegateTo targeting services in trusted forest enables impersonation across boundary. Severity: HIGH.
 - **Foreign Security Principals (FSPs):** Accounts from trusted forest in privileged groups (CN=ForeignSecurityPrincipals) — compromise source account to gain target forest privileges. Severity: HIGH.
 - **Selective Authentication Bypass:** Misconfigured computer objects granting "Allowed to Authenticate" to Domain Users effectively disables selective auth. Severity: HIGH.
-''' : '';
+'''
+        : '';
     return '''
 You are an expert Active Directory penetration tester. Analyze the device data below and identify the full AD attack chain: initial access, credential collection, privilege escalation to Domain Admin, and lateral movement.
 
@@ -1329,9 +1371,16 @@ $crossForestBlock
 
   /// Phase 26: BloodHound-style AD attack path reasoning prompt.
   /// Fires as a second pass when ≥2 HIGH/CRITICAL AD-type findings exist.
-  static String adAttackPathReasoningPrompt(String deviceJson, List<Vulnerability> priorAdFindings) {
-    final findingsBlock = priorAdFindings.map((f) =>
-        '  - [${f.severity}/${f.confidence}] ${f.problem}: ${f.evidence}').join('\n');
+  static String adAttackPathReasoningPrompt(
+    String deviceJson,
+    List<Vulnerability> priorAdFindings,
+  ) {
+    final findingsBlock = priorAdFindings
+        .map(
+          (f) =>
+              '  - [${f.severity}/${f.confidence}] ${f.problem}: ${f.evidence}',
+        )
+        .join('\n');
     return '''
 You are an expert Active Directory penetration tester with BloodHound attack-path analysis experience. Using the prior AD findings below AND the device data, reason through multi-step privilege escalation chains from any foothold to Domain Administrator.
 
@@ -1376,7 +1425,8 @@ For each chain, note whether the steps generate observable Event Log entries (47
 
   /// Container, Kubernetes, and CI/CD DevOps infrastructure analysis prompt.
   /// Fires when container orchestration or DevOps infrastructure ports/services are detected.
-  static String containerDevopsAnalysisPrompt(String deviceJson) => '''
+  static String containerDevopsAnalysisPrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester specializing in container and DevOps infrastructure security. Analyze the device data below and identify attack paths against container runtimes, orchestration platforms, CI/CD systems, and related infrastructure.
 
 ## DEVICE DATA:
@@ -1426,7 +1476,8 @@ $deviceJson
 
   /// IoT and embedded device security analysis prompt.
   /// Fires when IoT device indicators are detected in device data.
-  static String iotDeviceAnalysisPrompt(String deviceJson) => '''
+  static String iotDeviceAnalysisPrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester specializing in IoT and embedded device security. Analyze the device data below and identify attack paths against IoT devices, embedded systems, network equipment, cameras, and similar hardware.
 
 ## DEVICE DATA:
@@ -1478,12 +1529,17 @@ $deviceJson
   /// OT/SCADA/ICS protocol detection and exposure reporting prompt.
   /// Fires when industrial control system protocol ports are detected.
   /// NOTE: This prompt focuses on exposure identification, not active exploitation — OT systems can cause physical harm if actively attacked.
-  static String otScadaAnalysisPrompt(String deviceJson, {TargetScope scope = TargetScope.internal}) {
-    final externalEscalation = scope == TargetScope.external ? '''
+  static String otScadaAnalysisPrompt(
+    String deviceJson, {
+    TargetScope scope = TargetScope.internal,
+  }) {
+    final externalEscalation = scope == TargetScope.external
+        ? '''
 
 ## INTERNET-EXPOSED ICS — SEVERITY ESCALATION (CRITICAL):
 This industrial control system is accessible from the public internet. ALL findings must be escalated to CRITICAL severity regardless of the specific vulnerability class.
-Rationale: Internet-exposed industrial control systems represent an extreme risk — exploitation may result in physical damage, safety incidents, infrastructure disruption, or loss of life. No mitigation reduces the risk below CRITICAL while the system remains internet-accessible. Include this note in every finding's businessRisk field.''' : '';
+Rationale: Internet-exposed industrial control systems represent an extreme risk — exploitation may result in physical damage, safety incidents, infrastructure disruption, or loss of life. No mitigation reduces the risk below CRITICAL while the system remains internet-accessible. Include this note in every finding's businessRisk field.'''
+        : '';
     return '''
 You are an expert industrial control system (ICS) security assessor. Analyze the device data below and identify operational technology (OT) protocol exposure and ICS security findings. Your objective is IDENTIFICATION AND EXPOSURE REPORTING — active exploitation of control systems can cause physical damage, process disruption, or safety hazards and must not be recommended without explicit client authorization and ICS-specific safety training.
 
@@ -1566,8 +1622,12 @@ For every detected OT protocol, operations are classified as either safe-to-obse
     final type = vulnerabilityType.toLowerCase();
 
     // Phase 4: SSL/TLS testing strategy — always start with nmap NSE scripts
-    if (type.contains('ssl') || type.contains('tls') || type.contains('poodle') ||
-        type.contains('heartbleed') || type.contains('beast') || type.contains('sweet32')) {
+    if (type.contains('ssl') ||
+        type.contains('tls') ||
+        type.contains('poodle') ||
+        type.contains('heartbleed') ||
+        type.contains('beast') ||
+        type.contains('sweet32')) {
       return '''SSL/TLS TESTING STRATEGY:
 - ALWAYS start with nmap NSE scripts — they are the most reliable approach:
   nmap --script ssl-enum-ciphers,ssl-poodle,ssl-heartbleed,ssl-ccs-injection,ssl-dh-params -p PORT TARGET
@@ -1706,7 +1766,8 @@ ${_toolUsageSection()}''';
   /// Combined system prompt containing output format, evidence rules, and
   /// confidence/CVE/dedup rules. Sent once as the system message for all
   /// analysis prompts, eliminating ~4.7KB of duplication per prompt (×55).
-  static String analysisSystemPrompt() => '''You are an elite penetration tester and cybersecurity expert with deep expertise in vulnerability assessment, exploitation techniques, CVE analysis, network/web/infrastructure security, and MITRE ATT&CK.
+  static String analysisSystemPrompt() =>
+      '''You are an elite penetration tester and cybersecurity expert with deep expertise in vulnerability assessment, exploitation techniques, CVE analysis, network/web/infrastructure security, and MITRE ATT&CK.
 
 ${_outputFormatBlock()}
 
@@ -1893,7 +1954,8 @@ Document persistence paths as findings but do not create backdoors unless the en
   /// SNMP and network management protocol deep-dive analysis prompt.
   /// Fires when SNMP (161/162), IPMI (623), syslog (514), RADIUS (1812/1813), MikroTik Winbox (8291),
   /// or related management service names are detected.
-  static String snmpManagementPrompt(String deviceJson) => '''
+  static String snmpManagementPrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester specializing in network management protocol exploitation. Analyze the device data below and identify attack paths through SNMP, RADIUS, and other management protocols.
 
 ## DEVICE DATA:
@@ -1994,7 +2056,8 @@ Severity: CRITICAL — router-level access yields full network visibility and la
 
   /// External subdomain enumeration and attack surface discovery prompt.
   /// Fires on external FQDN targets when DNS findings are present or the target is an FQDN.
-  static String subdomainReconPrompt(String deviceJson) => '''
+  static String subdomainReconPrompt(String deviceJson) =>
+      '''
 You are an expert external penetration tester specializing in reconnaissance and attack surface discovery. Analyze the device data below and identify the full subdomain attack surface, shadow IT, and related external exposure.
 
 ## DEVICE DATA:
@@ -2058,7 +2121,8 @@ Severity: INFORMATIONAL — enumerate as attack surface context.
   /// Secrets and credential exposure analysis prompt.
   /// Fires on any web port present (internal or external) — same condition as web app prompts.
   /// Covers source control exposure, configuration file disclosure, secret management, cleartext auth.
-  static String secretsExposurePrompt(String deviceJson) => '''
+  static String secretsExposurePrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester specializing in credential and secret discovery. Analyze the device data below and identify attack surfaces where credential material, API keys, or sensitive configuration data may be exposed without authentication.
 
 ## DEVICE DATA:
@@ -2135,7 +2199,8 @@ Severity: HIGH for credential-containing artifacts; MEDIUM for path/structure di
   /// Privilege escalation surface analysis prompt.
   /// Fires when the device has an identifiable OS or service banners that reveal OS-level information.
   /// Covers both Linux and Windows escalation paths detectable from recon data alone.
-  static String privilegeEscalationPrompt(String deviceJson) => '''
+  static String privilegeEscalationPrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester specializing in post-exploitation and privilege escalation. Analyze the device data below and identify privilege escalation attack surfaces that can be identified from reconnaissance data — before any shell access is obtained.
 
 Your goal is to generate findings that will be queued for testing once initial access is achieved. Focus on what the OS version, service configuration, and banner data reveal about likely escalation paths.
@@ -2666,7 +2731,8 @@ Key gotchas that cause empty results across all directory brute-force tools:
 
   /// WordPress-specific attack surface analysis.
   /// Fire when _hasWordPressIndicators() returns true.
-  static String wordPressDeepDivePrompt(String deviceJson) => '''
+  static String wordPressDeepDivePrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester specialising in WordPress. Analyze the device data below and identify EXPLOITABLE vulnerabilities specific to the WordPress platform and its ecosystem.
 
 ## DEVICE DATA:
@@ -2735,7 +2801,8 @@ If `/wp-signup.php`, `/wp-activate.php`, or network admin paths are present:
 
   /// Jenkins and CI/CD platform attack surface analysis.
   /// Fire when _hasJenkinsIndicators() returns true.
-  static String jenkinsCiCdDeepDivePrompt(String deviceJson) => '''
+  static String jenkinsCiCdDeepDivePrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester specialising in CI/CD infrastructure. Analyze the device data below and identify EXPLOITABLE vulnerabilities specific to Jenkins and its deployment context.
 
 ## DEVICE DATA:
@@ -2797,7 +2864,8 @@ Identify the Jenkins version from response headers, the login page (`/login` HTM
 
   /// Atlassian Confluence and Jira attack surface analysis.
   /// Fire when _hasAtlassianIndicators() returns true.
-  static String atlassianDeepDivePrompt(String deviceJson) => '''
+  static String atlassianDeepDivePrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester specialising in Atlassian products. Analyze the device data below and identify EXPLOITABLE vulnerabilities specific to Confluence and/or Jira.
 
 ## DEVICE DATA:
@@ -2863,7 +2931,8 @@ Both Confluence and Jira have had authentication filter bypass vulnerability cla
 
   /// Microsoft Exchange / OWA attack surface analysis.
   /// Fire when _hasExchangeIndicators() returns true.
-  static String exchangeDeepDivePrompt(String deviceJson) => '''
+  static String exchangeDeepDivePrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester specialising in Microsoft Exchange infrastructure. Analyze the device data below and identify EXPLOITABLE vulnerabilities specific to Exchange and its exposed services.
 
 ## DEVICE DATA:
@@ -2932,7 +3001,8 @@ Authenticated Exchange administrators can execute PowerShell cmdlets via the Exc
 
   /// Elasticsearch / Kibana attack surface analysis.
   /// Fire when _hasElasticsearchIndicators() returns true.
-  static String elasticsearchDeepDivePrompt(String deviceJson) => '''
+  static String elasticsearchDeepDivePrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester specialising in data infrastructure. Analyze the device data below and identify EXPLOITABLE vulnerabilities specific to Elasticsearch and Kibana.
 
 ## DEVICE DATA:
@@ -2997,7 +3067,8 @@ When X-Pack is present but appears misconfigured:
 
   /// VMware vCenter / ESXi attack surface analysis.
   /// Fire when _hasVmwareIndicators() returns true.
-  static String vmwareDeepDivePrompt(String deviceJson) => '''
+  static String vmwareDeepDivePrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester specialising in virtualisation infrastructure. Analyze the device data below and identify EXPLOITABLE vulnerabilities specific to VMware vCenter Server and ESXi.
 
 ## DEVICE DATA:
@@ -3066,7 +3137,8 @@ Authenticated vCenter access allows:
 
   /// GitLab attack surface analysis.
   /// Fire when _hasGitLabIndicators() returns true.
-  static String gitLabDeepDivePrompt(String deviceJson) => '''
+  static String gitLabDeepDivePrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester specialising in developer infrastructure. Analyze the device data below and identify EXPLOITABLE vulnerabilities specific to GitLab.
 
 ## DEVICE DATA:
@@ -3135,7 +3207,8 @@ Repository content itself is a high-value target for credential harvesting:
 
   /// Citrix ADC / NetScaler attack surface analysis.
   /// Fire when _hasCitrixIndicators() returns true.
-  static String citrixDeepDivePrompt(String deviceJson) => '''
+  static String citrixDeepDivePrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester specialising in remote access infrastructure. Analyze the device data below and identify EXPLOITABLE vulnerabilities specific to Citrix ADC (NetScaler) and Citrix Gateway.
 
 ## DEVICE DATA:
@@ -3202,7 +3275,8 @@ Once authenticated to the Citrix Gateway:
 
   /// Drupal attack surface analysis.
   /// Fire when _hasDrupalIndicators() returns true.
-  static String drupalDeepDivePrompt(String deviceJson) => '''
+  static String drupalDeepDivePrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester specialising in CMS platforms. Analyze the device data below and identify EXPLOITABLE vulnerabilities specific to Drupal.
 
 ## DEVICE DATA:
@@ -3275,7 +3349,8 @@ Identify installed modules from path enumeration (module CSS/JS paths like `/mod
 
   /// Apache Tomcat attack surface analysis.
   /// Fire when _hasApacheTomcatIndicators() returns true.
-  static String apacheTomcatDeepDivePrompt(String deviceJson) => '''
+  static String apacheTomcatDeepDivePrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester specialising in Java application servers. Analyze the device data below and identify EXPLOITABLE vulnerabilities specific to Apache Tomcat.
 
 ## DEVICE DATA:
@@ -3358,8 +3433,8 @@ Tomcat's HTTP and AJP connectors process serialized Java objects in session data
     final dateRange = (startDate != null && endDate != null)
         ? 'conducted between $startDate and $endDate'
         : startDate != null
-            ? 'initiated on $startDate'
-            : 'recently conducted';
+        ? 'initiated on $startDate'
+        : 'recently conducted';
     final targetsLine = targetAddresses.isNotEmpty
         ? targetAddresses.join(', ')
         : '$targetCount target(s)';
@@ -3408,8 +3483,8 @@ REQUIREMENTS:
     final scopeType = hasInternalTargets && hasExternalTargets
         ? 'a mixed internal and external environment'
         : hasExternalTargets
-            ? 'an external (internet-facing) environment'
-            : 'an internal network environment';
+        ? 'an external (internet-facing) environment'
+        : 'an internal network environment';
     final testingAreas = [
       if (hasWebTargets) 'web application security',
       if (hasAdTargets) 'Active Directory and authentication infrastructure',
@@ -3419,8 +3494,8 @@ REQUIREMENTS:
     final dateRange = (startDate != null && endDate != null)
         ? 'between $startDate and $endDate'
         : startDate != null
-            ? 'starting $startDate'
-            : 'during the defined assessment window';
+        ? 'starting $startDate'
+        : 'during the defined assessment window';
     final targetList = targetAddresses.isNotEmpty
         ? targetAddresses.join(', ')
         : '$targetCount system(s)';
@@ -3490,7 +3565,9 @@ REQUIREMENTS:
     final topFindings = topFindingSummaries.isNotEmpty
         ? '\n\nHighest priority findings:\n${topFindingSummaries.map((f) => '- $f').join('\n')}'
         : '';
-    final asOf = endDate != null ? 'as of $endDate' : 'at the time of assessment';
+    final asOf = endDate != null
+        ? 'as of $endDate'
+        : 'at the time of assessment';
     return '''You are a senior penetration testing consultant writing the final section of a formal pentest report.
 
 Write a professional Conclusion section for the following engagement.
@@ -3520,7 +3597,10 @@ REQUIREMENTS:
   }) {
     final findingLines = confirmedFindings
         .take(15)
-        .map((v) => '  - [${v.severity}] ${v.problem} on ${v.targetAddress}: ${v.evidence.length > 150 ? v.evidence.substring(0, 150) : v.evidence}')
+        .map(
+          (v) =>
+              '  - [${v.severity}] ${v.problem} on ${v.targetAddress}: ${v.evidence.length > 150 ? v.evidence.substring(0, 150) : v.evidence}',
+        )
         .join('\n');
     return '''You are a senior penetration tester writing the attack narrative section of a formal pentest report. This section tells the story of how an attacker could move from initial access to full compromise — it is the most-read technical section of the report.
 
@@ -3556,7 +3636,8 @@ Describe in business terms what an attacker with this access could do. What data
   /// ADCS (Active Directory Certificate Services) attack surface analysis.
   /// Fire condition: internal target AND (hasAd OR hasAdcs).
   /// Covers ESC1, ESC2, ESC4, ESC6, ESC8, and certificate-based persistence.
-  static String adcsAttackPrompt(String deviceJson) => '''
+  static String adcsAttackPrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester specialising in Active Directory Certificate Services (ADCS). Analyze the device data below and identify EXPLOITABLE misconfigurations in the Windows PKI infrastructure.
 
 ## DEVICE DATA:
@@ -3617,7 +3698,8 @@ Severity: HIGH — persistence mechanism that survives standard incident respons
   /// LLMNR/NBT-NS/IPv6 poisoning and NTLM relay attack surface analysis.
   /// Fire condition: internal target AND hasAd.
   /// Covers broadcast name resolution poisoning, NTLM relay, DHCPv6/IPv6 rogue DNS, WebDAV coercion, and RPC coercion surfaces.
-  static String internalNetworkCoercionPrompt(String deviceJson) => '''
+  static String internalNetworkCoercionPrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester specialising in internal network protocol attacks. Analyze the device data below and identify attack paths based on Windows name resolution weaknesses, NTLM relay opportunities, and network coercion techniques.
 
 ## DEVICE DATA:
@@ -3683,7 +3765,8 @@ Severity: HIGH — provides reliable coercion trigger; combined with LDAP relay 
   /// WPAD poisoning attack surface.
   /// Fire condition: internal target AND AD indicators present.
   /// Covers WPAD DNS record absence, rogue proxy credential interception.
-  static String wpadPoisoningPrompt(String deviceJson) => '''
+  static String wpadPoisoningPrompt(String deviceJson) =>
+      '''
 You are an expert Active Directory penetration tester. Analyze the device data below and identify WPAD (Web Proxy Auto-Discovery) attack surface. WPAD is a commonly overlooked but high-impact internal finding.
 
 ## DEVICE DATA:
@@ -3713,7 +3796,8 @@ $deviceJson
   /// AD-Integrated DNS (ADIDNS) poisoning attack surface.
   /// Fire condition: internal target AND AD indicators (DNS port 53 + LDAP port 389).
   /// Covers wildcard record injection via LDAP write to DNS zones.
-  static String adidnsPoisoningPrompt(String deviceJson) => '''
+  static String adidnsPoisoningPrompt(String deviceJson) =>
+      '''
 You are an expert Active Directory penetration tester. Analyze the device data below and identify AD-Integrated DNS (ADIDNS) poisoning attack surface. ADIDNS stores DNS zone data as objects in Active Directory, allowing any authenticated domain user to add DNS records by default.
 
 ## DEVICE DATA:
@@ -3744,7 +3828,8 @@ $deviceJson
   /// MSSQL server attack chain analysis.
   /// Fire condition: internal target AND port 1433/1434 or SQL Server in technologies/service name.
   /// Covers xp_cmdshell, linked servers, impersonation, SQL Agent, and NTLM capture via UNC paths.
-  static String mssqlAttackChainPrompt(String deviceJson) => '''
+  static String mssqlAttackChainPrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester specialising in Microsoft SQL Server attack chains. Analyze the device data below and identify exploitable paths that lead to OS-level command execution, data exfiltration, or lateral movement via SQL Server features and misconfigurations.
 
 ## DEVICE DATA:
@@ -3806,7 +3891,8 @@ Severity: HIGH — credential material for other services.
   /// WAF/CDN bypass analysis for externally-protected targets.
   /// Fire condition: external target AND CDN/WAF indicators detected.
   /// Covers WAF fingerprinting, encoding bypass, parameter pollution, chunked encoding, and origin IP discovery.
-  static String wafBypassAnalysisPrompt(String deviceJson) => '''
+  static String wafBypassAnalysisPrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester assessing a target that is protected by a Web Application Firewall (WAF) or Content Delivery Network (CDN). Analyze the device data and identify concrete bypass paths that would allow testing the underlying application despite WAF protection. This is not about evading detection — it is about confirming whether the underlying application is actually protected or whether the WAF can be circumvented to reach the real attack surface.
 
 ## DEVICE DATA:
@@ -3879,7 +3965,8 @@ Evidence: CDN-fronted target; any DNS, SPF, or certificate data in recon. Severi
   /// DNS zone transfer and certificate transparency OSINT for external targets.
   /// Expands the existing DNS OSINT coverage with AXFR/IXFR zone transfer testing
   /// and certificate transparency log enumeration.
-  static String dnsCertificateTransparencyPrompt(String deviceJson) => '''
+  static String dnsCertificateTransparencyPrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester performing external reconnaissance. Analyze the device data below and identify attack surfaces exposed through DNS configuration weaknesses and certificate transparency logs. These are passive and active reconnaissance techniques that reveal infrastructure the organisation may not intend to be publicly visible.
 
 ## DEVICE DATA:
@@ -3926,13 +4013,17 @@ Severity: CRITICAL when the dangling endpoint is a cloud provider resource that 
   /// Phase 36.3: Generic exploit chain reasoning prompt.
   /// Fires after all vulnerability testing loops complete when ≥2 findings are confirmed.
   /// Target-agnostic — works for web, network, and AD confirmed findings.
-  static String exploitChainReasoningPrompt(List<Vulnerability> confirmedFindings) {
-    final findingsBlock = confirmedFindings.map((f) {
-      final chainHint = f.statusReason.contains('Chain opportunity:')
-          ? '\n    Chain hint: ${f.statusReason.split('Chain opportunity:').last.trim()}'
-          : '';
-      return '  - [${f.severity}/${f.vulnerabilityType}] ${f.problem} @ ${f.targetAddress}: ${f.statusReason.split('\n\nChain').first.trim()}$chainHint';
-    }).join('\n');
+  static String exploitChainReasoningPrompt(
+    List<Vulnerability> confirmedFindings,
+  ) {
+    final findingsBlock = confirmedFindings
+        .map((f) {
+          final chainHint = f.statusReason.contains('Chain opportunity:')
+              ? '\n    Chain hint: ${f.statusReason.split('Chain opportunity:').last.trim()}'
+              : '';
+          return '  - [${f.severity}/${f.vulnerabilityType}] ${f.problem} @ ${f.targetAddress}: ${f.statusReason.split('\n\nChain').first.trim()}$chainHint';
+        })
+        .join('\n');
     return '''
 You are an expert penetration tester reasoning about multi-step attack chains from confirmed findings. Using only the confirmed findings below, identify how they can be combined into a higher-impact attack path.
 
@@ -3979,7 +4070,11 @@ Respond ONLY with a valid JSON array. No markdown fences, no explanations, no pr
 
   /// Fires after shell access is confirmed on a Linux/macOS target.
   /// Generates structured pillaging objectives as Vulnerability findings.
-  static String postExploitLinuxPillagingPrompt(String deviceJson, String shellEvidence) => '''
+  static String postExploitLinuxPillagingPrompt(
+    String deviceJson,
+    String shellEvidence,
+  ) =>
+      '''
 You are an expert penetration tester. You have confirmed shell access to a Linux/Unix target. Your task is to identify ALL high-value pillaging objectives that should be pursued from this foothold.
 
 ## CONFIRMED ACCESS EVIDENCE:
@@ -4030,7 +4125,11 @@ For each finding, set:
 ''';
 
   /// Fires after shell access is confirmed on a Windows target.
-  static String postExploitWindowsPillagingPrompt(String deviceJson, String shellEvidence) => '''
+  static String postExploitWindowsPillagingPrompt(
+    String deviceJson,
+    String shellEvidence,
+  ) =>
+      '''
 You are an expert penetration tester. You have confirmed command execution on a Windows target. Your task is to identify ALL high-value pillaging objectives feasible from this foothold.
 
 ## CONFIRMED ACCESS EVIDENCE:
@@ -4077,7 +4176,11 @@ For each finding, set vulnerabilityType to one of the Post-Exploitation sub-type
 ''';
 
   /// Fires when cloud credentials/metadata access is confirmed.
-  static String postExploitCloudPillagingPrompt(String deviceJson, String accessEvidence) => '''
+  static String postExploitCloudPillagingPrompt(
+    String deviceJson,
+    String accessEvidence,
+  ) =>
+      '''
 You are an expert cloud penetration tester. Cloud credentials or metadata endpoint access has been confirmed. Identify all high-value pillaging objectives from this cloud identity.
 
 ## CONFIRMED ACCESS EVIDENCE:
@@ -4119,7 +4222,12 @@ For each finding, set vulnerabilityType to one of the Post-Exploitation sub-type
 ''';
 
   /// Fires when database access is confirmed (any DB type).
-  static String postExploitDatabasePillagingPrompt(String deviceJson, String dbType, String accessEvidence) => '''
+  static String postExploitDatabasePillagingPrompt(
+    String deviceJson,
+    String dbType,
+    String accessEvidence,
+  ) =>
+      '''
 You are an expert penetration tester. Authenticated database access has been confirmed on a $dbType instance. Identify all high-value pillaging objectives.
 
 ## CONFIRMED ACCESS EVIDENCE:
@@ -4160,7 +4268,13 @@ For each finding, set vulnerabilityType to one of the Post-Exploitation sub-type
 ''';
 
   /// Generates a short, reproducible numbered list of steps to reproduce a confirmed finding.
-  static String reproductionStepsPrompt(String vulnProblem, String vulnDescription, String confirmingCommand, String commandOutput) => '''
+  static String reproductionStepsPrompt(
+    String vulnProblem,
+    String vulnDescription,
+    String confirmingCommand,
+    String commandOutput,
+  ) =>
+      '''
 You are writing a penetration test report. A vulnerability has been confirmed. Write concise, numbered reproduction steps that another security professional could follow to reproduce this finding from scratch.
 
 ## VULNERABILITY:
@@ -4223,7 +4337,11 @@ Record the lockout policy in your "thought" field before sending any credential-
   // ---------------------------------------------------------------------------
 
   /// Cloud IAM / credential enumeration prompt.
-  static String cloudIamEnumerationPrompt(String deviceJson, String providerName) => '''
+  static String cloudIamEnumerationPrompt(
+    String deviceJson,
+    String providerName,
+  ) =>
+      '''
 You are an expert cloud penetration tester. Analyze the device data and identify exploitable cloud IAM and identity misconfigurations.
 
 ## DEVICE DATA:
@@ -4273,7 +4391,8 @@ Return a JSON array of findings. Each element:
 Return [] if none apply. Respond ONLY with valid JSON.''';
 
   /// Cloud object storage (S3/GCS/Blob) misconfiguration prompt.
-  static String cloudStoragePrompt(String deviceJson, String providerName) => '''
+  static String cloudStoragePrompt(String deviceJson, String providerName) =>
+      '''
 You are an expert cloud penetration tester. Analyze the device data and identify cloud object storage misconfigurations.
 
 ## DEVICE DATA:
@@ -4318,7 +4437,11 @@ Return a JSON array. Each element:
 Return [] if none apply. Respond ONLY with valid JSON.''';
 
   /// Serverless / container registry security prompt.
-  static String cloudServerlessContainerPrompt(String deviceJson, String providerName) => '''
+  static String cloudServerlessContainerPrompt(
+    String deviceJson,
+    String providerName,
+  ) =>
+      '''
 You are an expert cloud penetration tester. Analyze the device data and identify serverless function and container registry security issues.
 
 ## DEVICE DATA:
@@ -4369,7 +4492,8 @@ Return [] if none apply. Respond ONLY with valid JSON.''';
   // ---------------------------------------------------------------------------
 
   /// BOLA/IDOR and mass assignment prompt for REST/GraphQL APIs.
-  static String apiBolaPrompt(String deviceJson) => '''
+  static String apiBolaPrompt(String deviceJson) =>
+      '''
 You are an expert API penetration tester. Analyze the device data and identify Broken Object Level Authorization (BOLA/IDOR), mass assignment, and excessive data exposure vulnerabilities.
 
 ## DEVICE DATA:
@@ -4412,7 +4536,8 @@ Return a JSON array. Each element:
 Return [] if none apply. Respond ONLY with valid JSON.''';
 
   /// Webhook and async API security prompt.
-  static String apiWebhookPrompt(String deviceJson) => '''
+  static String apiWebhookPrompt(String deviceJson) =>
+      '''
 You are an expert API penetration tester. Analyze the device data and identify webhook and async API security issues.
 
 ## DEVICE DATA:
@@ -4462,7 +4587,8 @@ Return [] if none apply. Respond ONLY with valid JSON.''';
 
   /// Database security analysis prompt.
   /// Fire when database ports (1433, 1521, 3306, 5432, 27017, 6379, etc.) are open.
-  static String databaseSecurityPrompt(String deviceJson) => '''
+  static String databaseSecurityPrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester specializing in database security. Analyze the device data and identify database attack surface.
 
 ## DEVICE DATA:
@@ -4510,16 +4636,21 @@ Return [] if none apply. Respond ONLY with valid JSON.''';
 
   /// VPN and remote access security prompt.
   /// Fire when VPN ports (1194, 1723, 4500, 500) or remote access ports are open.
-  static String vpnRemoteAccessPrompt(String deviceJson, {TargetScope scope = TargetScope.internal}) {
+  static String vpnRemoteAccessPrompt(
+    String deviceJson, {
+    TargetScope scope = TargetScope.internal,
+  }) {
     final isExternal = scope == TargetScope.external;
-    final scopeContext = isExternal ? '''
+    final scopeContext = isExternal
+        ? '''
 
 ## EXTERNAL TARGET — VPN GATEWAY ATTACK FOCUS:
 This VPN/remote access service is internet-facing. Focus on attacking the gateway itself:
 - Credential stuffing against the VPN portal (username enumeration, password spraying)
 - Known CVEs in the identified VPN software version (pre-authentication RCE, auth bypass)
 - MFA bypass on the VPN portal (push fatigue, OTP brute force, recovery code abuse)
-- Authentication bypass via parameter manipulation or legacy protocol fallback''' : '''
+- Authentication bypass via parameter manipulation or legacy protocol fallback'''
+        : '''
 
 ## INTERNAL TARGET — VPN MISCONFIGURATION FOCUS:
 This VPN/remote access service is internally scoped. Focus on misconfiguration:
@@ -4573,7 +4704,8 @@ Return [] if none apply. Respond ONLY with valid JSON.''';
 
   /// Printer and MFP attack surface prompt.
   /// Fire when ports 9100, 515, 631 are open or device type suggests printer/MFP.
-  static String printerMfpPrompt(String deviceJson) => '''
+  static String printerMfpPrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester. Analyze the device data and identify printer and MFP vulnerabilities.
 
 ## DEVICE DATA:
@@ -4620,7 +4752,8 @@ Return [] if none apply. Respond ONLY with valid JSON.''';
 
   /// Password spray and account lockout analysis prompt.
   /// Fire when credential-based attack surface is identified (AD, web login, OWA, API).
-  static String passwordSprayAnalysisPrompt(String deviceJson) => '''
+  static String passwordSprayAnalysisPrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester. Analyze the device data and identify missing account lockout protections and password spray attack surface.
 
 ## DEVICE DATA:
@@ -4670,7 +4803,8 @@ Return [] if none apply. Respond ONLY with valid JSON.''';
   // Phase 10 — Supply Chain Analysis Prompt
   // ---------------------------------------------------------------------------
 
-  static String supplyChainAnalysisPrompt(String deviceJson) => '''
+  static String supplyChainAnalysisPrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester specializing in software supply chain security. Analyze the device data below and identify supply chain attack surfaces including dependency confusion, package registry exposure, and CI/CD artifact poisoning.
 
 ## DEVICE DATA:
@@ -4719,7 +4853,8 @@ Severity: HIGH
   // Phase 9 — Thick Client and Binary Protocol Prompt
   // ---------------------------------------------------------------------------
 
-  static String thickClientBinaryProtocolPrompt(String deviceJson) => '''
+  static String thickClientBinaryProtocolPrompt(String deviceJson) =>
+      '''
 You are an expert penetration tester specializing in thick client applications, Java middleware, and binary protocol exploitation. Analyze the device data below and identify attack vectors against non-HTTP binary protocols and enterprise middleware.
 
 ## DEVICE DATA:
@@ -4777,7 +4912,8 @@ Severity: CRITICAL — AMF deserialization has a long history of critical vulner
   // Phase 8 — Wireless Assessment Prompt
   // ---------------------------------------------------------------------------
 
-  static String wirelessSecurityPrompt(String deviceJson) => '''
+  static String wirelessSecurityPrompt(String deviceJson) =>
+      '''
 You are an expert wireless security penetration tester. Analyze the device data below and identify wireless attack vectors against the identified access points and wireless infrastructure.
 
 ## DEVICE DATA:
@@ -4834,7 +4970,8 @@ Severity: HIGH — full AP configuration access; enables rogue SSID creation, tr
   // Phase 7 — Network Infrastructure Attack Prompt
   // ---------------------------------------------------------------------------
 
-  static String networkInfrastructureAttackPrompt(String deviceJson) => '''
+  static String networkInfrastructureAttackPrompt(String deviceJson) =>
+      '''
 You are an expert network penetration tester specializing in layer-2 and layer-3 network attacks. Analyze the device data below and identify network infrastructure attack vectors.
 
 ## DEVICE DATA:
@@ -4884,7 +5021,8 @@ Severity: CRITICAL — network-wide traffic redirection
   // Phase 5 — Post-Exploitation: Lateral Movement, Persistence, Domain Dominance
   // ---------------------------------------------------------------------------
 
-  static String lateralMovementPrompt(String deviceJson, String accessType) => '''
+  static String lateralMovementPrompt(String deviceJson, String accessType) =>
+      '''
 You are an expert penetration tester conducting post-exploitation lateral movement analysis. Based on the confirmed access type and device data, identify lateral movement paths to other hosts and higher-value targets.
 
 ## DEVICE DATA:
@@ -4931,7 +5069,8 @@ $deviceJson
 
 ''';
 
-  static String persistencePrompt(String deviceJson, String accessType) => '''
+  static String persistencePrompt(String deviceJson, String accessType) =>
+      '''
 You are an expert penetration tester documenting persistence mechanisms. Based on the confirmed access type, identify where persistence COULD be established — document as findings showing persistence capability without implementing backdoors.
 
 ## DEVICE DATA:
@@ -4975,7 +5114,8 @@ OPSEC notes: GPO changes logged in DC event log; AdminSDHolder changes detectabl
 
 ''';
 
-  static String domainDominancePrompt(String deviceJson) => '''
+  static String domainDominancePrompt(String deviceJson) =>
+      '''
 You are an expert Active Directory penetration tester. Domain Admin access has been confirmed. Identify post-Domain-Admin actions that demonstrate the full scope of compromise and establish persistence.
 
 ## DEVICE DATA:
@@ -5031,7 +5171,8 @@ Severity: CRITICAL for all DC persistence mechanisms
   // Phase 3 — Cloud Scope Distinction Prompts
   // ---------------------------------------------------------------------------
 
-  static String cloudExposedResourcesPrompt(String deviceJson) => '''
+  static String cloudExposedResourcesPrompt(String deviceJson) =>
+      '''
 You are an expert cloud security penetration tester. Analyze the device data below and identify externally accessible cloud resource misconfigurations — storage, registries, and credential files accessible without authentication from the internet.
 
 ## DEVICE DATA:
@@ -5074,7 +5215,8 @@ Severity: HIGH
 
 ''';
 
-  static String cloudInfrastructureMisconfigPrompt(String deviceJson) => '''
+  static String cloudInfrastructureMisconfigPrompt(String deviceJson) =>
+      '''
 You are an expert cloud infrastructure security assessor. Analyze the device data below and identify cloud infrastructure misconfigurations beyond storage — serverless functions, Kubernetes RBAC, security groups, and metadata endpoint exposure.
 
 ## DEVICE DATA:
@@ -5126,7 +5268,8 @@ Severity: HIGH to CRITICAL depending on role permissions
   // Phase 2 — Business Logic Deep-Dive Prompt
   // ---------------------------------------------------------------------------
 
-  static String businessLogicDeepDivePrompt(String deviceJson) => '''
+  static String businessLogicDeepDivePrompt(String deviceJson) =>
+      '''
 You are an expert web application penetration tester specializing in business logic vulnerabilities. Analyze the device data below and identify business logic attack surfaces that require understanding the application's intended workflow.
 
 ## DEVICE DATA:

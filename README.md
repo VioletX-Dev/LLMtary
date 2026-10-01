@@ -140,6 +140,13 @@ When a confirmed finding grants high-value access (RCE, command injection, authe
 - Options: **Allow Once**, **Always Allow** (adds to whitelist), or **Deny** (LLM is notified to try a different approach)
 - The toggle takes effect immediately — enabling or disabling mid-execution applies to the very next command
 
+### Authenticated Web Access (Session-Only)
+
+- Use the key icon in the workspace app bar to provide a target URL plus username/password, bearer token, cookies, and an optional CSRF header for the next matching web execution.
+- Supplied access is held only in current `AppState` memory and is cleared when the project changes or the app exits. It is not encrypted or persisted.
+- Secret values are represented by placeholders in prompts and materialized only immediately before command execution so they are not written to prompt, command, debug, or report logs.
+- MFA must be completed manually by the operator. The optional MFA checkbox/note only records session context; LLMtary does not perform or bypass MFA. Do not put secrets in the MFA note.
+
 ### Project Management & Reporting
 
 - Multiple named projects, each with multiple targets

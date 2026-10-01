@@ -8,25 +8,53 @@ void main() {
 
   Future<void> _applyMigrations(Database db, int oldVersion) async {
     if (oldVersion < 2) {
-      await db.execute('ALTER TABLE vulnerabilities ADD COLUMN vulnerabilityType TEXT');
+      await db.execute(
+        'ALTER TABLE vulnerabilities ADD COLUMN vulnerabilityType TEXT',
+      );
     }
     if (oldVersion < 3) {
-      await db.execute('ALTER TABLE vulnerabilities ADD COLUMN statusReason TEXT');
-      await db.execute('ALTER TABLE vulnerabilities ADD COLUMN proofCommand TEXT');
+      await db.execute(
+        'ALTER TABLE vulnerabilities ADD COLUMN statusReason TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE vulnerabilities ADD COLUMN proofCommand TEXT',
+      );
     }
     if (oldVersion < 4) {
-      await db.execute('ALTER TABLE command_logs ADD COLUMN vulnerabilityIndex INTEGER');
+      await db.execute(
+        'ALTER TABLE command_logs ADD COLUMN vulnerabilityIndex INTEGER',
+      );
     }
     if (oldVersion < 14) {
-      try { await db.execute("ALTER TABLE vulnerabilities ADD COLUMN businessRisk TEXT DEFAULT ''"); } catch (_) {}
+      try {
+        await db.execute(
+          "ALTER TABLE vulnerabilities ADD COLUMN businessRisk TEXT DEFAULT ''",
+        );
+      } catch (_) {}
     }
     if (oldVersion < 15) {
-      try { await db.execute('ALTER TABLE vulnerabilities ADD COLUMN proofOutput TEXT'); } catch (_) {}
-      try { await db.execute('ALTER TABLE vulnerabilities ADD COLUMN reproductionSteps TEXT'); } catch (_) {}
-      try { await db.execute('ALTER TABLE vulnerabilities ADD COLUMN confirmedAt TEXT'); } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE vulnerabilities ADD COLUMN proofOutput TEXT',
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE vulnerabilities ADD COLUMN reproductionSteps TEXT',
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE vulnerabilities ADD COLUMN confirmedAt TEXT',
+        );
+      } catch (_) {}
     }
     if (oldVersion < 16) {
-      try { await db.execute('ALTER TABLE vulnerabilities ADD COLUMN proofCommandExpectedOutput TEXT'); } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE vulnerabilities ADD COLUMN proofCommandExpectedOutput TEXT',
+        );
+      } catch (_) {}
     }
   }
 
@@ -123,7 +151,9 @@ void main() {
 
     // Run v16 migration on a table that already has the column
     try {
-      await db.execute('ALTER TABLE vulnerabilities ADD COLUMN proofCommandExpectedOutput TEXT');
+      await db.execute(
+        'ALTER TABLE vulnerabilities ADD COLUMN proofCommandExpectedOutput TEXT',
+      );
     } catch (_) {
       // Expected: column already exists — this is the idempotency check
     }

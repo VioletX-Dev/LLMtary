@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:penexecuter/utils/command_validator.dart';
-import 'package:penexecuter/models/llm_settings.dart';
-import 'package:penexecuter/models/llm_provider.dart';
-import 'package:penexecuter/services/llm_service.dart';
+import 'package:llmtary/utils/command_validator.dart';
+import 'package:llmtary/models/llm_settings.dart';
+import 'package:llmtary/models/llm_provider.dart';
+import 'package:llmtary/services/llm_service.dart';
 
 void main() {
   // Minimal settings — Tier 2 LLM calls are not exercised in static tests.
@@ -135,7 +135,10 @@ void main() {
         dummySettings,
         dummyLlm,
       );
-      expect(result.correctedCommand, contains('/mnt/c/Users/jason/output.txt'));
+      expect(
+        result.correctedCommand,
+        contains('/mnt/c/Users/jason/output.txt'),
+      );
       expect(result.shouldHardBlock, isFalse);
     });
 
@@ -193,7 +196,11 @@ void main() {
     });
 
     test('empty command does not throw', () async {
-      final result = await CommandValidator.validate('', dummySettings, dummyLlm);
+      final result = await CommandValidator.validate(
+        '',
+        dummySettings,
+        dummyLlm,
+      );
       expect(result.shouldHardBlock, isFalse);
     });
   });

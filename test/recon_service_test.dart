@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:penexecuter/services/recon_service.dart';
+import 'package:llmtary/services/recon_service.dart';
 
 /// Cross-platform validation tests for ReconService.
 /// Tests command generation, nmap XML parsing, and graceful degradation.
@@ -54,7 +54,12 @@ void main() {
     });
 
     test('buildWebProbeCommands checks high-value paths', () {
-      final cmds = ReconService.buildWebProbeCommands('10.0.0.1', 80, false, '/tmp/out');
+      final cmds = ReconService.buildWebProbeCommands(
+        '10.0.0.1',
+        80,
+        false,
+        '/tmp/out',
+      );
       expect(cmds.length, greaterThan(5));
       expect(cmds.any((c) => c.contains('/robots.txt')), isTrue);
       expect(cmds.any((c) => c.contains('/swagger.json')), isTrue);
@@ -122,27 +127,32 @@ void main() {
   group('OS and technology enrichment', () {
     test('extractOsFromBanners detects Ubuntu from SSH', () {
       final ports = [
-        {'product': 'OpenSSH', 'version': '8.2p1', 'extra_info': 'Ubuntu Linux'}
+        {
+          'product': 'OpenSSH',
+          'version': '8.2p1',
+          'extra_info': 'Ubuntu Linux',
+        },
       ];
       expect(ReconService.extractOsFromBanners(ports), contains('Ubuntu'));
     });
 
     test('extractOsFromBanners detects Windows from product', () {
       final ports = [
-        {'product': 'Microsoft IIS httpd', 'version': '10.0', 'extra_info': ''}
+        {'product': 'Microsoft IIS httpd', 'version': '10.0', 'extra_info': ''},
       ];
       expect(ReconService.extractOsFromBanners(ports), contains('Windows'));
     });
 
     test('extractOsFromBanners returns empty when no OS signal', () {
       final ports = [
-        {'product': 'nginx', 'version': '1.18', 'extra_info': ''}
+        {'product': 'nginx', 'version': '1.18', 'extra_info': ''},
       ];
       expect(ReconService.extractOsFromBanners(ports), isEmpty);
     });
 
     test('parseSmbBanner extracts OS and domain', () {
-      const output = 'OS: Windows 10 Pro 19041\nDomain: CORP\nSigning: disabled';
+      const output =
+          'OS: Windows 10 Pro 19041\nDomain: CORP\nSigning: disabled';
       final result = ReconService.parseSmbBanner(output);
       expect(result['os'], contains('Windows'));
       expect(result['domain'], 'CORP');
@@ -150,7 +160,8 @@ void main() {
     });
 
     test('parseCertHostnames extracts CN and SANs', () {
-      const output = 'subject=CN = www.example.com\nDNS:www.example.com, DNS:api.example.com, DNS:mail.example.com';
+      const output =
+          'subject=CN = www.example.com\nDNS:www.example.com, DNS:api.example.com, DNS:mail.example.com';
       final hostnames = ReconService.parseCertHostnames(output);
       expect(hostnames, contains('www.example.com'));
       expect(hostnames, contains('api.example.com'));
@@ -174,7 +185,10 @@ _dmarc.example.com. TXT "v=DMARC1; p=reject; rua=mailto:dmarc@example.com"
     });
 
     test('detectWafFromHeaders identifies Akamai', () {
-      expect(ReconService.detectWafFromHeaders('X-Akamai-Transformed: 9'), 'Akamai');
+      expect(
+        ReconService.detectWafFromHeaders('X-Akamai-Transformed: 9'),
+        'Akamai',
+      );
     });
 
     test('detectWafFromHeaders returns null for no WAF', () {
@@ -188,12 +202,16 @@ _dmarc.example.com. TXT "v=DMARC1; p=reject; rua=mailto:dmarc@example.com"
         ip: '10.0.0.5',
         hostname: 'testhost',
         os: 'Linux',
-        openPorts: [{'port': 22, 'service': 'ssh'}],
+        openPorts: [
+          {'port': 22, 'service': 'ssh'},
+        ],
         hostnames: ['testhost.local'],
       );
       final existing = <String, dynamic>{
         'device': <String, dynamic>{'ip_address': '10.0.0.5'},
-        'open_ports': <dynamic>[<String, dynamic>{'port': 80, 'service': 'http'}],
+        'open_ports': <dynamic>[
+          <String, dynamic>{'port': 80, 'service': 'http'},
+        ],
         'dns_findings': <dynamic>[],
       };
       final merged = result.mergeInto(existing);
@@ -220,7 +238,9 @@ _dmarc.example.com. TXT "v=DMARC1; p=reject; rua=mailto:dmarc@example.com"
     });
 
     test('parseTargetInput handles comma-separated', () {
-      final targets = ReconService.parseTargetInput('10.0.0.1, 10.0.0.2, 10.0.0.3');
+      final targets = ReconService.parseTargetInput(
+        '10.0.0.1, 10.0.0.2, 10.0.0.3',
+      );
       expect(targets.length, 3);
     });
 

@@ -19,7 +19,8 @@ class CommandResult {
 }
 
 class CommandExecutor {
-  static String _timestamp() => '[${DateTime.now().toIso8601String().substring(11, 23)}]';
+  static String _timestamp() =>
+      '[${DateTime.now().toIso8601String().substring(11, 23)}]';
 
   static String? _cachedOsInfo;
 
@@ -33,24 +34,36 @@ class CommandExecutor {
   static final Set<String> _toolSetupFailures = {};
 
   // Track known-invalid nmap script names to avoid wasting iterations
-  static final Set<String> _invalidNmapScripts = {'dcom', 'rdp-enum-encryption'};
+  static final Set<String> _invalidNmapScripts = {
+    'dcom',
+    'rdp-enum-encryption',
+  };
 
   // Tool flag hint dictionary for commonly misused tools
   static const Map<String, String> _toolFlagHints = {
-    'ffuf': 'ffuf -w WORDLIST -u URL/FUZZ [-e .php,.html,.txt] [-x http://proxy:8080 (proxy only, NOT extensions)] [-mc 200,301,302] [-fc 404]',
-    'nmap': 'nmap [-sV] [-sC] [-p PORTS] [-oX outfile.xml] [--script SCRIPTNAME] (scripts: smb-enum-shares, http-title, ftp-anon, ssl-cert, msrpc-enum, etc. — NOT "dcom", use msrpc-enum for RPC)',
-    'curl': 'curl [-sk] [-o /dev/null] [-w "%{http_code}"] [-H "Header: value"] [-d "body"] [-X POST] [-b "cookie=val"] [-L]',
-    'hydra': 'hydra -L users.txt -P pass.txt [-s PORT] [-f] SERVICE://TARGET (services: ftp, ssh, http-post-form, smb)',
-    'sqlmap': 'sqlmap -u "URL" [--data "body"] [--dbs] [--tables] [--dump] [-p PARAM] [--level=3] [--risk=2]',
-    'wfuzz': 'wfuzz -w WORDLIST -u URL/FUZZ [--hc 404] [--hw N] [-H "Header: val"]',
-    'gobuster': 'gobuster dir -u URL -w WORDLIST [-x .php,.html] [-b 404,403] [-t 40]',
+    'ffuf':
+        'ffuf -w WORDLIST -u URL/FUZZ [-e .php,.html,.txt] [-x http://proxy:8080 (proxy only, NOT extensions)] [-mc 200,301,302] [-fc 404]',
+    'nmap':
+        'nmap [-sV] [-sC] [-p PORTS] [-oX outfile.xml] [--script SCRIPTNAME] (scripts: smb-enum-shares, http-title, ftp-anon, ssl-cert, msrpc-enum, etc. — NOT "dcom", use msrpc-enum for RPC)',
+    'curl':
+        'curl [-sk] [-o /dev/null] [-w "%{http_code}"] [-H "Header: value"] [-d "body"] [-X POST] [-b "cookie=val"] [-L]',
+    'hydra':
+        'hydra -L users.txt -P pass.txt [-s PORT] [-f] SERVICE://TARGET (services: ftp, ssh, http-post-form, smb)',
+    'sqlmap':
+        'sqlmap -u "URL" [--data "body"] [--dbs] [--tables] [--dump] [-p PARAM] [--level=3] [--risk=2]',
+    'wfuzz':
+        'wfuzz -w WORDLIST -u URL/FUZZ [--hc 404] [--hw N] [-H "Header: val"]',
+    'gobuster':
+        'gobuster dir -u URL -w WORDLIST [-x .php,.html] [-b 404,403] [-t 40]',
     'nikto': 'nikto -h TARGET [-p PORT] [-ssl] [-C all]',
     'enum4linux': 'enum4linux [-a] [-U] [-S] [-G] TARGET',
     'smbclient': r"smbclient //TARGET/SHARE [-U 'user%pass'] [-N] [-c 'ls']",
     'rpcclient': "rpcclient -U '' -N TARGET -c 'enumdomusers'",
-    'crackmapexec': 'crackmapexec smb TARGET [-u USER] [-p PASS] [--shares] [--users] [--pass-pol]',
+    'crackmapexec':
+        'crackmapexec smb TARGET [-u USER] [-p PASS] [--shares] [--users] [--pass-pol]',
     'ncat': 'ncat [-w TIMEOUT] [-z] TARGET PORT  (use -w3 for short timeout)',
-    'ftp': 'ftp TARGET PORT  (then: open TARGET PORT, user anonymous, ls, get FILE)',
+    'ftp':
+        'ftp TARGET PORT  (then: open TARGET PORT, user anonymous, ls, get FILE)',
   };
 
   // Mark a tool's setup as failed so we don't retry
@@ -144,25 +157,39 @@ class CommandExecutor {
         try {
           ProcessResult result;
           if (Platform.isWindows && await isWslAvailable()) {
-            result = await Process.run('wsl', ['bash', '-c', '$binaryName $flag 2>&1 | head -5'])
-                .timeout(Duration(seconds: 10));
+            result = await Process.run('wsl', [
+              'bash',
+              '-c',
+              '$binaryName $flag 2>&1 | head -5',
+            ]).timeout(Duration(seconds: 10));
           } else {
-            result = await Process.run('bash', ['-c', '$binaryName $flag 2>&1 | head -5'])
-                .timeout(Duration(seconds: 10));
+            result = await Process.run('bash', [
+              '-c',
+              '$binaryName $flag 2>&1 | head -5',
+            ]).timeout(Duration(seconds: 10));
           }
 
-          if (result.exitCode == 0 && result.stdout.toString().trim().isNotEmpty) {
+          if (result.exitCode == 0 &&
+              result.stdout.toString().trim().isNotEmpty) {
             final output = result.stdout.toString().trim();
             // Extract version number pattern
-            final versionMatch = RegExp(r'(\d+\.\d+(?:\.\d+)?(?:-\w+)?)').firstMatch(output);
+            final versionMatch = RegExp(
+              r'(\d+\.\d+(?:\.\d+)?(?:-\w+)?)',
+            ).firstMatch(output);
             if (versionMatch != null) {
-              print('${_timestamp()} DEBUG: $primaryTool ($binaryName) version: ${versionMatch.group(1)}');
+              print(
+                '${_timestamp()} DEBUG: $primaryTool ($binaryName) version: ${versionMatch.group(1)}',
+              );
               return versionMatch.group(1);
             }
             // Return first line if no version pattern found
             final firstLine = output.split('\n').first.trim();
-            if (firstLine.isNotEmpty && firstLine.length < 200 && !firstLine.contains('command not found')) {
-              print('${_timestamp()} DEBUG: $primaryTool ($binaryName) version info: $firstLine');
+            if (firstLine.isNotEmpty &&
+                firstLine.length < 200 &&
+                !firstLine.contains('command not found')) {
+              print(
+                '${_timestamp()} DEBUG: $primaryTool ($binaryName) version info: $firstLine',
+              );
               return firstLine;
             }
           }
@@ -171,7 +198,9 @@ class CommandExecutor {
         }
       }
 
-      print('${_timestamp()} DEBUG: Could not determine version for $primaryTool ($binaryName)');
+      print(
+        '${_timestamp()} DEBUG: Could not determine version for $primaryTool ($binaryName)',
+      );
       return null;
     } catch (e) {
       print('${_timestamp()} DEBUG: getToolVersion error: $e');
@@ -180,7 +209,11 @@ class CommandExecutor {
   }
 
   // Get comprehensive tool usage information
-  static Future<ToolUsageInfo> getToolUsageInfo(String tool, LLMSettings settings, LLMService llmService) async {
+  static Future<ToolUsageInfo> getToolUsageInfo(
+    String tool,
+    LLMSettings settings,
+    LLMService llmService,
+  ) async {
     final primaryTool = tool.split(',').first.trim().split(' ').first.trim();
 
     // Check cache first
@@ -193,11 +226,16 @@ class CommandExecutor {
 
     final os = await getOsInfo();
     final isWsl = Platform.isWindows && await isWslAvailable();
-    final executionEnv = isWsl ? 'WSL on Windows' : Platform.isMacOS ? 'macOS' : 'Native Linux';
+    final executionEnv = isWsl
+        ? 'WSL on Windows'
+        : Platform.isMacOS
+        ? 'macOS'
+        : 'Native Linux';
     final version = await getToolVersion(primaryTool);
     final versionStr = version != null ? ' version $version' : '';
 
-    final prompt = '''You are a penetration testing expert. Provide accurate usage information for "$primaryTool"$versionStr on $os (running via $executionEnv).
+    final prompt =
+        '''You are a penetration testing expert. Provide accurate usage information for "$primaryTool"$versionStr on $os (running via $executionEnv).
 
 Respond with JSON:
 {
@@ -225,7 +263,9 @@ CRITICAL ACCURACY REQUIREMENTS:
 Respond ONLY with valid JSON.''';
 
     try {
-      final response = await llmService.sendMessage(settings, prompt).timeout(Duration(seconds: 45));
+      final response = await llmService
+          .sendMessage(settings, prompt)
+          .timeout(Duration(seconds: 45));
       final info = _parseToolUsageResponse(response, primaryTool, version);
 
       // Cache the result
@@ -250,7 +290,11 @@ Respond ONLY with valid JSON.''';
     }
   }
 
-  static ToolUsageInfo _parseToolUsageResponse(String response, String tool, String? version) {
+  static ToolUsageInfo _parseToolUsageResponse(
+    String response,
+    String tool,
+    String? version,
+  ) {
     try {
       final data = JsonParser.tryParseJson(response);
       if (data == null) throw FormatException('No valid JSON in response');
@@ -260,15 +304,27 @@ Respond ONLY with valid JSON.''';
         version: data['version'] ?? version,
         description: data['description'] ?? '',
         basicSyntax: data['basicSyntax'] ?? '$tool [options]',
-        commonOptions: (data['commonOptions'] as List?)?.map((o) => ToolOption(
-          option: o['option'] ?? '',
-          description: o['description'] ?? '',
-          example: o['example'] ?? '',
-        )).toList() ?? [],
-        exampleCommands: (data['exampleCommands'] as List?)?.map((e) => ToolExample(
-          purpose: e['purpose'] ?? '',
-          command: e['command'] ?? '',
-        )).toList() ?? [],
+        commonOptions:
+            (data['commonOptions'] as List?)
+                ?.map(
+                  (o) => ToolOption(
+                    option: o['option'] ?? '',
+                    description: o['description'] ?? '',
+                    example: o['example'] ?? '',
+                  ),
+                )
+                .toList() ??
+            [],
+        exampleCommands:
+            (data['exampleCommands'] as List?)
+                ?.map(
+                  (e) => ToolExample(
+                    purpose: e['purpose'] ?? '',
+                    command: e['command'] ?? '',
+                  ),
+                )
+                .toList() ??
+            [],
         requirements: (data['requirements'] as List?)?.cast<String>() ?? [],
         gotchas: (data['gotchas'] as List?)?.cast<String>() ?? [],
         relatedTools: (data['relatedTools'] as List?)?.cast<String>() ?? [],
@@ -292,7 +348,9 @@ Respond ONLY with valid JSON.''';
   // Format tool usage info for inclusion in prompts
   static String formatToolUsageForPrompt(ToolUsageInfo info) {
     final buffer = StringBuffer();
-    buffer.writeln('## TOOL: ${info.tool}${info.version != null ? " v${info.version}" : ""}');
+    buffer.writeln(
+      '## TOOL: ${info.tool}${info.version != null ? " v${info.version}" : ""}',
+    );
     buffer.writeln('Description: ${info.description}');
     buffer.writeln('Basic Syntax: ${info.basicSyntax}');
 
@@ -344,7 +402,9 @@ Respond ONLY with valid JSON.''';
   static void addInvalidNmapScript(String scriptName) {
     final name = scriptName.trim();
     if (name.isNotEmpty && _invalidNmapScripts.add(name)) {
-      print('${_timestamp()} DEBUG: Added invalid nmap script to blocklist: $name');
+      print(
+        '${_timestamp()} DEBUG: Added invalid nmap script to blocklist: $name',
+      );
     }
   }
 
@@ -371,17 +431,19 @@ Respond ONLY with valid JSON.''';
     final toolName = firstToken.split(RegExp(r'[/\\]')).last.toLowerCase();
     return toolName.isNotEmpty ? [toolName] : [];
   }
-  
+
   static Future<String> getOsInfo() async {
     if (_cachedOsInfo != null) return _cachedOsInfo!;
-    
+
     try {
       if (Platform.isWindows) {
         if (await isWslAvailable()) {
           final result = await Process.run('wsl', ['cat', '/etc/os-release']);
           if (result.exitCode == 0) {
             final output = result.stdout.toString();
-            final nameMatch = RegExp(r'PRETTY_NAME="([^"]+)"').firstMatch(output);
+            final nameMatch = RegExp(
+              r'PRETTY_NAME="([^"]+)"',
+            ).firstMatch(output);
             if (nameMatch != null) {
               _cachedOsInfo = '${nameMatch.group(1)!} (via WSL on Windows)';
               return _cachedOsInfo!;
@@ -420,33 +482,63 @@ Respond ONLY with valid JSON.''';
       }
     } catch (e) {
       if (Platform.isWindows) {
-        _cachedOsInfo = await isWslAvailable() ? 'Linux (WSL on Windows)' : 'Windows';
+        _cachedOsInfo = await isWslAvailable()
+            ? 'Linux (WSL on Windows)'
+            : 'Windows';
       } else {
         _cachedOsInfo = Platform.isMacOS ? 'macOS' : 'Linux';
       }
     }
     return _cachedOsInfo!;
   }
-  
+
   static bool? _wslAvailable;
-  
+
   // Each entry is a RegExp pattern matched against the full command (case-insensitive).
   // Use word-boundary / anchored patterns to avoid false positives like 'rfi' matching 'rm -rf /'.
   static final _dangerousPatterns = [
-    RegExp(r'rm\s+-[a-z]*r[a-z]*f[a-z]*\s+/', caseSensitive: false),  // rm -rf /
-    RegExp(r'\bformat\s+[a-z]:', caseSensitive: false),                 // format C:
-    RegExp(r'del\s+/f\s+/[sq]\s+[a-z]:', caseSensitive: false),        // del /f /q c:
-    RegExp(r'rmdir\s+/s\s+/q\s+[a-z]:', caseSensitive: false),         // rmdir /s /q c:
-    RegExp(r'\bmkfs\b', caseSensitive: false),                          // mkfs
-    RegExp(r'dd\s+if=/dev/zero\s+of=/dev/', caseSensitive: false),      // dd if=/dev/zero of=/dev/...
-    RegExp(r':\(\)\{:\|:&\};:', caseSensitive: false),                  // fork bomb
+    RegExp(r'rm\s+-[a-z]*r[a-z]*f[a-z]*\s+/', caseSensitive: false), // rm -rf /
+    RegExp(r'\bformat\s+[a-z]:', caseSensitive: false), // format C:
+    RegExp(r'del\s+/f\s+/[sq]\s+[a-z]:', caseSensitive: false), // del /f /q c:
+    RegExp(r'rmdir\s+/s\s+/q\s+[a-z]:', caseSensitive: false), // rmdir /s /q c:
+    RegExp(r'\bmkfs\b', caseSensitive: false), // mkfs
+    RegExp(
+      r'dd\s+if=/dev/zero\s+of=/dev/',
+      caseSensitive: false,
+    ), // dd if=/dev/zero of=/dev/...
+    RegExp(r':\(\)\{:\|:&\};:', caseSensitive: false), // fork bomb
   ];
 
-
-  static Future<Map<String, dynamic>> verifyToolSetup(String tool, LLMSettings settings, LLMService llmService) async {
+  static Future<Map<String, dynamic>> verifyToolSetup(
+    String tool,
+    LLMSettings settings,
+    LLMService llmService,
+  ) async {
     try {
       // Skip setup verification for tools that don't need it
-      final noSetupTools = ['searchsploit', 'nmap', 'curl', 'wget', 'nc', 'netcat', 'python', 'python2', 'python3', 'perl', 'ruby', 'nikto', 'sqlmap', 'hydra', 'dirb', 'gobuster', 'ffuf', 'smbclient', 'smbmap', 'nuclei', 'scapy'];
+      final noSetupTools = [
+        'searchsploit',
+        'nmap',
+        'curl',
+        'wget',
+        'nc',
+        'netcat',
+        'python',
+        'python2',
+        'python3',
+        'perl',
+        'ruby',
+        'nikto',
+        'sqlmap',
+        'hydra',
+        'dirb',
+        'gobuster',
+        'ffuf',
+        'smbclient',
+        'smbmap',
+        'nuclei',
+        'scapy',
+      ];
       if (noSetupTools.contains(tool.toLowerCase())) {
         print('${_timestamp()} DEBUG: $tool does not require setup');
         return {'needs_setup': false};
@@ -455,7 +547,11 @@ Respond ONLY with valid JSON.''';
       // Check if setup previously failed for this tool
       if (_toolSetupFailures.contains(tool.toLowerCase())) {
         print('${_timestamp()} DEBUG: $tool setup previously failed, skipping');
-        return {'needs_setup': true, 'setup_failed': true, 'reason': 'Setup previously failed for $tool'};
+        return {
+          'needs_setup': true,
+          'setup_failed': true,
+          'reason': 'Setup previously failed for $tool',
+        };
       }
 
       // Check setup cache
@@ -465,8 +561,9 @@ Respond ONLY with valid JSON.''';
       }
 
       final os = await getOsInfo();
-      
-      final prompt = '''Does "$tool" on $os require any initialization or setup after installation before it can be used effectively?
+
+      final prompt =
+          '''Does "$tool" on $os require any initialization or setup after installation before it can be used effectively?
 
 For example:
 - Metasploit requires "msfdb init" to initialize the database
@@ -484,25 +581,29 @@ Respond with JSON:
 IMPORTANT: check_command and setup_command must be non-interactive (no user prompts).
 If no setup is needed, return {"needs_setup": false}.
 Respond ONLY with valid JSON.''';
-      
-      final response = await llmService.sendMessage(settings, prompt).timeout(Duration(seconds: 30));
+
+      final response = await llmService
+          .sendMessage(settings, prompt)
+          .timeout(Duration(seconds: 30));
       final decision = _parseJson(response);
-      
+
       if (decision['needs_setup'] != true) {
         print('${_timestamp()} DEBUG: No setup needed for $tool');
         final result = <String, dynamic>{'needs_setup': false};
         _toolSetupCache[tool.toLowerCase()] = result;
         return result;
       }
-      
+
       final checkCmd = decision['check_command'];
       if (checkCmd == null || checkCmd.isEmpty) {
-        print('${_timestamp()} DEBUG: Setup needed but no check command provided');
+        print(
+          '${_timestamp()} DEBUG: Setup needed but no check command provided',
+        );
         return decision;
       }
-      
+
       print('${_timestamp()} DEBUG: Running setup check: $checkCmd');
-      
+
       try {
         Process process;
         if (Platform.isWindows && await isWslAvailable()) {
@@ -510,34 +611,38 @@ Respond ONLY with valid JSON.''';
         } else {
           process = await Process.start('bash', ['-c', checkCmd]);
         }
-        
+
         final stdoutBuffer = StringBuffer();
         final stderrBuffer = StringBuffer();
-        
+
         process.stdout.transform(utf8.decoder).listen((data) {
           print('${_timestamp()} [SETUP STDOUT] $data');
           stdoutBuffer.write(data);
         });
-        
+
         process.stderr.transform(utf8.decoder).listen((data) {
           print('${_timestamp()} [SETUP STDERR] $data');
           stderrBuffer.write(data);
         });
-        
+
         final exitCode = await process.exitCode.timeout(Duration(seconds: 60));
         final stdout = stdoutBuffer.toString();
 
         print('${_timestamp()} DEBUG: Setup check exit code: $exitCode');
-        
+
         // If check command succeeds, setup is already done
-        if (exitCode == 0 && !stdout.toLowerCase().contains('disconnect') && !stdout.toLowerCase().contains('failed')) {
+        if (exitCode == 0 &&
+            !stdout.toLowerCase().contains('disconnect') &&
+            !stdout.toLowerCase().contains('failed')) {
           print('${_timestamp()} DEBUG: Setup already complete for $tool');
           final result = <String, dynamic>{'needs_setup': false};
           _toolSetupCache[tool.toLowerCase()] = result;
           return result;
         }
 
-        print('${_timestamp()} DEBUG: Setup required for $tool: ${decision['reason']}');
+        print(
+          '${_timestamp()} DEBUG: Setup required for $tool: ${decision['reason']}',
+        );
         _toolSetupCache[tool.toLowerCase()] = decision;
         return decision;
       } on TimeoutException {
@@ -556,14 +661,16 @@ Respond ONLY with valid JSON.''';
 
   static Future<bool> isWslAvailable() async {
     if (_wslAvailable != null) return _wslAvailable!;
-    
+
     if (!Platform.isWindows) {
       _wslAvailable = false;
       return false;
     }
-    
+
     try {
-      final result = await Process.run('wsl', ['--status']).timeout(const Duration(seconds: 3));
+      final result = await Process.run('wsl', [
+        '--status',
+      ]).timeout(const Duration(seconds: 3));
       _wslAvailable = result.exitCode == 0;
     } catch (e) {
       _wslAvailable = false;
@@ -581,7 +688,11 @@ Respond ONLY with valid JSON.''';
     return "127.0.0.1";
   }
 
-  static Future<bool> checkToolExists(String tool, LLMSettings settings, LLMService llmService) async {
+  static Future<bool> checkToolExists(
+    String tool,
+    LLMSettings settings,
+    LLMService llmService,
+  ) async {
     try {
       // Handle comma-separated tool names - check the PRIMARY tool only
       final primaryTool = tool.split(',').first.trim().split(' ').first.trim();
@@ -589,14 +700,18 @@ Respond ONLY with valid JSON.''';
 
       // Use known binary mapping (avoids LLM call for common tools)
       final binaryName = getToolBinary(primaryTool);
-      print('${_timestamp()} DEBUG: Tool binary lookup: $primaryTool -> $binaryName');
+      print(
+        '${_timestamp()} DEBUG: Tool binary lookup: $primaryTool -> $binaryName',
+      );
 
       // Use simple 'which' check for single binary
       final checkCmd = 'which $binaryName';
       print('${_timestamp()} DEBUG: Checking with command: $checkCmd');
-      
+
       if (Platform.isWindows && await isWslAvailable()) {
-        print('${_timestamp()} DEBUG: Running command: wsl bash -c "$checkCmd"');
+        print(
+          '${_timestamp()} DEBUG: Running command: wsl bash -c "$checkCmd"',
+        );
         final process = await Process.start('wsl', ['bash', '-c', checkCmd]);
         process.stdout.transform(utf8.decoder).listen((_) {});
         process.stderr.transform(utf8.decoder).listen((_) {});
@@ -606,8 +721,9 @@ Respond ONLY with valid JSON.''';
       } else if (Platform.isWindows) {
         // Native Windows – use 'where' (cmd equivalent of 'which')
         print('${_timestamp()} DEBUG: Native Windows check: where $binaryName');
-        final result = await Process.run('where', [binaryName])
-            .timeout(const Duration(seconds: 5));
+        final result = await Process.run('where', [
+          binaryName,
+        ]).timeout(const Duration(seconds: 5));
         print('${_timestamp()} DEBUG: Exit code: ${result.exitCode}');
         return result.exitCode == 0;
       } else if (Platform.isLinux || Platform.isMacOS) {
@@ -679,7 +795,14 @@ Respond ONLY with valid JSON.''';
         break;
       default:
         // Unknown distro — fall back to which-based scan in a sensible order
-        prioritizedManagers = ['pacman', 'apt-get', 'dnf', 'yum', 'zypper', 'apk'];
+        prioritizedManagers = [
+          'pacman',
+          'apt-get',
+          'dnf',
+          'yum',
+          'zypper',
+          'apk',
+        ];
     }
 
     for (final manager in prioritizedManagers) {
@@ -704,11 +827,16 @@ Respond ONLY with valid JSON.''';
       final cmd = 'cat /etc/os-release 2>/dev/null';
       final ProcessResult result;
       if (isWsl) {
-        result = await Process.run('wsl', ['bash', '-c', cmd])
-            .timeout(const Duration(seconds: 5));
+        result = await Process.run('wsl', [
+          'bash',
+          '-c',
+          cmd,
+        ]).timeout(const Duration(seconds: 5));
       } else {
-        result = await Process.run('bash', ['-c', cmd])
-            .timeout(const Duration(seconds: 5));
+        result = await Process.run('bash', [
+          '-c',
+          cmd,
+        ]).timeout(const Duration(seconds: 5));
       }
       final content = (result.stdout as String? ?? '').toLowerCase();
       if (content.isEmpty) return 'unknown';
@@ -727,10 +855,13 @@ Respond ONLY with valid JSON.''';
       // Check ID_LIKE first (e.g. cachyos has id_like=arch)
       final combined = '$id $idLike';
       if (combined.contains('arch')) return 'arch';
-      if (combined.contains('debian') || combined.contains('ubuntu')) return 'debian';
+      if (combined.contains('debian') || combined.contains('ubuntu'))
+        return 'debian';
       if (combined.contains('fedora')) return 'fedora';
-      if (combined.contains('rhel') || combined.contains('centos')) return 'rhel';
-      if (combined.contains('suse') || combined.contains('opensuse')) return 'suse';
+      if (combined.contains('rhel') || combined.contains('centos'))
+        return 'rhel';
+      if (combined.contains('suse') || combined.contains('opensuse'))
+        return 'suse';
       if (id == 'alpine') return 'alpine';
 
       return 'unknown';
@@ -739,13 +870,21 @@ Respond ONLY with valid JSON.''';
     }
   }
 
-  static Future<bool> installTool(String tool, LLMSettings settings, LLMService llmService, {String? adminPassword, Future<String?> Function(String)? onPasswordNeeded}) async {
+  static Future<bool> installTool(
+    String tool,
+    LLMSettings settings,
+    LLMService llmService, {
+    String? adminPassword,
+    Future<String?> Function(String)? onPasswordNeeded,
+  }) async {
     try {
       // Handle comma-separated tool names - install the PRIMARY tool only
       final primaryTool = tool.split(',').first.trim().split(' ').first.trim();
       if (primaryTool.isEmpty) return false;
 
-      print('${_timestamp()} DEBUG: Installing primary tool: $primaryTool (from "$tool")');
+      print(
+        '${_timestamp()} DEBUG: Installing primary tool: $primaryTool (from "$tool")',
+      );
 
       // Check if already installed
       if (await checkToolExists(primaryTool, settings, llmService)) {
@@ -755,7 +894,9 @@ Respond ONLY with valid JSON.''';
 
       final os = await getOsInfo();
       final packageManager = await detectPackageManager();
-      print('${_timestamp()} DEBUG: Installing on OS: $os (package manager: $packageManager)');
+      print(
+        '${_timestamp()} DEBUG: Installing on OS: $os (package manager: $packageManager)',
+      );
 
       // Build OS-specific prompt
       String packageManagerInfo;
@@ -790,10 +931,14 @@ Respond ONLY with valid JSON.''';
       }
 
       final isWsl = Platform.isWindows && await isWslAvailable();
-      final wslInfo = isWsl ? 'WSL (Windows Subsystem for Linux)' : 
-                      Platform.isWindows ? 'Native Windows' : 'Native';
+      final wslInfo = isWsl
+          ? 'WSL (Windows Subsystem for Linux)'
+          : Platform.isWindows
+          ? 'Native Windows'
+          : 'Native';
 
-      final prompt = '''What is the SINGLE package name to install "$primaryTool" on $os?
+      final prompt =
+          '''What is the SINGLE package name to install "$primaryTool" on $os?
 
 SYSTEM INFO:
 - OS: $os
@@ -845,8 +990,10 @@ RedHat/CentOS (yum/dnf):
 - nmap: {"command": "sudo yum install -y nmap", "package": "nmap"}
 
 Respond ONLY with valid JSON.''';
-      
-      final response = await llmService.sendMessage(settings, prompt).timeout(Duration(seconds: 30));
+
+      final response = await llmService
+          .sendMessage(settings, prompt)
+          .timeout(Duration(seconds: 30));
       final decision = _parseJson(response);
       String installCmd = decision['command'] ?? '';
 
@@ -858,22 +1005,50 @@ Respond ONLY with valid JSON.''';
       // Validate that the LLM's command uses the correct package manager.
       // If the LLM suggests apt-get but we detected pacman (or vice versa),
       // regenerate the command using the correct package manager.
-      const knownManagers = ['apt-get', 'apt', 'yum', 'dnf', 'pacman', 'paru', 'yay', 'zypper', 'apk', 'brew', 'choco', 'scoop', 'winget'];
-      final wrongManager = knownManagers.where((m) => m != packageManager && installCmd.contains(m)).firstOrNull;
+      const knownManagers = [
+        'apt-get',
+        'apt',
+        'yum',
+        'dnf',
+        'pacman',
+        'paru',
+        'yay',
+        'zypper',
+        'apk',
+        'brew',
+        'choco',
+        'scoop',
+        'winget',
+      ];
+      final wrongManager = knownManagers
+          .where((m) => m != packageManager && installCmd.contains(m))
+          .firstOrNull;
       if (wrongManager != null) {
-        print('${_timestamp()} DEBUG: LLM suggested $wrongManager but detected $packageManager — regenerating command');
+        print(
+          '${_timestamp()} DEBUG: LLM suggested $wrongManager but detected $packageManager — regenerating command',
+        );
         final pkg = decision['package'] ?? primaryTool;
         installCmd = _getInstallCommand(packageManager, pkg);
         print('${_timestamp()} DEBUG: Corrected install command: $installCmd');
       }
 
       // Remove apt-get update from the command - it takes too long
-      installCmd = installCmd.replaceAll(RegExp(r'sudo\s+apt-get\s+update\s*&&\s*'), '');
-      installCmd = installCmd.replaceAll(RegExp(r'apt-get\s+update\s*&&\s*'), '');
+      installCmd = installCmd.replaceAll(
+        RegExp(r'sudo\s+apt-get\s+update\s*&&\s*'),
+        '',
+      );
+      installCmd = installCmd.replaceAll(
+        RegExp(r'apt-get\s+update\s*&&\s*'),
+        '',
+      );
 
       // Ensure -y flag is present for apt-get
-      if (installCmd.contains('apt-get install') && !installCmd.contains('-y')) {
-        installCmd = installCmd.replaceAll('apt-get install', 'apt-get install -y');
+      if (installCmd.contains('apt-get install') &&
+          !installCmd.contains('-y')) {
+        installCmd = installCmd.replaceAll(
+          'apt-get install',
+          'apt-get install -y',
+        );
       }
 
       // For brew, no sudo needed (and it will fail with sudo)
@@ -882,13 +1057,17 @@ Respond ONLY with valid JSON.''';
       }
 
       // For AUR helpers (paru/yay), no sudo needed — they handle elevation internally
-      if ((packageManager == 'paru' || packageManager == 'yay') && installCmd.contains('sudo')) {
+      if ((packageManager == 'paru' || packageManager == 'yay') &&
+          installCmd.contains('sudo')) {
         installCmd = installCmd.replaceAll('sudo ', '');
       }
 
       // For Windows package managers, handle elevation differently
       final isWindowsNative = Platform.isWindows && !isWsl;
-      if (isWindowsNative && (packageManager == 'choco' || packageManager == 'scoop' || packageManager == 'winget')) {
+      if (isWindowsNative &&
+          (packageManager == 'choco' ||
+              packageManager == 'scoop' ||
+              packageManager == 'winget')) {
         // Windows package managers need to run elevated - will be handled by executeCommand
         // Remove any sudo that LLM might have added
         installCmd = installCmd.replaceAll('sudo ', '');
@@ -896,17 +1075,26 @@ Respond ONLY with valid JSON.''';
 
       // Sudo handling: two paths depending on whether an admin password is available.
       final hasSudo = installCmd.contains('sudo ');
-      if (hasSudo && !isWindowsNative && packageManager != 'brew' && packageManager != 'paru' && packageManager != 'yay') {
+      if (hasSudo &&
+          !isWindowsNative &&
+          packageManager != 'brew' &&
+          packageManager != 'paru' &&
+          packageManager != 'yay') {
         if (adminPassword != null && adminPassword.isNotEmpty) {
           // Password provided — verify it works with sudo -S, then let the install
           // command run via "echo PASSWORD | sudo -S ..." below. No -n transformation needed.
-          print('${_timestamp()} DEBUG: Admin password provided — verifying sudo -S access...');
+          print(
+            '${_timestamp()} DEBUG: Admin password provided — verifying sudo -S access...',
+          );
           try {
-            final sudoCheck = await Process.run('bash',
-                ['-c', 'echo "$adminPassword" | sudo -S true 2>/dev/null'])
-                .timeout(const Duration(seconds: 5));
+            final sudoCheck = await Process.run('bash', [
+              '-c',
+              'echo "$adminPassword" | sudo -S true 2>/dev/null',
+            ]).timeout(const Duration(seconds: 5));
             if (sudoCheck.exitCode != 0) {
-              print('${_timestamp()} DEBUG: Admin password incorrect or sudo not available');
+              print(
+                '${_timestamp()} DEBUG: Admin password incorrect or sudo not available',
+              );
               return false;
             }
             print('${_timestamp()} DEBUG: sudo -S access confirmed');
@@ -916,24 +1104,37 @@ Respond ONLY with valid JSON.''';
           }
         } else {
           // No password — check if sudo is already cached (non-interactive)
-          print('${_timestamp()} DEBUG: No admin password — checking cached sudo access...');
+          print(
+            '${_timestamp()} DEBUG: No admin password — checking cached sudo access...',
+          );
           try {
             ProcessResult sudoCheck;
             if (Platform.isWindows && await isWslAvailable()) {
-              sudoCheck = await Process.run('wsl', ['sudo', '-n', 'true']).timeout(const Duration(seconds: 5));
+              sudoCheck = await Process.run('wsl', [
+                'sudo',
+                '-n',
+                'true',
+              ]).timeout(const Duration(seconds: 5));
             } else {
-              sudoCheck = await Process.run('sudo', ['-n', 'true']).timeout(const Duration(seconds: 5));
+              sudoCheck = await Process.run('sudo', [
+                '-n',
+                'true',
+              ]).timeout(const Duration(seconds: 5));
             }
             if (sudoCheck.exitCode != 0) {
-              print('${_timestamp()} DEBUG: sudo requires password and none was provided — prompting user...');
+              print(
+                '${_timestamp()} DEBUG: sudo requires password and none was provided — prompting user...',
+              );
               if (onPasswordNeeded != null) {
                 final prompted = await onPasswordNeeded(
-                    'Enter sudo password to install $primaryTool:');
+                  'Enter sudo password to install $primaryTool:',
+                );
                 if (prompted != null && prompted.isNotEmpty) {
                   // Verify the prompted password works
-                  final verify = await Process.run('bash',
-                      ['-c', 'echo "$prompted" | sudo -S true 2>/dev/null'])
-                      .timeout(const Duration(seconds: 5));
+                  final verify = await Process.run('bash', [
+                    '-c',
+                    'echo "$prompted" | sudo -S true 2>/dev/null',
+                  ]).timeout(const Duration(seconds: 5));
                   if (verify.exitCode != 0) {
                     print('${_timestamp()} DEBUG: Prompted password incorrect');
                     return false;
@@ -941,20 +1142,28 @@ Respond ONLY with valid JSON.''';
                   adminPassword = prompted;
                   print('${_timestamp()} DEBUG: Prompted password accepted');
                 } else {
-                  print('${_timestamp()} DEBUG: User declined to provide password — cannot install');
+                  print(
+                    '${_timestamp()} DEBUG: User declined to provide password — cannot install',
+                  );
                   return false;
                 }
               } else {
-                print('${_timestamp()} DEBUG: sudo requires password and none was provided — cannot install');
+                print(
+                  '${_timestamp()} DEBUG: sudo requires password and none was provided — cannot install',
+                );
                 print('${_timestamp()} DEBUG: User should run: $installCmd');
                 return false;
               }
             }
             // Cached — use sudo -n to prevent any interactive prompt
             installCmd = installCmd.replaceAll('sudo ', 'sudo -n ');
-            print('${_timestamp()} DEBUG: sudo cache confirmed (no password needed)');
+            print(
+              '${_timestamp()} DEBUG: sudo cache confirmed (no password needed)',
+            );
           } catch (e) {
-            print('${_timestamp()} DEBUG: sudo check failed: $e - proceeding anyway');
+            print(
+              '${_timestamp()} DEBUG: sudo check failed: $e - proceeding anyway',
+            );
           }
         }
       }
@@ -965,8 +1174,11 @@ Respond ONLY with valid JSON.''';
       if (isWsl) {
         print('${_timestamp()} DEBUG: Running install command in WSL');
         // Use admin password if provided
-        if (adminPassword != null && adminPassword.isNotEmpty && installCmd.contains('sudo')) {
-          final sudoCmd = 'echo "$adminPassword" | sudo -S bash -c "${installCmd.replaceFirst('sudo', '')}"';
+        if (adminPassword != null &&
+            adminPassword.isNotEmpty &&
+            installCmd.contains('sudo')) {
+          final sudoCmd =
+              'echo "$adminPassword" | sudo -S bash -c "${installCmd.replaceFirst('sudo', '')}"';
           process = await Process.start('wsl', ['bash', '-c', sudoCmd]);
         } else {
           process = await Process.start('wsl', ['bash', '-c', installCmd]);
@@ -976,7 +1188,8 @@ Respond ONLY with valid JSON.''';
         // For Windows, use PowerShell with elevation if needed
         if (packageManager == 'choco' || packageManager == 'winget') {
           // These require elevation - use Start-Process with -Verb RunAs
-          final psCommand = 'Start-Process powershell -ArgumentList "-Command","$installCmd" -Verb RunAs -Wait';
+          final psCommand =
+              'Start-Process powershell -ArgumentList "-Command","$installCmd" -Verb RunAs -Wait';
           process = await Process.start('powershell', ['-Command', psCommand]);
         } else {
           // Scoop doesn't require elevation
@@ -990,16 +1203,23 @@ Respond ONLY with valid JSON.''';
           if (adminPassword != null && adminPassword.isNotEmpty) {
             // Create a temporary askpass script with restricted permissions
             final tempDir = Directory.systemTemp;
-            final askpassScript = File('${tempDir.path}/.askpass_${DateTime.now().millisecondsSinceEpoch}.sh');
-            await askpassScript.writeAsString('#!/bin/bash\necho "$adminPassword"');
+            final askpassScript = File(
+              '${tempDir.path}/.askpass_${DateTime.now().millisecondsSinceEpoch}.sh',
+            );
+            await askpassScript.writeAsString(
+              '#!/bin/bash\necho "$adminPassword"',
+            );
             // Set permissions to 700 (owner read/write/execute only)
             await Process.run('chmod', ['700', askpassScript.path]);
-            
+
             final envVars = Map<String, String>.from(Platform.environment);
             envVars['SUDO_ASKPASS'] = askpassScript.path;
-            
-            process = await Process.start('bash', ['-c', installCmd], environment: envVars);
-            
+
+            process = await Process.start('bash', [
+              '-c',
+              installCmd,
+            ], environment: envVars);
+
             // Delete askpass script after installation completes (3 minutes timeout)
             Future.delayed(Duration(minutes: 3), () async {
               try {
@@ -1020,10 +1240,15 @@ Respond ONLY with valid JSON.''';
           // `script` is part of util-linux and present on all Arch/Debian systems.
           final scriptedCmd = "script -q -c '$installCmd 2>&1' /dev/null";
           process = await Process.start('bash', ['-c', scriptedCmd]);
-        } else if (adminPassword != null && adminPassword.isNotEmpty && installCmd.contains('sudo')) {
+        } else if (adminPassword != null &&
+            adminPassword.isNotEmpty &&
+            installCmd.contains('sudo')) {
           // Strip any sudo variant (sudo, sudo -n, sudo -S) — we'll supply our own sudo -S
-          final cmdWithoutSudo = installCmd.replaceFirst(RegExp(r'sudo\s+(-\w+\s+)*'), '').trim();
-          final sudoCmd = 'echo "$adminPassword" | sudo -S bash -c "$cmdWithoutSudo"';
+          final cmdWithoutSudo = installCmd
+              .replaceFirst(RegExp(r'sudo\s+(-\w+\s+)*'), '')
+              .trim();
+          final sudoCmd =
+              'echo "$adminPassword" | sudo -S bash -c "$cmdWithoutSudo"';
           process = await Process.start('bash', ['-c', sudoCmd]);
         } else {
           process = await Process.start('bash', ['-c', installCmd]);
@@ -1048,7 +1273,9 @@ Respond ONLY with valid JSON.''';
         if (data.contains('sudo: timed out reading password') ||
             data.contains('sudo: a password is required') ||
             data.contains('[sudo] password for')) {
-          print('${_timestamp()} DEBUG: sudo password prompt detected in install — killing process');
+          print(
+            '${_timestamp()} DEBUG: sudo password prompt detected in install — killing process',
+          );
           _killProcessTree(process).catchError((_) {});
         }
       });
@@ -1069,17 +1296,24 @@ Respond ONLY with valid JSON.''';
       print('${_timestamp()} DEBUG: Install exit code: $exitCode');
 
       // Check for missing dependencies in output
-      if (exitCode != 0 || stdout.contains('requires') || stderr.contains('requires')) {
+      if (exitCode != 0 ||
+          stdout.contains('requires') ||
+          stderr.contains('requires')) {
         // Check for Rosetta 2 requirement on Apple Silicon
-        if ((stdout.contains('Rosetta 2') || stderr.contains('Rosetta 2')) && 
-            (stdout.contains('softwareupdate --install-rosetta') || stderr.contains('softwareupdate --install-rosetta'))) {
+        if ((stdout.contains('Rosetta 2') || stderr.contains('Rosetta 2')) &&
+            (stdout.contains('softwareupdate --install-rosetta') ||
+                stderr.contains('softwareupdate --install-rosetta'))) {
           print('${_timestamp()} DEBUG: Rosetta 2 required, installing...');
-          
-          final rosettaCmd = 'softwareupdate --install-rosetta --agree-to-license';
-          final rosettaProcess = await Process.start('bash', ['-c', rosettaCmd]);
+
+          final rosettaCmd =
+              'softwareupdate --install-rosetta --agree-to-license';
+          final rosettaProcess = await Process.start('bash', [
+            '-c',
+            rosettaCmd,
+          ]);
           final rosettaStdout = StringBuffer();
           final rosettaStderr = StringBuffer();
-          
+
           rosettaProcess.stdout.transform(utf8.decoder).listen((data) {
             print('${_timestamp()} [ROSETTA STDOUT] $data');
             rosettaStdout.write(data);
@@ -1088,34 +1322,49 @@ Respond ONLY with valid JSON.''';
             print('${_timestamp()} [ROSETTA STDERR] $data');
             rosettaStderr.write(data);
           });
-          
-          final rosettaExit = await rosettaProcess.exitCode.timeout(const Duration(minutes: 5));
-          print('${_timestamp()} DEBUG: Rosetta 2 install exit code: $rosettaExit');
-          
+
+          final rosettaExit = await rosettaProcess.exitCode.timeout(
+            const Duration(minutes: 5),
+          );
+          print(
+            '${_timestamp()} DEBUG: Rosetta 2 install exit code: $rosettaExit',
+          );
+
           if (rosettaExit == 0) {
-            print('${_timestamp()} DEBUG: Rosetta 2 installed, retrying tool installation...');
-            
+            print(
+              '${_timestamp()} DEBUG: Rosetta 2 installed, retrying tool installation...',
+            );
+
             // Recreate askpass script and environment for retry if needed
             Map<String, String>? retryEnv;
             File? retryAskpass;
-            
-            if (adminPassword != null && adminPassword.isNotEmpty && packageManager == 'brew') {
+
+            if (adminPassword != null &&
+                adminPassword.isNotEmpty &&
+                packageManager == 'brew') {
               final tempDir = Directory.systemTemp;
-              retryAskpass = File('${tempDir.path}/.askpass_retry_${DateTime.now().millisecondsSinceEpoch}.sh');
-              await retryAskpass.writeAsString('#!/bin/bash\necho "$adminPassword"');
+              retryAskpass = File(
+                '${tempDir.path}/.askpass_retry_${DateTime.now().millisecondsSinceEpoch}.sh',
+              );
+              await retryAskpass.writeAsString(
+                '#!/bin/bash\necho "$adminPassword"',
+              );
               await Process.run('chmod', ['700', retryAskpass.path]);
-              
+
               retryEnv = Map<String, String>.from(Platform.environment);
               retryEnv['SUDO_ASKPASS'] = retryAskpass.path;
             }
-            
+
             // Retry the original installation
-            final retryProcess = retryEnv != null 
-                ? await Process.start('bash', ['-c', installCmd], environment: retryEnv)
+            final retryProcess = retryEnv != null
+                ? await Process.start('bash', [
+                    '-c',
+                    installCmd,
+                  ], environment: retryEnv)
                 : await Process.start('bash', ['-c', installCmd]);
             final retryStdout = StringBuffer();
             final retryStderr = StringBuffer();
-            
+
             retryProcess.stdout.transform(utf8.decoder).listen((data) {
               print('${_timestamp()} [RETRY STDOUT] $data');
               retryStdout.write(data);
@@ -1124,19 +1373,27 @@ Respond ONLY with valid JSON.''';
               print('${_timestamp()} [RETRY STDERR] $data');
               retryStderr.write(data);
             });
-            
-            final retryExit = await retryProcess.exitCode.timeout(const Duration(minutes: 3));
-            
+
+            final retryExit = await retryProcess.exitCode.timeout(
+              const Duration(minutes: 3),
+            );
+
             // Clean up retry askpass script
             if (retryAskpass != null) {
               try {
                 if (await retryAskpass.exists()) await retryAskpass.delete();
               } catch (_) {}
             }
-            
+
             if (retryExit == 0) {
-              final verified = await checkToolExists(primaryTool, settings, llmService);
-              print('${_timestamp()} DEBUG: Post-retry verification: ${verified ? "SUCCESS" : "FAILED"}');
+              final verified = await checkToolExists(
+                primaryTool,
+                settings,
+                llmService,
+              );
+              print(
+                '${_timestamp()} DEBUG: Post-retry verification: ${verified ? "SUCCESS" : "FAILED"}',
+              );
               return verified;
             }
           }
@@ -1145,8 +1402,14 @@ Respond ONLY with valid JSON.''';
 
       // Verify the tool was actually installed
       if (exitCode == 0) {
-        final verified = await checkToolExists(primaryTool, settings, llmService);
-        print('${_timestamp()} DEBUG: Post-install verification: ${verified ? "SUCCESS" : "FAILED"}');
+        final verified = await checkToolExists(
+          primaryTool,
+          settings,
+          llmService,
+        );
+        print(
+          '${_timestamp()} DEBUG: Post-install verification: ${verified ? "SUCCESS" : "FAILED"}',
+        );
         return verified;
       }
 
@@ -1158,9 +1421,12 @@ Respond ONLY with valid JSON.''';
           : errorContext;
 
       if (trimmedError.isNotEmpty) {
-        print('${_timestamp()} DEBUG: Install failed — asking LLM for alternative (error: ${trimmedError.substring(0, trimmedError.length.clamp(0, 120))})');
+        print(
+          '${_timestamp()} DEBUG: Install failed — asking LLM for alternative (error: ${trimmedError.substring(0, trimmedError.length.clamp(0, 120))})',
+        );
 
-        final retryPrompt = '''Installing "$primaryTool" on $os failed.
+        final retryPrompt =
+            '''Installing "$primaryTool" on $os failed.
 
 FAILED COMMAND: $installCmd
 ERROR OUTPUT:
@@ -1175,46 +1441,87 @@ Respond ONLY with valid JSON:
 {"command": "INSTALL_COMMAND", "package": "package_name"}''';
 
         try {
-          final retryResponse = await llmService.sendMessage(settings, retryPrompt).timeout(const Duration(seconds: 30));
+          final retryResponse = await llmService
+              .sendMessage(settings, retryPrompt)
+              .timeout(const Duration(seconds: 30));
           final retryDecision = _parseJson(retryResponse);
           String retryCmd = retryDecision['command'] ?? '';
 
           // Apply the same package manager corrections as the first attempt
           if (retryCmd.isNotEmpty) {
-            final wrongMgr = knownManagers.where((m) => m != packageManager && retryCmd.contains(m)).firstOrNull;
+            final wrongMgr = knownManagers
+                .where((m) => m != packageManager && retryCmd.contains(m))
+                .firstOrNull;
             if (wrongMgr != null) {
               final pkg = retryDecision['package'] ?? primaryTool;
               retryCmd = _getInstallCommand(packageManager, pkg);
             }
-            retryCmd = retryCmd.replaceAll(RegExp(r'sudo\s+apt-get\s+update\s*&&\s*'), '');
-            retryCmd = retryCmd.replaceAll(RegExp(r'apt-get\s+update\s*&&\s*'), '');
-            if (packageManager == 'brew') retryCmd = retryCmd.replaceAll('sudo ', '');
-            if ((packageManager == 'paru' || packageManager == 'yay')) retryCmd = retryCmd.replaceAll('sudo ', '');
+            retryCmd = retryCmd.replaceAll(
+              RegExp(r'sudo\s+apt-get\s+update\s*&&\s*'),
+              '',
+            );
+            retryCmd = retryCmd.replaceAll(
+              RegExp(r'apt-get\s+update\s*&&\s*'),
+              '',
+            );
+            if (packageManager == 'brew')
+              retryCmd = retryCmd.replaceAll('sudo ', '');
+            if ((packageManager == 'paru' || packageManager == 'yay'))
+              retryCmd = retryCmd.replaceAll('sudo ', '');
 
-            print('${_timestamp()} DEBUG: Retrying with alternative command: $retryCmd');
+            print(
+              '${_timestamp()} DEBUG: Retrying with alternative command: $retryCmd',
+            );
 
             Process retryProcess;
             if (isWsl) {
-              retryProcess = await Process.start('wsl', ['bash', '-c', retryCmd]);
+              retryProcess = await Process.start('wsl', [
+                'bash',
+                '-c',
+                retryCmd,
+              ]);
             } else if (isWindowsNative) {
-              retryProcess = await Process.start('powershell', ['-Command', retryCmd]);
-            } else if (packageManager == 'brew' && adminPassword != null && adminPassword.isNotEmpty) {
+              retryProcess = await Process.start('powershell', [
+                '-Command',
+                retryCmd,
+              ]);
+            } else if (packageManager == 'brew' &&
+                adminPassword != null &&
+                adminPassword.isNotEmpty) {
               final tempDir = Directory.systemTemp;
-              final askpass = File('${tempDir.path}/.askpass_retry2_${DateTime.now().millisecondsSinceEpoch}.sh');
+              final askpass = File(
+                '${tempDir.path}/.askpass_retry2_${DateTime.now().millisecondsSinceEpoch}.sh',
+              );
               await askpass.writeAsString('#!/bin/bash\necho "$adminPassword"');
               await Process.run('chmod', ['700', askpass.path]);
               final env = Map<String, String>.from(Platform.environment);
               env['SUDO_ASKPASS'] = askpass.path;
-              retryProcess = await Process.start('bash', ['-c', retryCmd], environment: env);
-              Future.delayed(const Duration(minutes: 3), () async { try { if (await askpass.exists()) await askpass.delete(); } catch (_) {} });
-            } else if (adminPassword != null && adminPassword.isNotEmpty && retryCmd.contains('sudo')) {
-              final cmdWithoutSudo = retryCmd.replaceFirst(RegExp(r'sudo\s+(-\w+\s+)*'), '').trim();
-              retryProcess = await Process.start('bash', ['-c', 'echo "$adminPassword" | sudo -S bash -c "$cmdWithoutSudo"']);
+              retryProcess = await Process.start('bash', [
+                '-c',
+                retryCmd,
+              ], environment: env);
+              Future.delayed(const Duration(minutes: 3), () async {
+                try {
+                  if (await askpass.exists()) await askpass.delete();
+                } catch (_) {}
+              });
+            } else if (adminPassword != null &&
+                adminPassword.isNotEmpty &&
+                retryCmd.contains('sudo')) {
+              final cmdWithoutSudo = retryCmd
+                  .replaceFirst(RegExp(r'sudo\s+(-\w+\s+)*'), '')
+                  .trim();
+              retryProcess = await Process.start('bash', [
+                '-c',
+                'echo "$adminPassword" | sudo -S bash -c "$cmdWithoutSudo"',
+              ]);
             } else {
               retryProcess = await Process.start('bash', ['-c', retryCmd]);
             }
 
-            retryProcess.stdout.transform(utf8.decoder).listen((d) => print('${_timestamp()} [RETRY STDOUT] $d'));
+            retryProcess.stdout
+                .transform(utf8.decoder)
+                .listen((d) => print('${_timestamp()} [RETRY STDOUT] $d'));
             retryProcess.stderr.transform(utf8.decoder).listen((d) {
               print('${_timestamp()} [RETRY STDERR] $d');
               if (d.contains('sudo: timed out reading password') ||
@@ -1226,18 +1533,28 @@ Respond ONLY with valid JSON:
 
             int retryExit;
             try {
-              retryExit = await retryProcess.exitCode.timeout(const Duration(minutes: 3));
+              retryExit = await retryProcess.exitCode.timeout(
+                const Duration(minutes: 3),
+              );
             } on TimeoutException {
               await _killProcessTree(retryProcess);
               return false;
             }
 
             if (retryExit == 0) {
-              final verified = await checkToolExists(primaryTool, settings, llmService);
-              print('${_timestamp()} DEBUG: Post-retry verification: ${verified ? "SUCCESS" : "FAILED"}');
+              final verified = await checkToolExists(
+                primaryTool,
+                settings,
+                llmService,
+              );
+              print(
+                '${_timestamp()} DEBUG: Post-retry verification: ${verified ? "SUCCESS" : "FAILED"}',
+              );
               return verified;
             }
-            print('${_timestamp()} DEBUG: Alternative install also failed (exit $retryExit)');
+            print(
+              '${_timestamp()} DEBUG: Alternative install also failed (exit $retryExit)',
+            );
           }
         } catch (e) {
           print('${_timestamp()} DEBUG: LLM retry install error: $e');
@@ -1304,7 +1621,10 @@ Respond ONLY with valid JSON:
     // Pattern: "dcom did not match a category, filename, or directory"
     // Pattern: "No such script: dcom"
     final patterns = [
-      RegExp(r"Failed to open[^/]*/usr/share/nmap/scripts/([^\s\.]+)", caseSensitive: false),
+      RegExp(
+        r"Failed to open[^/]*/usr/share/nmap/scripts/([^\s\.]+)",
+        caseSensitive: false,
+      ),
       RegExp(r"(\S+)\s+did not match a category", caseSensitive: false),
       RegExp(r"No such script[:\s]+(\S+)", caseSensitive: false),
     ];
@@ -1325,15 +1645,20 @@ Respond ONLY with valid JSON:
     final outLower = output.toLowerCase();
     return (cmdLower.contains('nmap') && cmdLower.contains('-su')) &&
         (outLower.contains('requires root privileges') ||
-         outLower.contains('quitting!') ||
-         outLower.contains('must be root'));
+            outLower.contains('quitting!') ||
+            outLower.contains('must be root'));
   }
 
   /// Phase 5.1: Retry SNMP enumeration using non-root tools when nmap UDP scan
   /// fails due to privilege requirements.
-  static Future<Map<String, dynamic>?> _retrySnmpWithoutRoot(String originalCmd, bool elevated) async {
+  static Future<Map<String, dynamic>?> _retrySnmpWithoutRoot(
+    String originalCmd,
+    bool elevated,
+  ) async {
     // Extract target IP from original nmap command
-    final ipMatch = RegExp(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b').firstMatch(originalCmd);
+    final ipMatch = RegExp(
+      r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b',
+    ).firstMatch(originalCmd);
     if (ipMatch == null) return null;
     final target = ipMatch.group(1)!;
 
@@ -1346,8 +1671,10 @@ Respond ONLY with valid JSON:
 
     for (final cmd in fallbacks) {
       try {
-        final result = await executeCommand(cmd, elevated)
-            .timeout(const Duration(seconds: 20));
+        final result = await executeCommand(
+          cmd,
+          elevated,
+        ).timeout(const Duration(seconds: 20));
         final out = (result['output'] ?? '').toString();
         // Return first result that has actual SNMP data (not just empty or error)
         if ((result['exitCode'] as int? ?? -1) == 0 && out.length > 30) {
@@ -1360,7 +1687,14 @@ Respond ONLY with valid JSON:
     return null;
   }
 
-  static Future<Map<String, dynamic>> executeCommand(String command, bool requireApproval, {String? adminPassword, Future<String?> Function(String)? onApprovalNeeded}) async {
+  static Future<Map<String, dynamic>> executeCommand(
+    String command,
+    bool requireApproval, {
+    String? adminPassword,
+    Future<String?> Function(String)? onApprovalNeeded,
+    Map<String, String>? environment,
+    String Function(String)? redactOutput,
+  }) async {
     for (final pattern in _dangerousPatterns) {
       if (pattern.hasMatch(command)) {
         return {
@@ -1378,10 +1712,13 @@ Respond ONLY with valid JSON:
       for (final name in scriptNames) {
         if (_invalidNmapScripts.contains(name.toLowerCase()) ||
             _invalidNmapScripts.contains(name)) {
-          print('${_timestamp()} DEBUG: Skipping nmap command — script "$name" is known invalid');
+          print(
+            '${_timestamp()} DEBUG: Skipping nmap command — script "$name" is known invalid',
+          );
           return {
             'exitCode': 1,
-            'output': "SKIPPED: nmap script '$name' is known invalid. Use a different approach.",
+            'output':
+                "SKIPPED: nmap script '$name' is known invalid. Use a different approach.",
             'error': "Invalid nmap script: $name",
           };
         }
@@ -1414,14 +1751,20 @@ Respond ONLY with valid JSON:
       // like "timeout N bash -c 'sudo nmap ...'") automatically receives the
       // password via stdin without requiring a TTY.
       String execCommand = command;
-      if (adminPassword != null && adminPassword.isNotEmpty && execCommand.contains('sudo')) {
+      if (adminPassword != null &&
+          adminPassword.isNotEmpty &&
+          execCommand.contains('sudo')) {
         if (Platform.isLinux || Platform.isMacOS) {
           await _ensureSudoWrapper(adminPassword);
           // Prepend wrapper dir to PATH for this invocation.
           execCommand = 'export PATH=/tmp:\$PATH; $execCommand';
-        } else if (command.trim().startsWith('sudo') && !command.contains('sudo -S')) {
+        } else if (command.trim().startsWith('sudo') &&
+            !command.contains('sudo -S')) {
           // WSL / Windows fallback: inject password for top-level sudo only.
-          execCommand = command.replaceFirst('sudo', 'echo "$adminPassword" | sudo -S');
+          execCommand = command.replaceFirst(
+            'sudo',
+            'echo "$adminPassword" | sudo -S',
+          );
         }
       }
 
@@ -1431,7 +1774,8 @@ Respond ONLY with valid JSON:
       if (Platform.isMacOS) {
         execCommand = execCommand.replaceAllMapped(
           RegExp(r'\btimeout\s+(\d+(?:\.\d+)?)\s+'),
-          (m) => "perl -e 'alarm(${m.group(1)!.split('.').first}); exec(\@ARGV)' -- ",
+          (m) =>
+              "perl -e 'alarm(${m.group(1)!.split('.').first}); exec(\@ARGV)' -- ",
         );
       }
 
@@ -1439,13 +1783,20 @@ Respond ONLY with valid JSON:
 
       if (Platform.isWindows) {
         if (await isWslAvailable()) {
-          result = await _executeInWsl(execCommand);
+          result = await _executeInWsl(execCommand, redactOutput: redactOutput);
         } else {
           // Native Windows without WSL
-          result = await _executeInPowerShell(execCommand);
+          result = await _executeInPowerShell(
+            execCommand,
+            redactOutput: redactOutput,
+          );
         }
       } else if (Platform.isLinux || Platform.isMacOS) {
-        result = await _executeInShell(execCommand);
+        result = await _executeInShell(
+          execCommand,
+          environment: environment,
+          redactOutput: redactOutput,
+        );
       } else {
         return {
           'exitCode': -1,
@@ -1462,7 +1813,10 @@ Respond ONLY with valid JSON:
         // Phase 5.1: SNMP privilege fallback — if nmap UDP scan failed due to root requirement,
         // automatically retry with non-root SNMP tools
         if (_isSnmpRootFailure(command, combinedOutput)) {
-          final fallbackResult = await _retrySnmpWithoutRoot(command, requireApproval);
+          final fallbackResult = await _retrySnmpWithoutRoot(
+            command,
+            requireApproval,
+          );
           if (fallbackResult != null) return fallbackResult;
         }
       }
@@ -1473,11 +1827,7 @@ Respond ONLY with valid JSON:
         'error': result.error,
       };
     } catch (e) {
-      return {
-        'exitCode': -1,
-        'output': 'Error: $e',
-        'error': e.toString(),
-      };
+      return {'exitCode': -1, 'output': 'Error: $e', 'error': e.toString()};
     }
   }
 
@@ -1534,7 +1884,11 @@ Respond ONLY with valid JSON:
     final last = recentLines.last.trim();
     if (last.isEmpty) return false;
     int count = 0;
-    for (int i = recentLines.length - 1; i >= 0 && count < _repetitionThreshold; i--) {
+    for (
+      int i = recentLines.length - 1;
+      i >= 0 && count < _repetitionThreshold;
+      i--
+    ) {
       if (recentLines[i].trim() == last) {
         count++;
       } else {
@@ -1544,12 +1898,17 @@ Respond ONLY with valid JSON:
     return count >= _repetitionThreshold;
   }
 
-  static Future<CommandResult> _executeInWsl(String command) async {
+  static Future<CommandResult> _executeInWsl(
+    String command, {
+    String Function(String)? redactOutput,
+  }) async {
     Process? process;
     try {
-      process = await Process.start('wsl', ['bash', '-c', command],
-          workingDirectory: Directory.systemTemp.path)
-          .timeout(_commandTimeout);
+      process = await Process.start('wsl', [
+        'bash',
+        '-c',
+        command,
+      ], workingDirectory: Directory.systemTemp.path).timeout(_commandTimeout);
 
       final stdoutBuffer = StringBuffer();
       final stderrBuffer = StringBuffer();
@@ -1562,7 +1921,9 @@ Respond ONLY with valid JSON:
 
       process.stdout.transform(decoder).listen((data) {
         if (killed) return;
-        final sanitized = OutputSanitizer.sanitize(data);
+        final sanitized =
+            redactOutput?.call(OutputSanitizer.sanitize(data)) ??
+            OutputSanitizer.sanitize(data);
         totalBytes += sanitized.length;
         // Track recent lines for repetition detection
         final lines = sanitized.split('\n');
@@ -1582,7 +1943,8 @@ Respond ONLY with valid JSON:
         }
         if (_isRepetitiveOutput(recentLines)) {
           killed = true;
-          killReason = 'Repetitive output detected (${_repetitionThreshold}+ identical lines)';
+          killReason =
+              'Repetitive output detected (${_repetitionThreshold}+ identical lines)';
           _killProcessTree(process!);
           return;
         }
@@ -1592,7 +1954,9 @@ Respond ONLY with valid JSON:
 
       process.stderr.transform(decoder).listen((data) {
         if (killed) return;
-        final sanitized = OutputSanitizer.sanitize(data);
+        final sanitized =
+            redactOutput?.call(OutputSanitizer.sanitize(data)) ??
+            OutputSanitizer.sanitize(data);
         totalBytes += sanitized.length;
         if (totalBytes > _maxOutputBytes) {
           killed = true;
@@ -1606,7 +1970,8 @@ Respond ONLY with valid JSON:
             sanitized.contains('sudo: a password is required') ||
             sanitized.contains('[sudo] password for')) {
           killed = true;
-          killReason = 'sudo requested interactive password — ensure the command pipes the password via "sudo -S"';
+          killReason =
+              'sudo requested interactive password — ensure the command pipes the password via "sudo -S"';
           _killProcessTree(process!);
           return;
         }
@@ -1616,10 +1981,17 @@ Respond ONLY with valid JSON:
 
       final exitCode = await process.exitCode.timeout(_commandTimeout);
       if (killed) {
-        return CommandResult(-1, stdoutBuffer.toString(),
-            'KILLED: $killReason. The command was producing excessive or repetitive output and was terminated.');
+        return CommandResult(
+          -1,
+          stdoutBuffer.toString(),
+          'KILLED: $killReason. The command was producing excessive or repetitive output and was terminated.',
+        );
       }
-      return CommandResult(exitCode, stdoutBuffer.toString(), stderrBuffer.toString());
+      return CommandResult(
+        exitCode,
+        stdoutBuffer.toString(),
+        stderrBuffer.toString(),
+      );
     } on TimeoutException {
       if (process != null) await _killProcessTree(process);
       return CommandResult(-1, "", "Command timed out.");
@@ -1629,7 +2001,10 @@ Respond ONLY with valid JSON:
     }
   }
 
-  static Future<CommandResult> _executeInPowerShell(String command) async {
+  static Future<CommandResult> _executeInPowerShell(
+    String command, {
+    String Function(String)? redactOutput,
+  }) async {
     Process? process;
     try {
       process = await Process.start('powershell', ['-Command', command]);
@@ -1645,7 +2020,9 @@ Respond ONLY with valid JSON:
 
       process.stdout.transform(decoder).listen((data) {
         if (killed) return;
-        final sanitized = OutputSanitizer.sanitize(data);
+        final sanitized =
+            redactOutput?.call(OutputSanitizer.sanitize(data)) ??
+            OutputSanitizer.sanitize(data);
         totalBytes += sanitized.length;
         final lines = sanitized.split('\n');
         for (final line in lines) {
@@ -1664,7 +2041,8 @@ Respond ONLY with valid JSON:
         }
         if (_isRepetitiveOutput(recentLines)) {
           killed = true;
-          killReason = 'Repetitive output detected (${_repetitionThreshold}+ identical lines)';
+          killReason =
+              'Repetitive output detected (${_repetitionThreshold}+ identical lines)';
           _killProcessTree(process!);
           return;
         }
@@ -1674,7 +2052,9 @@ Respond ONLY with valid JSON:
 
       process.stderr.transform(decoder).listen((data) {
         if (killed) return;
-        final sanitized = OutputSanitizer.sanitize(data);
+        final sanitized =
+            redactOutput?.call(OutputSanitizer.sanitize(data)) ??
+            OutputSanitizer.sanitize(data);
         totalBytes += sanitized.length;
         if (totalBytes > _maxOutputBytes) {
           killed = true;
@@ -1687,7 +2067,8 @@ Respond ONLY with valid JSON:
             sanitized.contains('sudo: a password is required') ||
             sanitized.contains('[sudo] password for')) {
           killed = true;
-          killReason = 'sudo requested interactive password — ensure the command pipes the password via "sudo -S"';
+          killReason =
+              'sudo requested interactive password — ensure the command pipes the password via "sudo -S"';
           _killProcessTree(process!);
           return;
         }
@@ -1697,10 +2078,17 @@ Respond ONLY with valid JSON:
 
       final exitCode = await process.exitCode.timeout(_commandTimeout);
       if (killed) {
-        return CommandResult(-1, stdoutBuffer.toString(),
-            'KILLED: $killReason. The command was producing excessive or repetitive output and was terminated.');
+        return CommandResult(
+          -1,
+          stdoutBuffer.toString(),
+          'KILLED: $killReason. The command was producing excessive or repetitive output and was terminated.',
+        );
       }
-      return CommandResult(exitCode, stdoutBuffer.toString(), stderrBuffer.toString());
+      return CommandResult(
+        exitCode,
+        stdoutBuffer.toString(),
+        stderrBuffer.toString(),
+      );
     } on TimeoutException {
       if (process != null) await _killProcessTree(process);
       return CommandResult(-1, "", "Command timed out.");
@@ -1712,11 +2100,21 @@ Respond ONLY with valid JSON:
 
   // Output sanitization moved to OutputSanitizer class
 
-  static Future<CommandResult> _executeInShell(String command) async {
+  static Future<CommandResult> _executeInShell(
+    String command, {
+    Map<String, String>? environment,
+    String Function(String)? redactOutput,
+  }) async {
     Process? process;
     try {
-      process = await Process.start('/bin/bash', ['-c', command],
-          workingDirectory: Directory.systemTemp.path);
+      process = await Process.start(
+        '/bin/bash',
+        ['-c', command],
+        workingDirectory: Directory.systemTemp.path,
+        environment: environment == null
+            ? null
+            : {...Platform.environment, ...environment},
+      );
 
       final stdoutBuffer = StringBuffer();
       final stderrBuffer = StringBuffer();
@@ -1729,7 +2127,9 @@ Respond ONLY with valid JSON:
 
       process.stdout.transform(decoder).listen((data) {
         if (killed) return;
-        final sanitized = OutputSanitizer.sanitize(data);
+        final sanitized =
+            redactOutput?.call(OutputSanitizer.sanitize(data)) ??
+            OutputSanitizer.sanitize(data);
         totalBytes += sanitized.length;
         final lines = sanitized.split('\n');
         for (final line in lines) {
@@ -1748,7 +2148,8 @@ Respond ONLY with valid JSON:
         }
         if (_isRepetitiveOutput(recentLines)) {
           killed = true;
-          killReason = 'Repetitive output detected (${_repetitionThreshold}+ identical lines)';
+          killReason =
+              'Repetitive output detected (${_repetitionThreshold}+ identical lines)';
           _killProcessTree(process!);
           return;
         }
@@ -1758,7 +2159,9 @@ Respond ONLY with valid JSON:
 
       process.stderr.transform(decoder).listen((data) {
         if (killed) return;
-        final sanitized = OutputSanitizer.sanitize(data);
+        final sanitized =
+            redactOutput?.call(OutputSanitizer.sanitize(data)) ??
+            OutputSanitizer.sanitize(data);
         totalBytes += sanitized.length;
         if (totalBytes > _maxOutputBytes) {
           killed = true;
@@ -1772,10 +2175,17 @@ Respond ONLY with valid JSON:
 
       final exitCode = await process.exitCode.timeout(_commandTimeout);
       if (killed) {
-        return CommandResult(-1, stdoutBuffer.toString(),
-            'KILLED: $killReason. The command was producing excessive or repetitive output and was terminated.');
+        return CommandResult(
+          -1,
+          stdoutBuffer.toString(),
+          'KILLED: $killReason. The command was producing excessive or repetitive output and was terminated.',
+        );
       }
-      return CommandResult(exitCode, stdoutBuffer.toString(), stderrBuffer.toString());
+      return CommandResult(
+        exitCode,
+        stdoutBuffer.toString(),
+        stderrBuffer.toString(),
+      );
     } on TimeoutException {
       if (process != null) await _killProcessTree(process);
       return CommandResult(-1, "", "Command timed out.");
@@ -1787,8 +2197,10 @@ Respond ONLY with valid JSON:
 
   static Future<CommandResult> execute(String command) async {
     try {
-      final process = await Process.start('powershell.exe', ['-Command', command])
-          .timeout(const Duration(minutes: 5));
+      final process = await Process.start('powershell.exe', [
+        '-Command',
+        command,
+      ]).timeout(const Duration(minutes: 5));
       final stdout = await process.stdout.transform(utf8.decoder).join();
       final stderr = await process.stderr.transform(utf8.decoder).join();
       return CommandResult(await process.exitCode, stdout, stderr);

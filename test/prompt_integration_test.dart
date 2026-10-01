@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:penexecuter/services/prompt_templates.dart';
-import 'package:penexecuter/models/vulnerability.dart';
-import 'package:penexecuter/utils/json_parser.dart';
+import 'package:llmtary/services/prompt_templates.dart';
+import 'package:llmtary/models/vulnerability.dart';
+import 'package:llmtary/utils/json_parser.dart';
 
 /// Integration tests verifying that analysis prompts produce structurally valid
 /// output and that proofCommandExpectedOutput is parsed and stored correctly.
@@ -54,7 +54,9 @@ void main() {
 
   group('Prompt structure validation', () {
     test('businessLogicDeepDivePrompt produces non-empty prompt string', () {
-      final prompt = PromptTemplates.businessLogicDeepDivePrompt(sampleDeviceJson);
+      final prompt = PromptTemplates.businessLogicDeepDivePrompt(
+        sampleDeviceJson,
+      );
       expect(prompt, isNotEmpty);
       expect(prompt, contains('business logic'));
     });
@@ -65,19 +67,31 @@ void main() {
       expect(prompt, contains('wireless'));
     });
 
-    test('networkInfrastructureAttackPrompt produces non-empty prompt string', () {
-      final prompt = PromptTemplates.networkInfrastructureAttackPrompt(sampleDeviceJson);
-      expect(prompt, isNotEmpty);
-      expect(prompt, contains('network infrastructure'));
-    });
+    test(
+      'networkInfrastructureAttackPrompt produces non-empty prompt string',
+      () {
+        final prompt = PromptTemplates.networkInfrastructureAttackPrompt(
+          sampleDeviceJson,
+        );
+        expect(prompt, isNotEmpty);
+        expect(prompt, contains('network infrastructure'));
+      },
+    );
 
-    test('thickClientBinaryProtocolPrompt produces non-empty prompt string', () {
-      final prompt = PromptTemplates.thickClientBinaryProtocolPrompt(sampleDeviceJson);
-      expect(prompt, isNotEmpty);
-    });
+    test(
+      'thickClientBinaryProtocolPrompt produces non-empty prompt string',
+      () {
+        final prompt = PromptTemplates.thickClientBinaryProtocolPrompt(
+          sampleDeviceJson,
+        );
+        expect(prompt, isNotEmpty);
+      },
+    );
 
     test('supplyChainAnalysisPrompt produces non-empty prompt string', () {
-      final prompt = PromptTemplates.supplyChainAnalysisPrompt(sampleDeviceJson);
+      final prompt = PromptTemplates.supplyChainAnalysisPrompt(
+        sampleDeviceJson,
+      );
       expect(prompt, isNotEmpty);
       expect(prompt, contains('supply chain'));
     });
@@ -122,25 +136,28 @@ void main() {
       expect(vuln.proofCommandExpectedOutput, equals('root:x:0:0'));
     });
 
-    test('Vulnerability toMap/fromMap round-trips proofCommandExpectedOutput', () {
-      final vuln = Vulnerability(
-        problem: 'Test',
-        description: 'Test desc',
-        severity: 'HIGH',
-        confidence: 'MEDIUM',
-        evidence: 'test evidence',
-        recommendation: 'fix it',
-        vulnerabilityType: 'RCE',
-        businessRisk: 'high risk',
-        proofCommand: 'curl http://target/test',
-        proofCommandExpectedOutput: 'uid=0(root)',
-      );
+    test(
+      'Vulnerability toMap/fromMap round-trips proofCommandExpectedOutput',
+      () {
+        final vuln = Vulnerability(
+          problem: 'Test',
+          description: 'Test desc',
+          severity: 'HIGH',
+          confidence: 'MEDIUM',
+          evidence: 'test evidence',
+          recommendation: 'fix it',
+          vulnerabilityType: 'RCE',
+          businessRisk: 'high risk',
+          proofCommand: 'curl http://target/test',
+          proofCommandExpectedOutput: 'uid=0(root)',
+        );
 
-      final map = vuln.toMap();
-      expect(map['proofCommandExpectedOutput'], equals('uid=0(root)'));
+        final map = vuln.toMap();
+        expect(map['proofCommandExpectedOutput'], equals('uid=0(root)'));
 
-      final restored = Vulnerability.fromMap(map);
-      expect(restored.proofCommandExpectedOutput, equals('uid=0(root)'));
-    });
+        final restored = Vulnerability.fromMap(map);
+        expect(restored.proofCommandExpectedOutput, equals('uid=0(root)'));
+      },
+    );
   });
 }

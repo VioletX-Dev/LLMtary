@@ -21,21 +21,33 @@ class BackgroundProcessManager {
 
   /// Start a background process by [name]. If a process with this name is
   /// already running it is returned without restarting.
-  Future<void> start(String name, String command, {
+  Future<void> start(
+    String name,
+    String command, {
     String? workingDirectory,
     int maxBufferLines = 500,
+    Map<String, String>? environment,
+    String Function(String)? redactOutput,
   }) async {
     if (_processes.containsKey(name) && (_processes[name]!.isAlive)) return;
 
     final parts = _splitCommand(command);
     if (parts.isEmpty) return;
 
-    final process = await Process.start(
-      parts.first,
-      parts.sublist(1),
-      workingDirectory: workingDirectory,
-      runInShell: Platform.isWindows,
-    );
+    final process = environment == null
+        ? await Process.start(
+            parts.first,
+            parts.sublist(1),
+            workingDirectory: workingDirectory,
+            runInShell: Platform.isWindows,
+          )
+        : await Process.start(
+            Platform.isWindows ? 'cmd.exe' : '/bin/bash',
+            Platform.isWindows ? ['/C', command] : ['-c', command],
+            workingDirectory: workingDirectory,
+            environment: {...Platform.environment, ...environment},
+            runInShell: false,
+          );
 
     final managed = _ManagedProcess(
       name: name,
@@ -48,12 +60,18 @@ class BackgroundProcessManager {
     process.stdout
         .transform(utf8.decoder)
         .transform(const LineSplitter())
-        .listen((line) => managed._appendLine(line));
+        .listen(
+          (line) => managed._appendLine(redactOutput?.call(line) ?? line),
+        );
     // Accumulate stderr (many pentest tools write interesting output to stderr)
     process.stderr
         .transform(utf8.decoder)
         .transform(const LineSplitter())
-        .listen((line) => managed._appendLine('[err] $line'));
+        .listen(
+          (line) => managed._appendLine(
+            redactOutput?.call('[err] $line') ?? '[err] $line',
+          ),
+        );
   }
 
   /// Stop the process identified by [name] and remove it.
@@ -64,7 +82,9 @@ class BackgroundProcessManager {
       p.process.kill(ProcessSignal.sigterm);
       await p.process.exitCode.timeout(const Duration(seconds: 5));
     } catch (_) {
-      try { p.process.kill(ProcessSignal.sigkill); } catch (_) {}
+      try {
+        p.process.kill(ProcessSignal.sigkill);
+      } catch (_) {}
     }
   }
 
@@ -97,8 +117,10 @@ class BackgroundProcessManager {
       (_processes[name]?._buffer ?? []).join('\n');
 
   /// All currently running process names.
-  List<String> get activeNames =>
-      _processes.entries.where((e) => e.value.isAlive).map((e) => e.key).toList();
+  List<String> get activeNames => _processes.entries
+      .where((e) => e.value.isAlive)
+      .map((e) => e.key)
+      .toList();
 
   // ---------------------------------------------------------------------------
   // Listener tool detection — classify a command as requiring background mode
@@ -106,9 +128,18 @@ class BackgroundProcessManager {
 
   /// Well-known listener tools that must run as background processes.
   static const _listenerTools = {
-    'responder', 'ntlmrelayx', 'mitm6', 'impacket-ntlmrelayx',
-    'impacket-smbserver', 'smbserver', 'bettercap', 'ettercap',
-    'mitmproxy', 'dnschef', 'fakedns', 'evilginx',
+    'responder',
+    'ntlmrelayx',
+    'mitm6',
+    'impacket-ntlmrelayx',
+    'impacket-smbserver',
+    'smbserver',
+    'bettercap',
+    'ettercap',
+    'mitmproxy',
+    'dnschef',
+    'fakedns',
+    'evilginx',
   };
 
   /// Returns true if [command] contains a known listener tool that should be

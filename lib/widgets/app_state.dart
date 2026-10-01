@@ -7,6 +7,7 @@ import '../models/llm_provider.dart';
 import '../models/target.dart';
 import '../models/project.dart';
 import '../models/credential.dart';
+import '../models/authenticated_access.dart';
 import '../database/database_helper.dart';
 import '../constants/app_constants.dart';
 import '../services/storage_service.dart';
@@ -34,6 +35,7 @@ class AppState extends ChangeNotifier {
   final List<DiscoveredCredential> _credentials = [];
   final Set<String> _credentialFingerprints = {};
   final List<Map<String, String>> _confirmedArtifacts = [];
+
   /// Tracks which target addresses have already received an authenticated
   /// re-analysis pass so we don't re-run it on every subsequent execution.
   final Set<String> _authenticatedReanalysisTargets = {};
@@ -49,6 +51,7 @@ class AppState extends ChangeNotifier {
   bool _scanComplete = false;
   bool _analysisComplete = false;
   Project? _currentProject;
+  AuthenticatedAccess? _authenticatedAccess;
 
   // Token accumulators
   int _tokensSentTotal = 0;
@@ -70,7 +73,8 @@ class AppState extends ChangeNotifier {
   List<PromptLog> get promptLogs => _promptLogs;
   List<DebugLog> get debugLogs => _debugLogs;
   List<DiscoveredCredential> get credentials => List.unmodifiable(_credentials);
-  List<Map<String, String>> get confirmedArtifacts => List.unmodifiable(_confirmedArtifacts);
+  List<Map<String, String>> get confirmedArtifacts =>
+      List.unmodifiable(_confirmedArtifacts);
   String get executionStatus => _executionStatus;
   String? get adminPassword => _adminPassword;
   String? get pendingCommand => _pendingCommand;
@@ -81,7 +85,8 @@ class AppState extends ChangeNotifier {
   Target? get selectedTarget => _selectedTarget;
   bool get scanComplete => _scanComplete;
   bool get analysisComplete => _analysisComplete;
-  bool get sessionPasswordEntered => _adminPassword != null && _adminPassword!.isNotEmpty;
+  bool get sessionPasswordEntered =>
+      _adminPassword != null && _adminPassword!.isNotEmpty;
   // Tab navigation
   int _activeTab = 0;
 
@@ -94,15 +99,40 @@ class AppState extends ChangeNotifier {
 
   bool get tab1Unlocked => true;
   // Unlock VULN/HUNT as soon as first recon completes (not all)
-  bool get tab2Unlocked => scanComplete || _targets.any((t) => t.status == TargetStatus.complete);
+  bool get tab2Unlocked =>
+      scanComplete || _targets.any((t) => t.status == TargetStatus.complete);
   // Unlock PROOF/EXPLOIT as soon as first analysis completes (not all)
-  bool get tab3Unlocked => analysisComplete || _targets.any((t) => t.analysisComplete);
+  bool get tab3Unlocked =>
+      analysisComplete || _targets.any((t) => t.analysisComplete);
   // Unlock RESULT/REPORT as soon as first confirmed vuln found, or all tested, or legacy flags
-  bool get tab4Unlocked => hasResults || analysisComplete
-      || _vulnerabilities.any((v) => v.status == VulnerabilityStatus.confirmed)
-      || (_vulnerabilities.isNotEmpty && _vulnerabilities.every((v) => v.status != VulnerabilityStatus.pending));
+  bool get tab4Unlocked =>
+      hasResults ||
+      analysisComplete ||
+      _vulnerabilities.any((v) => v.status == VulnerabilityStatus.confirmed) ||
+      (_vulnerabilities.isNotEmpty &&
+          _vulnerabilities.every(
+            (v) => v.status != VulnerabilityStatus.pending,
+          ));
 
   Project? get currentProject => _currentProject;
+  AuthenticatedAccess? get authenticatedAccess => _authenticatedAccess;
+
+  void setAuthenticatedAccess(AuthenticatedAccess? access) {
+    _authenticatedAccess = access;
+    notifyListeners();
+  }
+
+  AuthenticatedAccess? authenticatedAccessForTarget(String target) {
+    final access = _authenticatedAccess;
+    if (access == null) return null;
+    final host = Uri.tryParse(access.targetUrl)?.host.toLowerCase() ?? '';
+    final normalizedTarget = target.toLowerCase();
+    return host == normalizedTarget ||
+            access.targetUrl.toLowerCase().contains(normalizedTarget)
+        ? access
+        : null;
+  }
+
   String get currentProjectName => _currentProject?.name ?? 'default';
   int get _projectId => _currentProject?.id ?? 0;
   int get _activeTargetId => _selectedTarget?.id ?? 0;
@@ -154,13 +184,14 @@ class AppState extends ChangeNotifier {
     }
 
     return (inputTokens / 1000000.0 * inputPricePerMTok) +
-           (outputTokens / 1000000.0 * outputPricePerMTok);
+        (outputTokens / 1000000.0 * outputPricePerMTok);
   }
 
   /// Formatted cost string for display (e.g., "~\$12.45" or "Local (free)")
   String get estimatedCostDisplay {
     final provider = _llmSettings.provider;
-    if (provider == LLMProvider.ollama || provider == LLMProvider.lmStudio ||
+    if (provider == LLMProvider.ollama ||
+        provider == LLMProvider.lmStudio ||
         provider == LLMProvider.none) {
       return 'Local (free)';
     }
@@ -175,18 +206,36 @@ class AppState extends ChangeNotifier {
   /// Estimated tokens received across all phases
   int get estimatedTokensReceived => (_tokensReceivedTotal / 4).round();
 
-  void recordTokenUsage(String phase, int sent, int received, {int targetId = 0}) {
+  void recordTokenUsage(
+    String phase,
+    int sent,
+    int received, {
+    int targetId = 0,
+  }) {
     _tokensSentTotal += sent;
     _tokensReceivedTotal += received;
     switch (phase) {
-      case 'recon':   _tokensSentRecon += sent;   _tokensReceivedRecon += received;
-      case 'analyze': _tokensSentAnalyze += sent; _tokensReceivedAnalyze += received;
-      case 'execute': _tokensSentExecute += sent; _tokensReceivedExecute += received;
-      case 'report':  _tokensSentReport += sent;  _tokensReceivedReport += received;
+      case 'recon':
+        _tokensSentRecon += sent;
+        _tokensReceivedRecon += received;
+      case 'analyze':
+        _tokensSentAnalyze += sent;
+        _tokensReceivedAnalyze += received;
+      case 'execute':
+        _tokensSentExecute += sent;
+        _tokensReceivedExecute += received;
+      case 'report':
+        _tokensSentReport += sent;
+        _tokensReceivedReport += received;
     }
     if (_projectId > 0) {
       DatabaseHelper.insertTokenUsage(
-        _projectId, targetId > 0 ? targetId : _activeTargetId, phase, sent, received);
+        _projectId,
+        targetId > 0 ? targetId : _activeTargetId,
+        phase,
+        sent,
+        received,
+      );
     }
     notifyListeners();
   }
@@ -213,14 +262,24 @@ class AppState extends ChangeNotifier {
     if (_credentials.isEmpty) return '';
     final verified = _credentials.where((c) => c.isVerified).toList();
     final inferred = _credentials.where((c) => !c.isVerified).toList();
-    final buf = StringBuffer('## CREDENTIAL BANK — previously discovered credentials for this project:\n');
+    final buf = StringBuffer(
+      '## CREDENTIAL BANK — previously discovered credentials for this project:\n',
+    );
     if (verified.isNotEmpty) {
-      buf.writeln('### Confirmed credentials (seen in command output — high confidence):');
-      for (final c in verified) { buf.writeln('  - ${c.toPromptLine()}'); }
+      buf.writeln(
+        '### Confirmed credentials (seen in command output — high confidence):',
+      );
+      for (final c in verified) {
+        buf.writeln('  - ${c.toPromptLine()}');
+      }
     }
     if (inferred.isNotEmpty) {
-      buf.writeln('### Inferred credentials (LLM-suggested, not yet verified — try but do not assume valid):');
-      for (final c in inferred) { buf.writeln('  - ${c.toPromptLine()}'); }
+      buf.writeln(
+        '### Inferred credentials (LLM-suggested, not yet verified — try but do not assume valid):',
+      );
+      for (final c in inferred) {
+        buf.writeln('  - ${c.toPromptLine()}');
+      }
     }
     buf.writeln('Try confirmed credentials against this target first.');
     return buf.toString();
@@ -229,7 +288,9 @@ class AppState extends ChangeNotifier {
   /// Record a confirmed vulnerability's artifacts for cross-vuln chaining.
   void addConfirmedArtifact(Vulnerability vuln) {
     if (vuln.status != VulnerabilityStatus.confirmed) return;
-    final evidence = vuln.statusReason.isNotEmpty ? vuln.statusReason : vuln.evidence;
+    final evidence = vuln.statusReason.isNotEmpty
+        ? vuln.statusReason
+        : vuln.evidence;
     _confirmedArtifacts.add({
       'problem': vuln.problem,
       'type': vuln.vulnerabilityType,
@@ -261,10 +322,16 @@ class AppState extends ChangeNotifier {
   /// Build a prompt block describing confirmed findings on [targetAddress]
   /// that subsequent vulnerability tests can chain from.
   String confirmedFindingsPromptBlock(String targetAddress) {
-    final relevant = _confirmedArtifacts.where((a) => a['target'] == targetAddress).toList();
+    final relevant = _confirmedArtifacts
+        .where((a) => a['target'] == targetAddress)
+        .toList();
     if (relevant.isEmpty) return '';
-    final lines = relevant.map((a) =>
-        '  - [${a['type']}] ${a['problem']}: ${a['evidence']}\n    Access surface: ${a['accessSurface'] ?? ''}').join('\n');
+    final lines = relevant
+        .map(
+          (a) =>
+              '  - [${a['type']}] ${a['problem']}: ${a['evidence']}\n    Access surface: ${a['accessSurface'] ?? ''}',
+        )
+        .join('\n');
     return '''
 ## CONFIRMED FINDINGS ON THIS TARGET (chain from these):
 $lines
@@ -282,8 +349,7 @@ NOTE: Use these as stepping stones. If RCE is confirmed, enumerate further (user
   }
 
   /// Returns true if there are any verified credentials relevant for re-analysis.
-  bool get hasVerifiedCredentials =>
-      _credentials.any((c) => c.isVerified);
+  bool get hasVerifiedCredentials => _credentials.any((c) => c.isVerified);
 
   /// Build a credential context block for authenticated re-analysis prompts.
   /// Only includes verified credentials (seen in command output).
@@ -326,6 +392,7 @@ Raise confidence to HIGH for any finding where these credentials directly enable
     await _closeDebugLogFile();
     _createDebugLog = false;
     _currentProject = project;
+    _authenticatedAccess = null;
     _adminPassword = null;
     _targets = [];
     _selectedTarget = null;
@@ -363,18 +430,27 @@ Raise confidence to HIGH for any finding where these credentials directly enable
 
     // Verify JSON files still exist; only exclude targets that haven't been analyzed yet
     for (final t in _targets) {
-      if (t.status == TargetStatus.complete && t.jsonFilePath.isNotEmpty && !t.analysisComplete) {
+      if (t.status == TargetStatus.complete &&
+          t.jsonFilePath.isNotEmpty &&
+          !t.analysisComplete) {
         if (!await File(t.jsonFilePath).exists()) {
           t.status = TargetStatus.excluded;
           await DatabaseHelper.updateTarget(t);
-          addDebugLog('Warning: JSON file missing for ${t.address}, marked excluded');
+          addDebugLog(
+            'Warning: JSON file missing for ${t.address}, marked excluded',
+          );
         }
       }
     }
 
     // Derive flags after targets are loaded
-    _scanComplete = project.scanComplete || _targets.any((t) => t.status == TargetStatus.complete || t.analysisComplete);
-    _analysisComplete = project.analysisComplete || _targets.any((t) => t.analysisComplete);
+    _scanComplete =
+        project.scanComplete ||
+        _targets.any(
+          (t) => t.status == TargetStatus.complete || t.analysisComplete,
+        );
+    _analysisComplete =
+        project.analysisComplete || _targets.any((t) => t.analysisComplete);
     _hasResults = project.hasResults;
 
     _vulnerabilities = await DatabaseHelper.getVulnerabilities(project.id!);
@@ -383,12 +459,17 @@ Raise confidence to HIGH for any finding where these credentials directly enable
     // Recompute hasResults from actual vulnerability data in case the stored
     // flag is stale (e.g. after import or if execution completed without
     // setting the flag).
-    if (!_hasResults && _vulnerabilities.any((v) => v.status == VulnerabilityStatus.confirmed)) {
+    if (!_hasResults &&
+        _vulnerabilities.any(
+          (v) => v.status == VulnerabilityStatus.confirmed,
+        )) {
       _hasResults = true;
       DatabaseHelper.updateProjectFlags(_projectId, hasResults: true);
     }
 
-    final savedCreds = await DatabaseHelper.getCredentialsByProject(project.id!);
+    final savedCreds = await DatabaseHelper.getCredentialsByProject(
+      project.id!,
+    );
     _credentials.clear();
     _credentialFingerprints.clear();
     for (final c in savedCreds) {
@@ -399,20 +480,24 @@ Raise confidence to HIGH for any finding where these credentials directly enable
     final promptMaps = await DatabaseHelper.getPromptLogs(project.id!);
     _promptLogs.clear();
     for (final m in promptMaps) {
-      _promptLogs.add(PromptLog(
-        m['prompt'] as String,
-        m['response'] as String,
-        DateTime.parse(m['timestamp'] as String),
-      ));
+      _promptLogs.add(
+        PromptLog(
+          m['prompt'] as String,
+          m['response'] as String,
+          DateTime.parse(m['timestamp'] as String),
+        ),
+      );
     }
 
     final debugMaps = await DatabaseHelper.getDebugLogs(project.id!);
     _debugLogs.clear();
     for (final m in debugMaps) {
-      _debugLogs.add(DebugLog(
-        m['message'] as String,
-        DateTime.parse(m['timestamp'] as String),
-      ));
+      _debugLogs.add(
+        DebugLog(
+          m['message'] as String,
+          DateTime.parse(m['timestamp'] as String),
+        ),
+      );
     }
 
     // Load persisted token totals
@@ -515,10 +600,26 @@ Raise confidence to HIGH for any finding where these credentials directly enable
     _targets.removeWhere((t) => t.address == target.address);
     if (target.id != null) {
       final db = await DatabaseHelper.database;
-      await db.delete('vulnerabilities', where: 'targetId = ?', whereArgs: [target.id]);
-      await db.delete('command_logs', where: 'targetId = ?', whereArgs: [target.id]);
-      await db.delete('prompt_logs', where: 'targetId = ?', whereArgs: [target.id]);
-      await db.delete('debug_logs', where: 'targetId = ?', whereArgs: [target.id]);
+      await db.delete(
+        'vulnerabilities',
+        where: 'targetId = ?',
+        whereArgs: [target.id],
+      );
+      await db.delete(
+        'command_logs',
+        where: 'targetId = ?',
+        whereArgs: [target.id],
+      );
+      await db.delete(
+        'prompt_logs',
+        where: 'targetId = ?',
+        whereArgs: [target.id],
+      );
+      await db.delete(
+        'debug_logs',
+        where: 'targetId = ?',
+        whereArgs: [target.id],
+      );
       await db.delete('targets', where: 'id = ?', whereArgs: [target.id]);
     }
     if (_selectedTarget?.address == target.address) _selectedTarget = null;
@@ -580,7 +681,9 @@ Raise confidence to HIGH for any finding where these credentials directly enable
       final basePath = await StorageService.getBasePath();
       final logFile = File('$basePath/debug.log');
       _debugLogSink = logFile.openWrite(mode: FileMode.writeOnly);
-      _debugLogSink!.writeln('[${DateTime.now().toIso8601String()}] Debug log started');
+      _debugLogSink!.writeln(
+        '[${DateTime.now().toIso8601String()}] Debug log started',
+      );
     } catch (e) {
       print('Failed to open debug log file: $e');
       _debugLogSink = null;
@@ -597,9 +700,15 @@ Raise confidence to HIGH for any finding where these credentials directly enable
 
   Future<void> initialize() async {
     await loadLLMSettings();
-    final approvalSetting = await DatabaseHelper.getSetting(SettingsKeys.requireApproval);
-    _requireApproval = approvalSetting == null ? true : approvalSetting == 'true';
-    final customPath = await DatabaseHelper.getSetting(SettingsKeys.storageBasePath);
+    final approvalSetting = await DatabaseHelper.getSetting(
+      SettingsKeys.requireApproval,
+    );
+    _requireApproval = approvalSetting == null
+        ? true
+        : approvalSetting == 'true';
+    final customPath = await DatabaseHelper.getSetting(
+      SettingsKeys.storageBasePath,
+    );
     if (customPath != null && customPath.isNotEmpty) {
       StorageService.setCustomBasePath(customPath);
     }
@@ -608,7 +717,9 @@ Raise confidence to HIGH for any finding where these credentials directly enable
 
   Future<void> loadVulnerabilities() async {
     if (_currentProject?.id == null) return;
-    _vulnerabilities = await DatabaseHelper.getVulnerabilities(_currentProject!.id!);
+    _vulnerabilities = await DatabaseHelper.getVulnerabilities(
+      _currentProject!.id!,
+    );
     notifyListeners();
   }
 
@@ -621,14 +732,20 @@ Raise confidence to HIGH for any finding where these credentials directly enable
   Future<void> loadLLMSettings() async {
     final currentProvider = await DatabaseHelper.getSetting('current_provider');
     if (currentProvider != null) {
-      final providerSettings = await DatabaseHelper.getProviderSettings(currentProvider);
+      final providerSettings = await DatabaseHelper.getProviderSettings(
+        currentProvider,
+      );
       if (providerSettings != null) {
         _llmSettings = LLMSettings(
-          provider: LLMProvider.values.firstWhere((e) => e.name == currentProvider, orElse: () => LLMProvider.none),
+          provider: LLMProvider.values.firstWhere(
+            (e) => e.name == currentProvider,
+            orElse: () => LLMProvider.none,
+          ),
           baseUrl: providerSettings['baseUrl'] as String?,
           apiKey: providerSettings['apiKey'] as String?,
           modelName: providerSettings['modelName'] as String? ?? '',
-          temperature: (providerSettings['temperature'] as num?)?.toDouble() ?? 0.22,
+          temperature:
+              (providerSettings['temperature'] as num?)?.toDouble() ?? 0.22,
           maxTokens: providerSettings['maxTokens'] as int? ?? 32000,
           timeoutSeconds: providerSettings['timeoutSeconds'] as int? ?? 180,
         );
@@ -639,7 +756,10 @@ Raise confidence to HIGH for any finding where these credentials directly enable
 
   Future<void> updateLLMSettings(LLMSettings settings) async {
     _llmSettings = settings;
-    await DatabaseHelper.saveSetting('current_provider', settings.provider.name);
+    await DatabaseHelper.saveSetting(
+      'current_provider',
+      settings.provider.name,
+    );
     await DatabaseHelper.saveProviderSettings(settings.provider.name, {
       'baseUrl': settings.baseUrl,
       'apiKey': settings.apiKey,
@@ -654,7 +774,12 @@ Raise confidence to HIGH for any finding where these credentials directly enable
   void addPromptLog(String prompt, String response) {
     _promptLogs.add(PromptLog(prompt, response, DateTime.now()));
     if (_projectId > 0) {
-      DatabaseHelper.insertPromptLog(_projectId, _activeTargetId, prompt, response);
+      DatabaseHelper.insertPromptLog(
+        _projectId,
+        _activeTargetId,
+        prompt,
+        response,
+      );
     }
     if (_createDebugLog && _debugLogSink != null) {
       final ts = '[${DateTime.now().toIso8601String().substring(11, 23)}]';
@@ -677,7 +802,9 @@ Raise confidence to HIGH for any finding where these credentials directly enable
       DatabaseHelper.insertDebugLog(_projectId, _activeTargetId, message);
     }
     if (_createDebugLog && _debugLogSink != null) {
-      try { _debugLogSink!.writeln('$ts $message'); } catch (_) {}
+      try {
+        _debugLogSink!.writeln('$ts $message');
+      } catch (_) {}
     }
     notifyListeners();
   }

@@ -1,17 +1,23 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:penexecuter/utils/device_utils.dart';
+import 'package:llmtary/utils/device_utils.dart';
 
 void main() {
   group('DeviceUtils.classifyTarget', () {
     // RFC-1918 internal ranges
     test('10.x.x.x is internal', () {
       expect(DeviceUtils.classifyTarget('10.0.0.1'), TargetScope.internal);
-      expect(DeviceUtils.classifyTarget('10.255.255.255'), TargetScope.internal);
+      expect(
+        DeviceUtils.classifyTarget('10.255.255.255'),
+        TargetScope.internal,
+      );
     });
 
     test('172.16-31.x.x is internal', () {
       expect(DeviceUtils.classifyTarget('172.16.0.1'), TargetScope.internal);
-      expect(DeviceUtils.classifyTarget('172.31.255.255'), TargetScope.internal);
+      expect(
+        DeviceUtils.classifyTarget('172.31.255.255'),
+        TargetScope.internal,
+      );
     });
 
     test('172.15.x.x and 172.32.x.x are external (outside /12)', () {
@@ -21,7 +27,10 @@ void main() {
 
     test('192.168.x.x is internal', () {
       expect(DeviceUtils.classifyTarget('192.168.0.1'), TargetScope.internal);
-      expect(DeviceUtils.classifyTarget('192.168.255.255'), TargetScope.internal);
+      expect(
+        DeviceUtils.classifyTarget('192.168.255.255'),
+        TargetScope.internal,
+      );
     });
 
     // Loopback and link-local
@@ -63,8 +72,14 @@ void main() {
     // FQDNs (with dots) — external
     test('FQDN is external', () {
       expect(DeviceUtils.classifyTarget('example.com'), TargetScope.external);
-      expect(DeviceUtils.classifyTarget('www.target.org'), TargetScope.external);
-      expect(DeviceUtils.classifyTarget('api.internal.example.com'), TargetScope.external);
+      expect(
+        DeviceUtils.classifyTarget('www.target.org'),
+        TargetScope.external,
+      );
+      expect(
+        DeviceUtils.classifyTarget('api.internal.example.com'),
+        TargetScope.external,
+      );
     });
 
     // Edge cases: leading/trailing whitespace, mixed case
@@ -88,7 +103,10 @@ void main() {
     });
 
     test('100.127.255.254 is internal (last address in CGNAT range)', () {
-      expect(DeviceUtils.classifyTarget('100.127.255.254'), TargetScope.internal);
+      expect(
+        DeviceUtils.classifyTarget('100.127.255.254'),
+        TargetScope.internal,
+      );
     });
 
     test('100.128.0.1 is external (just outside CGNAT range)', () {
@@ -96,7 +114,10 @@ void main() {
     });
 
     test('100.63.255.255 is external (just below CGNAT range)', () {
-      expect(DeviceUtils.classifyTarget('100.63.255.255'), TargetScope.external);
+      expect(
+        DeviceUtils.classifyTarget('100.63.255.255'),
+        TargetScope.external,
+      );
     });
 
     // IPv6 ULA (fc00::/7) — covers fc00::/8 and fd00::/8
@@ -109,7 +130,10 @@ void main() {
     });
 
     test('fdab:cdef:1234::1 IPv6 ULA is internal', () {
-      expect(DeviceUtils.classifyTarget('fdab:cdef:1234::1'), TargetScope.internal);
+      expect(
+        DeviceUtils.classifyTarget('fdab:cdef:1234::1'),
+        TargetScope.internal,
+      );
     });
 
     test('2001:db8::1 is external (global unicast)', () {
