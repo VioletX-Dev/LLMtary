@@ -1,20 +1,27 @@
 import '../models/vulnerability.dart';
 import '../utils/device_utils.dart';
+import 'web_application_testing_skill.dart';
 
 /// Centralized prompt templates and knowledge bases for the exploit executor.
 ///
 /// Separates the large prompt text from orchestration logic to keep
 /// exploit_executor.dart focused on its core loop.
 class PromptTemplates {
+  /// Shared operating guidance for authorized web application assessments.
+  static String _webApplicationSkill() => WebApplicationTestingSkill.prompt;
+
   /// Current version of the prompt template library.
   /// Increment this when making changes to any prompt text.
-  static const int promptTemplateVersion = 2;
+  static const int promptTemplateVersion = 3;
 
   /// Changelog:
+  /// v3 (2026-10-01): Added the Strix-aligned authorized web application testing skill
+  ///                  to all core web, API/auth, and logic/header prompts.
   /// v2 (2026-03-29): Added AJP/Ghostcat prompt, JetDirect/PJL prompt,
   ///                  fixed RPC enumeration commands, strengthened AD gating.
   /// v1 (initial):    Original prompt set.
   static const String promptVersionChangelog = '''
+v3 (2026-10-01): Added the authorized web application testing skill to web prompts.
 v2 (2026-03-29): Added ajpGhostcatPrompt, jetDirectPjlPrompt. Fixed dcom script reference.
 v1 (initial): Original prompt templates.
 ''';
@@ -38,6 +45,8 @@ v1 (initial): Original prompt templates.
     final extraScope = isExternal ? _externalTargetScopeFull() : '';
     return '''
 You are an expert web-application penetration tester. Analyze the device data below and identify EXPLOITABLE web-application vulnerabilities — focus on injection, authentication, access control, and CMS-specific attack surfaces.
+
+${_webApplicationSkill()}
 
 ## DEVICE DATA:
 $deviceJson$extraScope
@@ -294,6 +303,8 @@ Severity: CRITICAL when cloud metadata is reachable; HIGH for internal service a
     return '''
 You are an expert web-application penetration tester. Analyze the device data below and identify EXPLOITABLE vulnerabilities in API surfaces and authentication protocols.
 
+${_webApplicationSkill()}
+
 ## DEVICE DATA:
 $deviceJson$extraScope$graphqlContext
 
@@ -470,6 +481,8 @@ OAuth/OpenID Connect indicators are present. Prioritize and expand coverage of:
     final extraScope = isExternal ? _externalTargetScopeCompact() : '';
     return '''
 You are an expert web-application penetration tester. Analyze the device data below and identify EXPLOITABLE vulnerabilities in business logic, application state, and HTTP-level attack surfaces.
+
+${_webApplicationSkill()}
 
 ## DEVICE DATA:
 $deviceJson$extraScope$oauthBoost

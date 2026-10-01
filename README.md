@@ -147,6 +147,22 @@ When a confirmed finding grants high-value access (RCE, command injection, authe
 - Secret values are represented by placeholders in prompts and materialized only immediately before command execution so they are not written to prompt, command, debug, or report logs.
 - MFA must be completed manually by the operator. The optional MFA checkbox/note only records session context; LLMtary does not perform or bypass MFA. Do not put secrets in the MFA note.
 
+### Authorized Web Application Testing
+
+LLMtary includes a Strix-aligned web-application testing skill injected into the core web, API/authentication, and business-logic LLM prompts. It is adapted from the public Strix agent guidance at `usestrix/strix/AGENTS.md` and `docs.strix.ai`.
+
+The workflow requires:
+
+- Explicit authorization and an engagement scope before active requests.
+- Asset and route mapping before deeper testing.
+- Evidence-backed HTTP/browser testing with conservative request rates.
+- Separate authorized sessions for anonymous, low-privilege, peer-user, and administrator roles when available.
+- Manual operator completion of MFA; no MFA bypass or automation.
+- Validation with a control request before a finding is marked confirmed.
+- Redacted reproduction steps, evidence, severity, confidence, remediation, and a tested/not-tested coverage ledger.
+
+LLMtary does not claim coverage for browser-only flows, authenticated roles, API schemas, or other capabilities that were unavailable during the engagement. Use the existing scope dialog, command approval mode, authenticated-access session boundary, and report generator together for a complete assessment.
+
 ### Project Management & Reporting
 
 - Multiple named projects, each with multiple targets
