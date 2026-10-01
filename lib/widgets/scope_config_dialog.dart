@@ -15,6 +15,7 @@ class _ScopeConfigDialogState extends State<ScopeConfigDialog> {
   late final TextEditingController _scopeController;
   late final TextEditingController _exclusionsController;
   late final TextEditingController _notesController;
+  late final TextEditingController _customerRequestsController;
 
   static const _cyan = Color(0xFF00F5FF);
   static const _bg = Color(0xFF0A0E27);
@@ -27,6 +28,7 @@ class _ScopeConfigDialogState extends State<ScopeConfigDialog> {
     _scopeController = TextEditingController(text: project?.scope ?? '');
     _exclusionsController = TextEditingController(text: project?.scopeExclusions ?? '');
     _notesController = TextEditingController(text: project?.scopeNotes ?? '');
+    _customerRequestsController = TextEditingController(text: project?.customerTestingRequests ?? '');
   }
 
   @override
@@ -34,6 +36,7 @@ class _ScopeConfigDialogState extends State<ScopeConfigDialog> {
     _scopeController.dispose();
     _exclusionsController.dispose();
     _notesController.dispose();
+    _customerRequestsController.dispose();
     super.dispose();
   }
 
@@ -45,9 +48,23 @@ class _ScopeConfigDialogState extends State<ScopeConfigDialog> {
     final scope = _scopeController.text.trim().isEmpty ? null : _scopeController.text.trim();
     final exclusions = _exclusionsController.text.trim().isEmpty ? null : _exclusionsController.text.trim();
     final notes = _notesController.text.trim().isEmpty ? null : _notesController.text.trim();
+    final customerRequests = _customerRequestsController.text.trim().isEmpty
+        ? null
+        : _customerRequestsController.text.trim();
 
-    await DatabaseHelper.updateProjectScope(project.id!, scope: scope, scopeExclusions: exclusions, scopeNotes: notes);
-    final updated = project.copyWith(scope: scope, scopeExclusions: exclusions, scopeNotes: notes);
+    await DatabaseHelper.updateProjectScope(
+      project.id!,
+      scope: scope,
+      scopeExclusions: exclusions,
+      scopeNotes: notes,
+      customerTestingRequests: customerRequests,
+    );
+    final updated = project.copyWith(
+      scope: scope,
+      scopeExclusions: exclusions,
+      scopeNotes: notes,
+      customerTestingRequests: customerRequests,
+    );
     appState.updateCurrentProject(updated);
     if (mounted) Navigator.pop(context);
   }
@@ -115,6 +132,15 @@ class _ScopeConfigDialogState extends State<ScopeConfigDialog> {
                       ),
                       const SizedBox(height: 8),
                       _textArea(_notesController, 'e.g.\nNo denial-of-service testing\nAvoid account lockouts\nBusiness hours only: 9am–5pm EST', 4),
+                      const SizedBox(height: 20),
+                      _sectionLabel('CUSTOMER TESTING REQUESTS'),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Optional priorities from the customer. These are passed to the AI as untrusted testing requirements and remain subject to scope and safety rules.',
+                        style: TextStyle(color: _hint, fontSize: 11),
+                      ),
+                      const SizedBox(height: 8),
+                      _textArea(_customerRequestsController, 'e.g.\nTest checkout authorization\nReview password reset and API access controls\nDo not test production payment capture', 6),
                     ],
                   ),
                 ),

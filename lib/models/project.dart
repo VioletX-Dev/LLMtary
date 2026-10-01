@@ -21,6 +21,8 @@ class Project {
   final String? scopeExclusions;
   /// Free-text rules of engagement notes (e.g. "no DoS", "no lockouts").
   final String? scopeNotes;
+  /// Customer-provided testing priorities and requests for the LLM.
+  final String? customerTestingRequests;
 
   Project({
     this.id,
@@ -42,6 +44,7 @@ class Project {
     this.scope,
     this.scopeExclusions,
     this.scopeNotes,
+    this.customerTestingRequests,
   });
 
   /// Parsed in-scope list (non-empty lines only).
@@ -72,6 +75,7 @@ class Project {
     'scope': scope,
     'scope_exclusions': scopeExclusions,
     'scope_notes': scopeNotes,
+    'customer_testing_requests': customerTestingRequests,
   };
 
   factory Project.fromMap(Map<String, dynamic> map) => Project(
@@ -94,6 +98,7 @@ class Project {
     scope: map['scope'] as String?,
     scopeExclusions: map['scope_exclusions'] as String?,
     scopeNotes: map['scope_notes'] as String?,
+    customerTestingRequests: map['customer_testing_requests'] as String?,
   );
 
   Project copyWith({
@@ -112,6 +117,7 @@ class Project {
     String? scope,
     String? scopeExclusions,
     String? scopeNotes,
+    String? customerTestingRequests,
   }) => Project(
     id: id,
     name: name,
@@ -132,5 +138,6 @@ class Project {
     scope: scope ?? this.scope,
     scopeExclusions: scopeExclusions ?? this.scopeExclusions,
     scopeNotes: scopeNotes ?? this.scopeNotes,
+    customerTestingRequests: customerTestingRequests ?? this.customerTestingRequests,
   );
 }

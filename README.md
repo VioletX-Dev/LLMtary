@@ -160,6 +160,8 @@ The workflow requires:
 - Manual operator completion of MFA; no MFA bypass or automation.
 - Validation with a control request before a finding is marked confirmed.
 - Redacted reproduction steps, evidence, severity, confidence, remediation, and a tested/not-tested coverage ledger.
+- Customer testing requests can be entered in the **CUSTOMER TESTING REQUESTS** section of the engagement scope dialog. They are stored with the project and passed to web-analysis prompts as bounded, untrusted requirements.
+- Customer requests prioritize testing but cannot override authorization, exclusions, rules of engagement, credential boundaries, or safe-testing limits. Unsafe or unavailable requests are recorded as not tested.
 
 LLMtary does not claim coverage for browser-only flows, authenticated roles, API schemas, or other capabilities that were unavailable during the engagement. Use the existing scope dialog, command approval mode, authenticated-access session boundary, and report generator together for a complete assessment.
 

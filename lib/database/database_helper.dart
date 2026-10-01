@@ -29,7 +29,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 21,
+      version: 22,
       singleInstance: true,
       onConfigure: (db) async {
         await db.execute('PRAGMA busy_timeout=5000');
@@ -106,7 +106,8 @@ class DatabaseHelper {
             conclusion TEXT,
             scope TEXT,
             scope_exclusions TEXT,
-            scope_notes TEXT
+            scope_notes TEXT,
+            customer_testing_requests TEXT
           )
         ''');
 
@@ -433,6 +434,9 @@ class DatabaseHelper {
           // mismatch caused by positional vulnerabilityIndex changing across sort orders.
           try { await db.execute('ALTER TABLE command_logs ADD COLUMN vulnerabilityId INTEGER'); } catch (_) {}
         }
+        if (oldVersion < 22) {
+          try { await db.execute('ALTER TABLE projects ADD COLUMN customer_testing_requests TEXT'); } catch (_) {}
+        }
       },
     );
     final version = await db.getVersion();
@@ -617,6 +621,7 @@ class DatabaseHelper {
     String? scope,
     String? scopeExclusions,
     String? scopeNotes,
+    String? customerTestingRequests,
   }) async {
     final db = await database;
     // Use explicit null sentinel: pass empty string to clear, null to skip
@@ -624,6 +629,7 @@ class DatabaseHelper {
       'scope': scope,
       'scope_exclusions': scopeExclusions,
       'scope_notes': scopeNotes,
+      'customer_testing_requests': customerTestingRequests,
     };
     await db.update('projects', updates, where: 'id = ?', whereArgs: [projectId]);
   }

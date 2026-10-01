@@ -580,6 +580,7 @@ class _MainScreenState extends State<MainScreen> {
                     appState.setExecutionStatus('[${target.address}] $phase'),
                 scopeList: appState.currentProject?.scopeList ?? [],
                 exclusionList: appState.currentProject?.exclusionList ?? [],
+                customerTestingRequests: appState.currentProject?.customerTestingRequests,
               );
 
               appState.addDebugLog(
@@ -728,6 +729,7 @@ class _MainScreenState extends State<MainScreen> {
             appState.setExecutionStatus('[${target.address}] $phase'),
         scopeList: appState.currentProject?.scopeList ?? [],
         exclusionList: appState.currentProject?.exclusionList ?? [],
+        customerTestingRequests: appState.currentProject?.customerTestingRequests,
       );
       for (final v in vulns) {
         v.targetAddress = target.address;
