@@ -1654,6 +1654,7 @@ Respond ONLY with valid JSON:
   static Future<Map<String, dynamic>?> _retrySnmpWithoutRoot(
     String originalCmd,
     bool elevated,
+    int? maxCapturedOutputChars,
   ) async {
     // Extract target IP from original nmap command
     final ipMatch = RegExp(
@@ -1674,6 +1675,7 @@ Respond ONLY with valid JSON:
         final result = await executeCommand(
           cmd,
           elevated,
+          maxCapturedOutputChars: maxCapturedOutputChars,
         ).timeout(const Duration(seconds: 20));
         final out = (result['output'] ?? '').toString();
         // Return first result that has actual SNMP data (not just empty or error)
@@ -1694,6 +1696,7 @@ Respond ONLY with valid JSON:
     Future<String?> Function(String)? onApprovalNeeded,
     Map<String, String>? environment,
     String Function(String)? redactOutput,
+    int? maxCapturedOutputChars,
   }) async {
     for (final pattern in _dangerousPatterns) {
       if (pattern.hasMatch(command)) {
@@ -1783,12 +1786,17 @@ Respond ONLY with valid JSON:
 
       if (Platform.isWindows) {
         if (await isWslAvailable()) {
-          result = await _executeInWsl(execCommand, redactOutput: redactOutput);
+          result = await _executeInWsl(
+            execCommand,
+            redactOutput: redactOutput,
+            maxCapturedOutputChars: maxCapturedOutputChars,
+          );
         } else {
           // Native Windows without WSL
           result = await _executeInPowerShell(
             execCommand,
             redactOutput: redactOutput,
+            maxCapturedOutputChars: maxCapturedOutputChars,
           );
         }
       } else if (Platform.isLinux || Platform.isMacOS) {
@@ -1796,6 +1804,7 @@ Respond ONLY with valid JSON:
           execCommand,
           environment: environment,
           redactOutput: redactOutput,
+          maxCapturedOutputChars: maxCapturedOutputChars,
         );
       } else {
         return {
@@ -1816,6 +1825,7 @@ Respond ONLY with valid JSON:
           final fallbackResult = await _retrySnmpWithoutRoot(
             command,
             requireApproval,
+            maxCapturedOutputChars,
           );
           if (fallbackResult != null) return fallbackResult;
         }
@@ -1833,6 +1843,30 @@ Respond ONLY with valid JSON:
 
   /// Max combined stdout+stderr size before we kill the process (25 MB).
   static const int _maxOutputBytes = 25 * 1024 * 1024;
+
+  static String _captureOutputChunk(
+    StringBuffer buffer,
+    String data,
+    int? maxCapturedOutputChars,
+  ) {
+    if (maxCapturedOutputChars == null) {
+      buffer.write(data);
+      return data;
+    }
+    final remaining = maxCapturedOutputChars - buffer.length;
+    if (remaining <= 0) return '';
+    final captured = data.length <= remaining
+        ? data
+        : data.substring(0, remaining);
+    buffer.write(captured);
+    return captured;
+  }
+
+  static String _capturedOutput(StringBuffer buffer, bool truncated) {
+    final output = buffer.toString();
+    if (!truncated) return output;
+    return '$output\n...[OUTPUT TRUNCATED: excess text omitted to protect UI responsiveness]...';
+  }
 
   /// Detect repetitive/useless output: if the last N lines are identical,
   /// the command is stuck in a loop producing no new information.
@@ -1901,6 +1935,7 @@ Respond ONLY with valid JSON:
   static Future<CommandResult> _executeInWsl(
     String command, {
     String Function(String)? redactOutput,
+    int? maxCapturedOutputChars,
   }) async {
     Process? process;
     try {
@@ -1914,6 +1949,8 @@ Respond ONLY with valid JSON:
       final stderrBuffer = StringBuffer();
       int totalBytes = 0;
       bool killed = false;
+      bool stdoutTruncated = false;
+      bool stderrTruncated = false;
       String? killReason;
       final recentLines = <String>[];
 
@@ -1948,8 +1985,15 @@ Respond ONLY with valid JSON:
           _killProcessTree(process!);
           return;
         }
-        print('${_timestamp()} [STDOUT] $sanitized');
-        stdoutBuffer.write(sanitized);
+        final captured = _captureOutputChunk(
+          stdoutBuffer,
+          sanitized,
+          maxCapturedOutputChars,
+        );
+        stdoutTruncated = stdoutTruncated || captured.length < sanitized.length;
+        if (captured.isNotEmpty) {
+          print('${_timestamp()} [STDOUT] $captured');
+        }
       });
 
       process.stderr.transform(decoder).listen((data) {
@@ -1975,22 +2019,29 @@ Respond ONLY with valid JSON:
           _killProcessTree(process!);
           return;
         }
-        print('${_timestamp()} [STDERR] $sanitized');
-        stderrBuffer.write(sanitized);
+        final captured = _captureOutputChunk(
+          stderrBuffer,
+          sanitized,
+          maxCapturedOutputChars,
+        );
+        stderrTruncated = stderrTruncated || captured.length < sanitized.length;
+        if (captured.isNotEmpty) {
+          print('${_timestamp()} [STDERR] $captured');
+        }
       });
 
       final exitCode = await process.exitCode.timeout(_commandTimeout);
       if (killed) {
         return CommandResult(
           -1,
-          stdoutBuffer.toString(),
+          _capturedOutput(stdoutBuffer, stdoutTruncated),
           'KILLED: $killReason. The command was producing excessive or repetitive output and was terminated.',
         );
       }
       return CommandResult(
         exitCode,
-        stdoutBuffer.toString(),
-        stderrBuffer.toString(),
+        _capturedOutput(stdoutBuffer, stdoutTruncated),
+        _capturedOutput(stderrBuffer, stderrTruncated),
       );
     } on TimeoutException {
       if (process != null) await _killProcessTree(process);
@@ -2004,6 +2055,7 @@ Respond ONLY with valid JSON:
   static Future<CommandResult> _executeInPowerShell(
     String command, {
     String Function(String)? redactOutput,
+    int? maxCapturedOutputChars,
   }) async {
     Process? process;
     try {
@@ -2013,6 +2065,8 @@ Respond ONLY with valid JSON:
       final stderrBuffer = StringBuffer();
       int totalBytes = 0;
       bool killed = false;
+      bool stdoutTruncated = false;
+      bool stderrTruncated = false;
       String? killReason;
       final recentLines = <String>[];
 
@@ -2046,8 +2100,15 @@ Respond ONLY with valid JSON:
           _killProcessTree(process!);
           return;
         }
-        print('${_timestamp()} [STDOUT] $sanitized');
-        stdoutBuffer.write(sanitized);
+        final captured = _captureOutputChunk(
+          stdoutBuffer,
+          sanitized,
+          maxCapturedOutputChars,
+        );
+        stdoutTruncated = stdoutTruncated || captured.length < sanitized.length;
+        if (captured.isNotEmpty) {
+          print('${_timestamp()} [STDOUT] $captured');
+        }
       });
 
       process.stderr.transform(decoder).listen((data) {
@@ -2072,22 +2133,29 @@ Respond ONLY with valid JSON:
           _killProcessTree(process!);
           return;
         }
-        print('${_timestamp()} [STDERR] $sanitized');
-        stderrBuffer.write(sanitized);
+        final captured = _captureOutputChunk(
+          stderrBuffer,
+          sanitized,
+          maxCapturedOutputChars,
+        );
+        stderrTruncated = stderrTruncated || captured.length < sanitized.length;
+        if (captured.isNotEmpty) {
+          print('${_timestamp()} [STDERR] $captured');
+        }
       });
 
       final exitCode = await process.exitCode.timeout(_commandTimeout);
       if (killed) {
         return CommandResult(
           -1,
-          stdoutBuffer.toString(),
+          _capturedOutput(stdoutBuffer, stdoutTruncated),
           'KILLED: $killReason. The command was producing excessive or repetitive output and was terminated.',
         );
       }
       return CommandResult(
         exitCode,
-        stdoutBuffer.toString(),
-        stderrBuffer.toString(),
+        _capturedOutput(stdoutBuffer, stdoutTruncated),
+        _capturedOutput(stderrBuffer, stderrTruncated),
       );
     } on TimeoutException {
       if (process != null) await _killProcessTree(process);
@@ -2104,6 +2172,7 @@ Respond ONLY with valid JSON:
     String command, {
     Map<String, String>? environment,
     String Function(String)? redactOutput,
+    int? maxCapturedOutputChars,
   }) async {
     Process? process;
     try {
@@ -2120,6 +2189,8 @@ Respond ONLY with valid JSON:
       final stderrBuffer = StringBuffer();
       int totalBytes = 0;
       bool killed = false;
+      bool stdoutTruncated = false;
+      bool stderrTruncated = false;
       String? killReason;
       final recentLines = <String>[];
 
@@ -2153,8 +2224,15 @@ Respond ONLY with valid JSON:
           _killProcessTree(process!);
           return;
         }
-        print('${_timestamp()} [STDOUT] $sanitized');
-        stdoutBuffer.write(sanitized);
+        final captured = _captureOutputChunk(
+          stdoutBuffer,
+          sanitized,
+          maxCapturedOutputChars,
+        );
+        stdoutTruncated = stdoutTruncated || captured.length < sanitized.length;
+        if (captured.isNotEmpty) {
+          print('${_timestamp()} [STDOUT] $captured');
+        }
       });
 
       process.stderr.transform(decoder).listen((data) {
@@ -2169,22 +2247,29 @@ Respond ONLY with valid JSON:
           _killProcessTree(process!);
           return;
         }
-        print('${_timestamp()} [STDERR] $sanitized');
-        stderrBuffer.write(sanitized);
+        final captured = _captureOutputChunk(
+          stderrBuffer,
+          sanitized,
+          maxCapturedOutputChars,
+        );
+        stderrTruncated = stderrTruncated || captured.length < sanitized.length;
+        if (captured.isNotEmpty) {
+          print('${_timestamp()} [STDERR] $captured');
+        }
       });
 
       final exitCode = await process.exitCode.timeout(_commandTimeout);
       if (killed) {
         return CommandResult(
           -1,
-          stdoutBuffer.toString(),
+          _capturedOutput(stdoutBuffer, stdoutTruncated),
           'KILLED: $killReason. The command was producing excessive or repetitive output and was terminated.',
         );
       }
       return CommandResult(
         exitCode,
-        stdoutBuffer.toString(),
-        stderrBuffer.toString(),
+        _capturedOutput(stdoutBuffer, stdoutTruncated),
+        _capturedOutput(stderrBuffer, stderrTruncated),
       );
     } on TimeoutException {
       if (process != null) await _killProcessTree(process);

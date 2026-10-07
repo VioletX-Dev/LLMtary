@@ -249,4 +249,32 @@ _dmarc.example.com. TXT "v=DMARC1; p=reject; rua=mailto:dmarc@example.com"
       expect(targets, ['example.com']);
     });
   });
+
+  group('Recon command output bounds', () {
+    test(
+      'prepareCommandOutput caps oversized output and preserves evidence',
+      () {
+        final oversized = '${'A' * 300000}TAIL-EVIDENCE';
+
+        final bounded = ReconService.prepareCommandOutput(oversized);
+
+        expect(
+          bounded.length,
+          lessThanOrEqualTo(ReconService.maxParsedOutputChars),
+        );
+        expect(bounded, startsWith('A' * 100));
+        expect(bounded, contains('OUTPUT TRUNCATED'));
+        expect(bounded, endsWith('TAIL-EVIDENCE'));
+      },
+    );
+
+    test(
+      'detectMissingTool ignores giant lines and finds bounded error lines',
+      () {
+        final output = '${'A' * 300000}\ncurl: command not found';
+
+        expect(ReconService.detectMissingTool(output), 'curl');
+      },
+    );
+  });
 }

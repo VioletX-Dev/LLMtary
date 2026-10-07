@@ -237,6 +237,46 @@ String _buildWindowedHistory(List<_HistoryEntry> entries, int windowSize) {
 }
 
 class ReconService {
+  /// Maximum command-output text retained for parsing, persistence, and UI.
+  /// Full tool output should be written to an engagement artifact file.
+  static const int maxParsedOutputChars = 128 * 1024;
+
+  /// Preserve representative head/tail evidence without allowing a very large
+  /// tool response to monopolize the Dart UI isolate.
+  static String prepareCommandOutput(String output) {
+    if (output.length <= maxParsedOutputChars) {
+      return output.trim();
+    }
+    final marker =
+        '\n\n...[OUTPUT TRUNCATED: original ${output.length} chars; excess text omitted to protect UI responsiveness]...\n\n';
+    final retained = maxParsedOutputChars - marker.length;
+    final headLength = (retained * 3) ~/ 4;
+    final tailLength = retained - headLength;
+    return '${output.substring(0, headLength)}$marker${output.substring(output.length - tailLength)}'
+        .trim();
+  }
+
+  /// Detect a missing executable from bounded, line-oriented error output.
+  /// Very long minified lines are skipped to prevent regex backtracking stalls.
+  static String? detectMissingTool(String output) {
+    final pattern = RegExp(
+      r"^'?([A-Za-z0-9._+-]+)'? is not recognized|(?:^|\s)([A-Za-z0-9._+-]+): command not found|(?:^|\s)([A-Za-z0-9._+-]+): not found",
+      caseSensitive: false,
+    );
+    final boundedOutput = prepareCommandOutput(output);
+    for (final line in const LineSplitter().convert(boundedOutput)) {
+      if (line.length > 4096) {
+        continue;
+      }
+      final match = pattern.firstMatch(line);
+      if (match != null) {
+        return (match.group(1) ?? match.group(2) ?? match.group(3))
+            ?.toLowerCase();
+      }
+    }
+    return null;
+  }
+
   /// Sliding window size: full detail for last N history entries.
   static const _historyWindowSize = 8;
 
@@ -792,6 +832,7 @@ Do NOT propose another port scan variant. Instead:
           requireApproval,
           adminPassword: adminPassword,
           onApprovalNeeded: onApprovalNeeded,
+          maxCapturedOutputChars: maxParsedOutputChars,
         ).timeout(const Duration(minutes: 30), onTimeout: () {
           return {'output': 'Command timed out after 30 minutes', 'exitCode': -1};
         });
@@ -821,7 +862,7 @@ Do NOT propose another port scan variant. Instead:
         continue;
       }
 
-      final output = (result['output'] as String? ?? '').trim();
+      final output = prepareCommandOutput(result['output'] as String? ?? '');
       final exitCode = result['exitCode'] ?? -1;
 
       // Persist to DB now that we have the output
@@ -843,12 +884,10 @@ Do NOT propose another port scan variant. Instead:
       await DatabaseHelper.insertCommandLog(log);
       onCommandExecuted?.call(log.command, log.output);
 
-      // Detect unavailable tools from output
-      final notFoundMatch = RegExp(r"'?(\S+)'? is not recognized|(\S+): command not found|(\S+): not found")
-          .firstMatch(output);
-      if (notFoundMatch != null) {
-        final missingTool = (notFoundMatch.group(1) ?? notFoundMatch.group(2) ?? notFoundMatch.group(3) ?? '').toLowerCase();
-        if (missingTool.isNotEmpty) unavailableTools.add(missingTool);
+      // Detect unavailable tools without running an unbounded regex over minified output.
+      final missingTool = detectMissingTool(output);
+      if (missingTool != null) {
+        unavailableTools.add(missingTool);
       }
 
       // Track DNS/connectivity failures so the LLM is forced to conclude when the host is unreachable.
@@ -2532,10 +2571,11 @@ Respond ONLY with valid JSON.''';
           cmd, requireApproval,
           adminPassword: adminPassword,
           onApprovalNeeded: onApprovalNeeded,
+          maxCapturedOutputChars: maxParsedOutputChars,
         ).timeout(const Duration(minutes: 30), onTimeout: () {
           return {'output': 'Command timed out after 30 minutes', 'exitCode': -1};
         });
-        final output = (result['output'] as String? ?? '').trim();
+        final output = prepareCommandOutput(result['output'] as String? ?? '');
         final exitCode = (result['exitCode'] as int?) ?? -1;
         executedCommands.add(cmd);
         commandsRun.add(cmd);
@@ -2827,10 +2867,11 @@ Respond ONLY with valid JSON.''';
           cmd, requireApproval,
           adminPassword: adminPassword,
           onApprovalNeeded: onApprovalNeeded,
+          maxCapturedOutputChars: maxParsedOutputChars,
         ).timeout(const Duration(minutes: 15), onTimeout: () {
           return {'output': 'Command timed out after 15 minutes', 'exitCode': -1};
         });
-        final output = (result['output'] as String? ?? '').trim();
+        final output = prepareCommandOutput(result['output'] as String? ?? '');
         final exitCode = (result['exitCode'] as int?) ?? -1;
         executedCommands.add(cmd);
         if (projectId > 0 && targetId > 0) {
