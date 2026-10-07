@@ -82,6 +82,32 @@ class LLMService {
 
   LLMService({this.onPromptResponse, this.enableDebugLogging = false});
 
+  /// Builds an OpenAI Chat Completions payload with model-compatible fields.
+  static Map<String, dynamic> buildChatGPTRequestBody({
+    required String modelName,
+    required List<Map<String, String>> messages,
+    required double temperature,
+    required int maxTokens,
+  }) {
+    final normalizedModel = modelName.trim().toLowerCase();
+    final isReasoningModel = RegExp(r'^(gpt-5|o[1-9])(?:[-.]|$)').hasMatch(normalizedModel);
+    final body = <String, dynamic>{
+      'model': modelName,
+      'messages': messages,
+      'store': false,
+    };
+    if (isReasoningModel) {
+      body['max_completion_tokens'] = maxTokens;
+    } else {
+      body['temperature'] = temperature;
+      body['max_tokens'] = maxTokens;
+    }
+    if (normalizedModel.contains('gpt-4o') || normalizedModel.contains('gpt-4-turbo')) {
+      body['response_format'] = {'type': 'json_object'};
+    }
+    return body;
+  }
+
   /// Returns a `[HH:MM:SS.mmm]` timestamp string for console output.
   static String _ts() => '[${DateTime.now().toIso8601String().substring(11, 23)}]';
 
@@ -393,16 +419,12 @@ class LLMService {
 
   /// ChatGPT: send full conversation message list.
   Future<String> _sendChatGPTMessages(LLMSettings settings, List<Map<String, String>> messages, Duration timeout, {void Function(int, int)? onTokensUsed}) async {
-    final body = <String, dynamic>{
-      'model': settings.modelName,
-      'messages': messages,
-      'temperature': settings.temperature,
-      'max_tokens': settings.maxTokens,
-      'store': false,
-    };
-    if (settings.modelName.contains('gpt-4o') || settings.modelName.contains('gpt-4-turbo')) {
-      body['response_format'] = {'type': 'json_object'};
-    }
+    final body = buildChatGPTRequestBody(
+      modelName: settings.modelName,
+      messages: messages,
+      temperature: settings.temperature,
+      maxTokens: settings.maxTokens,
+    );
     final response = await _sendHttpPost(
       'https://api.openai.com/v1/chat/completions',
       {'Content-Type': 'application/json', 'Authorization': 'Bearer ${settings.apiKey ?? ''}'},
@@ -577,18 +599,12 @@ class LLMService {
   }
 
   Future<String> _sendChatGPT(LLMSettings settings, String message, Duration timeout, String? systemPrompt, {void Function(int, int)? onTokensUsed}) async {
-    final body = <String, dynamic>{
-      'model': settings.modelName,
-      'messages': _buildChatMessages(message, systemPrompt),
-      'temperature': settings.temperature,
-      'max_tokens': settings.maxTokens,
-      'store': false,
-    };
-
-    // Enable structured outputs for supported models
-    if (settings.modelName.contains('gpt-4o') || settings.modelName.contains('gpt-4-turbo')) {
-      body['response_format'] = {'type': 'json_object'};
-    }
+    final body = buildChatGPTRequestBody(
+      modelName: settings.modelName,
+      messages: _buildChatMessages(message, systemPrompt),
+      temperature: settings.temperature,
+      maxTokens: settings.maxTokens,
+    );
 
     final response = await _sendHttpPost(
       'https://api.openai.com/v1/chat/completions',
