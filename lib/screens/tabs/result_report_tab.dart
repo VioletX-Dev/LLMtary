@@ -8,8 +8,12 @@ import '../../widgets/app_state.dart';
 import '../../widgets/stats_bar.dart';
 import '../../database/database_helper.dart';
 import '../../models/command_log.dart';
+import '../../models/evidence_artifact.dart';
+import '../../models/report_evidence.dart';
 import '../../services/report_generator.dart';
 import '../../services/report_content_service.dart';
+import '../../services/evidence_package_builder.dart';
+import '../../services/evidence_storage_service.dart';
 import '../../utils/file_dialog.dart';
 
 class ResultReportTab extends StatefulWidget {
@@ -33,6 +37,14 @@ class _ResultReportTabState extends State<ResultReportTab> {
       _format,
       _confirmedOnly,
       onSavingChanged: (v) { if (mounted) setState(() => _savingReport = v); },
+    );
+  }
+
+  Future<void> _onEvidencePackage() async {
+    await _formKey2.currentState?.doGenerateEvidencePackage(
+      onSavingChanged: (value) {
+        if (mounted) setState(() => _savingReport = value);
+      },
     );
   }
 
@@ -118,6 +130,17 @@ class _ResultReportTabState extends State<ResultReportTab> {
                 ),
               ),
             ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: appState.hasResults && !_savingReport
+                  ? _onEvidencePackage
+                  : null,
+              icon: const Icon(Icons.folder_zip_outlined, size: 16),
+              label: const Text('Download Evidence Package'),
+            ),
+          ),
         ],
       ),
     );
@@ -275,6 +298,15 @@ class _InlineReportFormState extends State<_InlineReportForm> {
       final commandLogs = updatedProject.id != null
           ? await DatabaseHelper.getCommandLogs(updatedProject.id!)
           : <CommandLog>[];
+      final evidenceArtifacts = updatedProject.id != null
+          ? await DatabaseHelper.getProjectEvidence(updatedProject.id!)
+          : const <EvidenceArtifact>[];
+      final visualEvidence = format == 'csv'
+          ? const <ReportEvidence>[]
+          : await EvidenceStorageService.loadReportEvidence(
+              project: updatedProject,
+              artifacts: evidenceArtifacts,
+            );
 
       String? attackNarrative;
       if (format != 'csv') {
@@ -285,8 +317,8 @@ class _InlineReportFormState extends State<_InlineReportForm> {
       }
 
       final content = switch (format) {
-        'html' => ReportGenerator.generateHtml(project: updatedProject, targets: widget.appState.targets, vulnerabilities: widget.appState.vulnerabilities, credentials: widget.appState.credentials.toList(), commandLogs: commandLogs, scope: widget.appState.projectScope, llmSettings: widget.appState.llmSettings, startDate: _startDate, endDate: _endDate, attackNarrative: attackNarrative, confirmedOnly: confirmedOnly),
-        'md'   => ReportGenerator.generateMarkdown(project: updatedProject, targets: widget.appState.targets, vulnerabilities: widget.appState.vulnerabilities, credentials: widget.appState.credentials.toList(), commandLogs: commandLogs, scope: widget.appState.projectScope, llmSettings: widget.appState.llmSettings, startDate: _startDate, endDate: _endDate, attackNarrative: attackNarrative, confirmedOnly: confirmedOnly),
+        'html' => ReportGenerator.generateHtml(project: updatedProject, targets: widget.appState.targets, vulnerabilities: widget.appState.vulnerabilities, credentials: widget.appState.credentials.toList(), commandLogs: commandLogs, scope: widget.appState.projectScope, llmSettings: widget.appState.llmSettings, startDate: _startDate, endDate: _endDate, attackNarrative: attackNarrative, confirmedOnly: confirmedOnly, visualEvidence: visualEvidence),
+        'md'   => ReportGenerator.generateMarkdown(project: updatedProject, targets: widget.appState.targets, vulnerabilities: widget.appState.vulnerabilities, credentials: widget.appState.credentials.toList(), commandLogs: commandLogs, scope: widget.appState.projectScope, llmSettings: widget.appState.llmSettings, startDate: _startDate, endDate: _endDate, attackNarrative: attackNarrative, confirmedOnly: confirmedOnly, visualEvidence: visualEvidence),
         'csv'  => ReportGenerator.generateCsv(vulnerabilities: widget.appState.vulnerabilities, commandLogs: commandLogs, confirmedOnly: false),
         _      => '',
       };
@@ -295,6 +327,94 @@ class _InlineReportFormState extends State<_InlineReportForm> {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Report saved')));
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Report generation failed: $e')));
+    } finally {
+      onSavingChanged(false);
+    }
+  }
+
+  Future<void> doGenerateEvidencePackage({
+    required void Function(bool) onSavingChanged,
+  }) async {
+    if (!_formKey.currentState!.validate()) return;
+    final project = widget.appState.currentProject;
+    if (project?.id == null) return;
+    final artifacts = await DatabaseHelper.getProjectEvidence(project!.id!);
+    if (artifacts.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Attach visual evidence before exporting a package.')),
+        );
+      }
+      return;
+    }
+
+    final slug = _titleCtrl.text.trim()
+        .replaceAll(RegExp(r'[^a-zA-Z0-9]+'), '_')
+        .replaceAll(RegExp(r'^_+|_+$'), '');
+    final path = await FileDialog.saveFile(
+      dialogTitle: 'Save Evidence Package',
+      fileName: '${slug}_Evidence.zip',
+    );
+    if (path == null || !mounted) return;
+
+    onSavingChanged(true);
+    try {
+      final updatedProject = project.copyWith(
+        reportTitle: _titleCtrl.text.trim(),
+        pentesterName: _pentesterCtrl.text.trim(),
+        executiveSummary: _execSummaryCtrl.text.trim(),
+        methodology: _methodologyCtrl.text.trim(),
+        riskRatingModel: _riskRatingCtrl.text.trim(),
+        conclusion: _conclusionCtrl.text.trim(),
+      );
+      final commandLogs = await DatabaseHelper.getCommandLogs(project.id!);
+      final visualEvidence = await EvidenceStorageService.loadReportEvidence(
+        project: updatedProject,
+        artifacts: artifacts,
+      );
+      final reportHtml = ReportGenerator.generateHtml(
+        project: updatedProject,
+        targets: widget.appState.targets,
+        vulnerabilities: widget.appState.vulnerabilities,
+        credentials: widget.appState.credentials.toList(),
+        commandLogs: commandLogs,
+        scope: widget.appState.projectScope,
+        llmSettings: widget.appState.llmSettings,
+        startDate: _startDate,
+        endDate: _endDate,
+        confirmedOnly: false,
+        visualEvidence: visualEvidence,
+      );
+      final packageBytes = await EvidencePackageBuilder.build(
+        projectName: updatedProject.name,
+        artifacts: artifacts,
+        findingMetadata: {
+          for (final finding in widget.appState.vulnerabilities)
+            if (finding.id != null)
+              finding.id!: {
+                'title': finding.problem,
+                'severity': finding.severity,
+                'target': finding.targetAddress,
+              },
+        },
+        reportHtml: reportHtml,
+        loadBytes: (artifact) => EvidenceStorageService.loadEvidenceBytes(
+          project: updatedProject,
+          artifact: artifact,
+        ),
+      );
+      await EvidencePackageBuilder.writeAtomically(path, packageBytes);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Evidence package saved')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Evidence package failed: $error')),
+        );
+      }
     } finally {
       onSavingChanged(false);
     }

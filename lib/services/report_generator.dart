@@ -4,6 +4,7 @@ import '../models/target.dart';
 import '../models/credential.dart';
 import '../models/command_log.dart';
 import '../models/llm_settings.dart';
+import '../models/report_evidence.dart';
 import '../utils/cvss_calculator.dart';
 
 /// Generates professional penetration test reports from collected findings.
@@ -27,6 +28,7 @@ class ReportGenerator {
     DateTime? endDate,
     String? attackNarrative,
     bool confirmedOnly = true,
+    List<ReportEvidence> visualEvidence = const [],
   }) {
     final vulnsToReport = confirmedOnly
         ? vulnerabilities.where((v) => v.status == VulnerabilityStatus.confirmed).toList()
@@ -115,6 +117,11 @@ class ReportGenerator {
     .proof-block summary:hover { background: #3a4a5c; }
     .proof-meta { background: #0a0d1a; color: #718096; font-size: 11px; padding: 6px 12px; font-family: monospace; border-bottom: 1px solid #2d3748; }
     .proof-output { background: #0a0d1a; color: #a0aec0; padding: 12px 16px; font-size: 12px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
+    .visual-evidence { margin: 12px 0; }
+    .visual-evidence figure { margin: 0 0 16px; break-inside: avoid; }
+    .visual-evidence img { max-width: 100%; height: auto; border: 1px solid #cbd5e0; border-radius: 6px; }
+    .visual-evidence figcaption { color: #4a5568; font-size: 12px; margin-top: 5px; }
+    .evidence-hash { color: #718096; font-family: monospace; font-size: 10px; word-break: break-all; }
     /* Assessment overview */
     .overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
     .overview-item label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #718096; display: block; margin-bottom: 4px; }
@@ -229,7 +236,7 @@ ${attackNarrative != null && attackNarrative.isNotEmpty ? '''
 <!-- DETAILED FINDINGS -->
 <section id="findings-detail">
   <h2>Detailed Findings</h2>
-  ${_detailedFindings(sorted, proofByCommand)}
+  ${_detailedFindings(sorted, proofByCommand, visualEvidence)}
 </section>
 
 ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
@@ -266,6 +273,7 @@ ${project.conclusion?.isNotEmpty == true ? '''
     DateTime? endDate,
     String? attackNarrative,
     bool confirmedOnly = true,
+    List<ReportEvidence> visualEvidence = const [],
   }) {
     final vulnsToReport = confirmedOnly
         ? vulnerabilities.where((v) => v.status == VulnerabilityStatus.confirmed).toList()
@@ -367,6 +375,11 @@ ${project.conclusion?.isNotEmpty == true ? '''
     buf.writeln();
     for (int i = 0; i < sorted.length; i++) {
       final v = sorted[i];
+      final findingEvidence = v.id == null
+          ? const <ReportEvidence>[]
+          : visualEvidence
+              .where((item) => item.artifact.vulnerabilityId == v.id)
+              .toList();
       final isInitialEvidence = v.proofCommand == 'Initial Evidence Analysis';
       buf.writeln('### ${i + 1}. ${v.problem}');
       buf.writeln();
@@ -387,6 +400,22 @@ ${project.conclusion?.isNotEmpty == true ? '''
         buf.writeln(v.evidence);
         buf.writeln('```');
         buf.writeln();
+      }
+      if (findingEvidence.isNotEmpty) {
+        buf.writeln('**Visual Evidence:**');
+        buf.writeln();
+        for (final item in findingEvidence) {
+          final caption = item.artifact.caption.isEmpty
+              ? item.artifact.fileName
+              : item.artifact.caption;
+          buf.writeln('![${_markdownAlt(caption)}](${item.dataUri})');
+          buf.writeln();
+          buf.writeln(
+            '_Captured: ${item.artifact.capturedAt.toUtc().toIso8601String()} · '
+            'SHA-256: `${item.artifact.sha256}`_',
+          );
+          buf.writeln();
+        }
       }
       if (isInitialEvidence) {
         // Evidence already shown above; no proof command block needed
@@ -546,6 +575,13 @@ ${project.conclusion?.isNotEmpty == true ? '''
       .replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;');
 
+  static String _markdownAlt(String s) => _esc(s)
+      .replaceAll(r'\', r'\\')
+      .replaceAll('[', r'\[')
+      .replaceAll(']', r'\]')
+      .replaceAll('(', r'\(')
+      .replaceAll(')', r'\)');
+
   static String _csvEsc(String s) {
     final escaped = s.replaceAll('"', '""').replaceAll('\n', ' ');
     return '"$escaped"';
@@ -602,7 +638,9 @@ ${critical > 0 ? ' $critical <strong>Critical</strong> severity finding(s) repre
   }
 
   static String _detailedFindings(
-      List<Vulnerability> vulns, Map<int, CommandLog> proofByCommand) {
+      List<Vulnerability> vulns,
+      Map<int, CommandLog> proofByCommand,
+      List<ReportEvidence> visualEvidence) {
     final buf = StringBuffer();
     for (int i = 0; i < vulns.length; i++) {
       final v = vulns[i];
@@ -623,6 +661,25 @@ ${critical > 0 ? ' $critical <strong>Critical</strong> severity finding(s) repre
           : isInitialEvidence && v.evidence.isNotEmpty
               ? '''          <dt>Proof (Initial Evidence)</dt><dd><pre>${_esc(v.evidence.length > 3000 ? '${v.evidence.substring(0, 3000)}\n... [truncated]' : v.evidence)}</pre></dd>'''
               : '';
+      final findingEvidence = v.id == null
+          ? const <ReportEvidence>[]
+          : visualEvidence
+              .where((item) => item.artifact.vulnerabilityId == v.id)
+              .toList();
+      final visualBlock = findingEvidence.isEmpty
+          ? ''
+          : '''          <dt>Visual Evidence</dt><dd><div class="visual-evidence">
+${findingEvidence.map((item) {
+              final caption = item.artifact.caption.isEmpty
+                  ? item.artifact.fileName
+                  : item.artifact.caption;
+              return '''            <figure>
+              <img src="${_esc(item.dataUri)}" alt="${_esc(caption)}">
+              <figcaption>${_esc(caption)} · ${_esc(item.artifact.capturedAt.toUtc().toIso8601String())}</figcaption>
+              <div class="evidence-hash">SHA-256: ${_esc(item.artifact.sha256)}</div>
+            </figure>''';
+            }).join('\n')}
+          </div></dd>''';
       buf.writeln('''    <div class="finding-card" id="finding-$i">
       <div class="finding-header sev-$sev">
         <h4>${_esc(v.problem)}</h4>
@@ -640,6 +697,7 @@ ${critical > 0 ? ' $critical <strong>Critical</strong> severity finding(s) repre
           ${v.evidence.isNotEmpty ? '<dt>Evidence</dt><dd><pre>${_esc(v.evidence)}</pre></dd>' : ''}
           ${v.proofCommand != null && v.proofCommand!.isNotEmpty && !isInitialEvidence ? '<dt>Proof Command</dt><dd><pre>${_esc(v.proofCommand!)}</pre></dd>' : ''}
           $proofBlock
+          $visualBlock
           <dt>Recommendation</dt><dd>${_esc(v.recommendation).replaceAll('\n', '<br>')}</dd>
         </dl>
       </div>

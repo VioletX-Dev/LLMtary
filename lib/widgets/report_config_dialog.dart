@@ -2,6 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
 import '../models/command_log.dart';
+import '../models/evidence_artifact.dart';
+import '../models/report_evidence.dart';
+import '../services/evidence_storage_service.dart';
 import '../services/report_content_service.dart';
 import '../services/report_generator.dart';
 import '../utils/file_dialog.dart';
@@ -231,6 +234,15 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
       final commandLogs = updatedProject.id != null
           ? await DatabaseHelper.getCommandLogs(updatedProject.id!)
           : <CommandLog>[];
+      final evidenceArtifacts = updatedProject.id != null
+          ? await DatabaseHelper.getProjectEvidence(updatedProject.id!)
+          : const <EvidenceArtifact>[];
+      final visualEvidence = format == 'csv'
+          ? const <ReportEvidence>[]
+          : await EvidenceStorageService.loadReportEvidence(
+              project: updatedProject,
+              artifacts: evidenceArtifacts,
+            );
 
       String? attackNarrative;
       if (format != 'csv') {
@@ -259,6 +271,7 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
             endDate: _endDate,
             attackNarrative: attackNarrative,
             confirmedOnly: confirmedOnly,
+            visualEvidence: visualEvidence,
           ),
         'md' => ReportGenerator.generateMarkdown(
             project: updatedProject,
@@ -272,6 +285,7 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
             endDate: _endDate,
             attackNarrative: attackNarrative,
             confirmedOnly: confirmedOnly,
+            visualEvidence: visualEvidence,
           ),
         'csv' => ReportGenerator.generateCsv(
             vulnerabilities: widget.appState.vulnerabilities,

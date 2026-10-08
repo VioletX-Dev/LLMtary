@@ -9,6 +9,8 @@ import '../models/command_log.dart';
 import '../models/target.dart';
 import '../models/project.dart';
 import '../models/credential.dart';
+import '../models/evidence_artifact.dart';
+import '../services/evidence_repository.dart';
 
 class DatabaseHelper {
   static Future<Database>? _initFuture;
@@ -29,11 +31,12 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 22,
+      version: 23,
       singleInstance: true,
       onConfigure: (db) async {
         await db.execute('PRAGMA busy_timeout=5000');
-        debugPrint('[DB] onConfigure: busy_timeout set');
+        await db.execute('PRAGMA foreign_keys=ON');
+        debugPrint('[DB] onConfigure: busy_timeout and foreign keys enabled');
       },
       onCreate: (db, version) async {
         debugPrint('[DB] onCreate: creating fresh schema at version $version');
@@ -237,6 +240,7 @@ class DatabaseHelper {
         await db.execute(
           'CREATE INDEX IF NOT EXISTS idx_session_events ON session_events(projectId, targetId, phase)'
         );
+        await EvidenceRepository.createTable(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         debugPrint('[DB] onUpgrade: $oldVersion → $newVersion');
@@ -437,6 +441,9 @@ class DatabaseHelper {
         if (oldVersion < 22) {
           try { await db.execute('ALTER TABLE projects ADD COLUMN customer_testing_requests TEXT'); } catch (_) {}
         }
+        if (oldVersion < 23) {
+          await EvidenceRepository.createTable(db);
+        }
       },
     );
     final version = await db.getVersion();
@@ -465,8 +472,46 @@ class DatabaseHelper {
     await db.update('vulnerabilities', {'status': status.name}, where: 'id = ?', whereArgs: [id]);
   }
 
+  static Future<int> insertEvidenceArtifact(EvidenceArtifact artifact) async {
+    final db = await database;
+    return EvidenceRepository(db).insert(artifact);
+  }
+
+  static Future<List<EvidenceArtifact>> getProjectEvidence(int projectId) async {
+    final db = await database;
+    return EvidenceRepository(db).forProject(projectId);
+  }
+
+  static Future<List<EvidenceArtifact>> getVulnerabilityEvidence(
+    int vulnerabilityId,
+  ) async {
+    final db = await database;
+    return EvidenceRepository(db).forVulnerability(vulnerabilityId);
+  }
+
+  static Future<List<EvidenceArtifact>> getTargetEvidence(
+    int projectId,
+    int targetId,
+  ) async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      'SELECT e.* FROM evidence_artifacts e '
+      'INNER JOIN vulnerabilities v ON v.id = e.vulnerability_id '
+      'WHERE e.project_id = ? AND v.projectId = ? AND v.targetId = ? '
+      'ORDER BY e.captured_at DESC, e.id DESC',
+      [projectId, projectId, targetId],
+    );
+    return rows.map(EvidenceArtifact.fromMap).toList();
+  }
+
+  static Future<EvidenceArtifact?> deleteEvidenceArtifact(int id) async {
+    final db = await database;
+    return EvidenceRepository(db).delete(id);
+  }
+
   static Future<void> clearVulnerabilities() async {
     final db = await database;
+    await db.delete('evidence_artifacts');
     await db.delete('vulnerabilities');
   }
 
@@ -587,6 +632,7 @@ class DatabaseHelper {
 
   static Future<void> deleteProject(int id) async {
     final db = await database;
+    await db.delete('evidence_artifacts', where: 'project_id = ?', whereArgs: [id]);
     await db.delete('vulnerabilities', where: 'projectId = ?', whereArgs: [id]);
     await db.delete('command_logs', where: 'projectId = ?', whereArgs: [id]);
     await db.delete('prompt_logs', where: 'projectId = ?', whereArgs: [id]);
@@ -1146,7 +1192,27 @@ class DatabaseHelper {
 
       for (final dup in toRemove) {
         if (dup.id == null) continue;
-        await db.delete('vulnerabilities', where: 'id = ?', whereArgs: [dup.id]);
+        if (keep.id != null) {
+          await db.transaction((txn) async {
+            await txn.update(
+              'evidence_artifacts',
+              {'vulnerability_id': keep.id},
+              where: 'vulnerability_id = ?',
+              whereArgs: [dup.id],
+            );
+            await txn.delete(
+              'vulnerabilities',
+              where: 'id = ?',
+              whereArgs: [dup.id],
+            );
+          });
+        } else {
+          await db.delete(
+            'vulnerabilities',
+            where: 'id = ?',
+            whereArgs: [dup.id],
+          );
+        }
         removed++;
         debugPrint(
           '[DB] Dedup: merged "${dup.problem}" into "${keep.problem}" '
@@ -1205,7 +1271,7 @@ class DatabaseHelper {
       byAddress.putIfAbsent(v.targetAddress, () => []).add(v);
     }
 
-    final toDelete = <int>{};
+    final replacements = <int, int>{};
 
     for (final group in byAddress.values) {
       for (int i = 0; i < group.length; i++) {
@@ -1214,7 +1280,7 @@ class DatabaseHelper {
           final b = group[j];
 
           // Skip if either was already marked for removal.
-          if (toDelete.contains(a.id) || toDelete.contains(b.id)) continue;
+          if (replacements.containsKey(a.id) || replacements.containsKey(b.id)) continue;
 
           // Only consider findings on the same target.
           if (a.targetId != b.targetId) continue;
@@ -1236,8 +1302,8 @@ class DatabaseHelper {
               keep = b;
               discard = a;
             }
-            if (discard.id != null) {
-              toDelete.add(discard.id!);
+            if (discard.id != null && keep.id != null) {
+              replacements[discard.id!] = keep.id!;
               debugPrint(
                 '[DB] TitleSimilarityDedup: merged "${discard.problem}" into '
                 '"${keep.problem}" (similarity=${sim.toStringAsFixed(2)}, '
@@ -1249,10 +1315,32 @@ class DatabaseHelper {
       }
     }
 
-    for (final id in toDelete) {
-      await db.delete('vulnerabilities', where: 'id = ?', whereArgs: [id]);
+    final resolvedReplacements = <int, int>{};
+    for (final replacement in replacements.entries) {
+      var destination = replacement.value;
+      final visited = <int>{replacement.key};
+      while (replacements.containsKey(destination) && visited.add(destination)) {
+        destination = replacements[destination]!;
+      }
+      resolvedReplacements[replacement.key] = destination;
     }
-    return toDelete.length;
+    await db.transaction((txn) async {
+      final evidence = EvidenceRepository(txn);
+      for (final replacement in resolvedReplacements.entries) {
+        await evidence.reassignVulnerability(
+          fromId: replacement.key,
+          toId: replacement.value,
+        );
+      }
+      for (final id in resolvedReplacements.keys) {
+        await txn.delete(
+          'vulnerabilities',
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      }
+    });
+    return resolvedReplacements.length;
   }
 
   // ---------------------------------------------------------------------------
@@ -1261,16 +1349,35 @@ class DatabaseHelper {
 
   /// Clears all vulnerability findings for a specific target so it can be re-analyzed.
   /// Does NOT clear other targets in the same project.
-  static Future<void> clearTargetFindings(int projectId, int targetId) async {
+  static Future<List<EvidenceArtifact>> clearTargetFindings(
+    int projectId,
+    int targetId,
+  ) async {
     final db = await database;
-    await db.delete('vulnerabilities',
+    return db.transaction((txn) async {
+      final rows = await txn.query(
+        'vulnerabilities',
+        columns: const ['id'],
         where: 'projectId = ? AND targetId = ?',
-        whereArgs: [projectId, targetId]);
-    // Also reset target analysis state
-    await db.update('targets',
+        whereArgs: [projectId, targetId],
+      );
+      final vulnerabilityIds = rows.map((row) => row['id'] as int).toList();
+      final removedEvidence = await EvidenceRepository(
+        txn,
+      ).deleteForVulnerabilities(vulnerabilityIds);
+      await txn.delete(
+        'vulnerabilities',
+        where: 'projectId = ? AND targetId = ?',
+        whereArgs: [projectId, targetId],
+      );
+      await txn.update(
+        'targets',
         {'analysisComplete': 0, 'executionComplete': 0},
         where: 'id = ? AND projectId = ?',
-        whereArgs: [targetId, projectId]);
+        whereArgs: [targetId, projectId],
+      );
+      return removedEvidence;
+    });
   }
 
   /// Resets all undetermined findings for a target back to pending so they can be re-executed.

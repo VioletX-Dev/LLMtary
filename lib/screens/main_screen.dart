@@ -22,6 +22,7 @@ import '../widgets/authenticated_access_dialog.dart';
 import '../models/authenticated_access.dart';
 import '../utils/app_exceptions.dart';
 import '../services/storage_service.dart';
+import '../services/evidence_storage_service.dart';
 import '../services/prompt_templates.dart';
 import '../services/llm_service.dart';
 import 'tabs/scope_recon_tab.dart';
@@ -580,7 +581,8 @@ class _MainScreenState extends State<MainScreen> {
                     appState.setExecutionStatus('[${target.address}] $phase'),
                 scopeList: appState.currentProject?.scopeList ?? [],
                 exclusionList: appState.currentProject?.exclusionList ?? [],
-                customerTestingRequests: appState.currentProject?.customerTestingRequests,
+                customerTestingRequests:
+                    appState.currentProject?.customerTestingRequests,
               );
 
               appState.addDebugLog(
@@ -692,10 +694,45 @@ class _MainScreenState extends State<MainScreen> {
     final appState = context.read<AppState>();
     // Clear existing findings for this target from DB and memory
     if (target.id != null && appState.currentProject?.id != null) {
-      await DatabaseHelper.clearTargetFindings(
-        appState.currentProject!.id!,
+      final project = appState.currentProject!;
+      final artifacts = await DatabaseHelper.getTargetEvidence(
+        project.id!,
         target.id!,
       );
+      final stagedDeletions = <StagedEvidenceDeletion>[];
+      try {
+        for (final artifact in artifacts) {
+          stagedDeletions.add(
+            await EvidenceStorageService.stageEvidenceDeletion(
+              project: project,
+              artifact: artifact,
+            ),
+          );
+        }
+        await DatabaseHelper.clearTargetFindings(project.id!, target.id!);
+      } catch (_) {
+        for (final staged in stagedDeletions.reversed) {
+          await EvidenceStorageService.restoreStagedDeletion(staged);
+        }
+        rethrow;
+      }
+      var pendingCleanup = 0;
+      for (final staged in stagedDeletions) {
+        try {
+          await EvidenceStorageService.finalizeStagedDeletion(staged);
+        } on FileSystemException {
+          pendingCleanup++;
+        }
+      }
+      if (pendingCleanup > 0 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '$pendingCleanup private evidence file(s) are pending cleanup.',
+            ),
+          ),
+        );
+      }
     }
     appState.vulnerabilities.removeWhere(
       (v) => v.targetAddress == target.address,
@@ -729,7 +766,8 @@ class _MainScreenState extends State<MainScreen> {
             appState.setExecutionStatus('[${target.address}] $phase'),
         scopeList: appState.currentProject?.scopeList ?? [],
         exclusionList: appState.currentProject?.exclusionList ?? [],
-        customerTestingRequests: appState.currentProject?.customerTestingRequests,
+        customerTestingRequests:
+            appState.currentProject?.customerTestingRequests,
       );
       for (final v in vulns) {
         v.targetAddress = target.address;

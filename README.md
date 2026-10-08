@@ -170,8 +170,12 @@ LLMtary does not claim coverage for browser-only flows, authenticated roles, API
 - Multiple named projects, each with multiple targets
 - All findings, command logs, and credentials persisted in SQLite per project/target
 - Export and import projects as encrypted `.penex` bundles (AES encryption, password-protected)
-- **HTML report** — professional formatted report with cover page, executive summary, severity breakdown, full findings with CVSS metadata, and credential table
-- **Markdown report** — same content in portable format
+- **HTML report** — professional formatted report with cover page, executive summary, severity breakdown, full findings with CVSS metadata, credential table, and inline visual evidence
+- **Markdown report** — same content in portable format, including inline visual evidence
+- Attach PNG, JPEG, or WebP evidence to a saved finding from its camera action, either by importing an image or using the delayed full-desktop capture.
+- Every capture/import is previewed and requires confirmation that passwords, tokens, cookies, private keys, and unrelated personal data are not visible before it is stored.
+- **Evidence package ZIP** — downloadable from **RESULT / REPORT** with a self-contained HTML report, original evidence files, and a JSON manifest containing finding metadata, timestamps, sizes, and SHA-256 hashes.
+- Evidence ZIP files are intentionally unencrypted for client-tool compatibility; handle and deliver them according to the engagement's evidence-protection requirements.
 - **CSV export** — flat findings list for spreadsheets and other tools
 - AI-assisted generation for executive summary, methodology, risk rating model, and conclusion sections
 
