@@ -101,9 +101,12 @@ class AppState extends ChangeNotifier {
   // Unlock VULN/HUNT as soon as first recon completes (not all)
   bool get tab2Unlocked =>
       scanComplete || _targets.any((t) => t.status == TargetStatus.complete);
-  // Unlock PROOF/EXPLOIT as soon as first analysis completes (not all)
+  // Unlock PROOF/EXPLOIT for targeted testing as soon as an authorized
+  // project target exists. Bulk finding execution remains separately gated.
   bool get tab3Unlocked =>
-      analysisComplete || _targets.any((t) => t.analysisComplete);
+      _targets.isNotEmpty ||
+      analysisComplete ||
+      _targets.any((t) => t.analysisComplete);
   // Unlock RESULT/REPORT as soon as first confirmed vuln found, or all tested, or legacy flags
   bool get tab4Unlocked =>
       hasResults ||

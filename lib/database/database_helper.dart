@@ -10,7 +10,9 @@ import '../models/target.dart';
 import '../models/project.dart';
 import '../models/credential.dart';
 import '../models/evidence_artifact.dart';
+import '../models/validation_run.dart';
 import '../services/evidence_repository.dart';
+import '../services/validation_run_repository.dart';
 
 class DatabaseHelper {
   static Future<Database>? _initFuture;
@@ -31,7 +33,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 23,
+      version: 25,
       singleInstance: true,
       onConfigure: (db) async {
         await db.execute('PRAGMA busy_timeout=5000');
@@ -241,6 +243,7 @@ class DatabaseHelper {
           'CREATE INDEX IF NOT EXISTS idx_session_events ON session_events(projectId, targetId, phase)'
         );
         await EvidenceRepository.createTable(db);
+        await ValidationRunRepository.createTable(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         debugPrint('[DB] onUpgrade: $oldVersion → $newVersion');
@@ -444,6 +447,14 @@ class DatabaseHelper {
         if (oldVersion < 23) {
           await EvidenceRepository.createTable(db);
         }
+        if (oldVersion < 24) {
+          await ValidationRunRepository.createTable(db);
+        }
+        if (oldVersion < 25) {
+          try { await db.execute("ALTER TABLE validation_runs ADD COLUMN baselineStatusReason TEXT NOT NULL DEFAULT ''"); } catch (_) {}
+          try { await db.execute("ALTER TABLE validation_runs ADD COLUMN baselineProofCommand TEXT NOT NULL DEFAULT ''"); } catch (_) {}
+          try { await db.execute("ALTER TABLE validation_runs ADD COLUMN baselineProofOutput TEXT NOT NULL DEFAULT ''"); } catch (_) {}
+        }
       },
     );
     final version = await db.getVersion();
@@ -470,6 +481,28 @@ class DatabaseHelper {
   static Future<void> updateVulnerabilityStatus(int id, VulnerabilityStatus status) async {
     final db = await database;
     await db.update('vulnerabilities', {'status': status.name}, where: 'id = ?', whereArgs: [id]);
+  }
+
+  static Future<int> insertValidationRun(ValidationRun run) async {
+    final db = await database;
+    return ValidationRunRepository(db).insert(run);
+  }
+
+  static Future<void> updateValidationRun(ValidationRun run) async {
+    final db = await database;
+    await ValidationRunRepository(db).update(run);
+  }
+
+  static Future<List<ValidationRun>> getValidationRuns(int projectId) async {
+    final db = await database;
+    return ValidationRunRepository(db).forProject(projectId);
+  }
+
+  static Future<List<ValidationRun>> getFindingValidationRuns(
+    int vulnerabilityId,
+  ) async {
+    final db = await database;
+    return ValidationRunRepository(db).forVulnerability(vulnerabilityId);
   }
 
   static Future<int> insertEvidenceArtifact(EvidenceArtifact artifact) async {

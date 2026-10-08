@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:archive/archive.dart';
 import '../utils/file_dialog.dart';
 import 'package:flutter/foundation.dart';
@@ -78,6 +79,7 @@ Map<String, dynamic> _parseManifestIsolate(Uint8List bytes) {
     'commandLogs': 50000,
     'executedCommands': 50000,
     'visual_evidence': 5000,
+    'validation_runs': 20000,
   };
 
   if (bytes.length > maxManifestBytes) {
@@ -407,6 +409,7 @@ class ProjectPorter {
     final debugMaps = await DatabaseHelper.getDebugLogs(projectId);
     final creds = await DatabaseHelper.getCredentialsByProject(projectId);
     final tokenUsageRows = await DatabaseHelper.getTokenUsage(projectId);
+    final validationRuns = await DatabaseHelper.getValidationRuns(projectId);
     final db = await DatabaseHelper.database;
     final execCmdRows = await db.query(
       'executed_commands',
@@ -496,6 +499,31 @@ class ProjectPorter {
             'confirmedAt': v.confirmedAt?.toIso8601String(),
             'remediationClass': v.remediationClass.name,
             'status': v.status.name,
+          },
+        )
+        .toList();
+
+    final validationEntries = validationRuns
+        .map(
+          (run) => {
+            'targetAddress': addressById[run.targetId] ?? '',
+            'vulnerability_portable_id': run.vulnerabilityId,
+            'mode': run.mode.name,
+            'title': run.title,
+            'objective': run.objective,
+            // Operator parameters may contain environment-specific test values.
+            // Keep the full value appliance-local; only its presence is portable.
+            'parameters': run.parameters.isEmpty
+                ? ''
+                : '[REDACTED - retained only on source appliance]',
+            'expectedResult': run.expectedResult,
+            'constraints': run.constraints,
+            'statusBefore': run.statusBefore,
+            'statusAfter': run.statusAfter,
+            'outcome': run.outcome.name,
+            'summary': run.summary,
+            'startedAt': run.startedAt.toIso8601String(),
+            'completedAt': run.completedAt?.toIso8601String(),
           },
         )
         .toList();
@@ -606,6 +634,7 @@ class ProjectPorter {
       'credentials': credEntries,
       'token_usage': tokenEntries,
       'executed_commands': execCmdEntries,
+      'validation_runs': validationEntries,
     };
 
     final archive = Archive();
@@ -625,19 +654,10 @@ class ProjectPorter {
   // ── Encryption (AES-256-GCM, PBKDF2-SHA256) ───────────────────────────────
 
   static Uint8List _randomBytes(int length) {
-    final random = FortunaRandom();
-    final seed = Uint8List(32);
-    final now = DateTime.now().microsecondsSinceEpoch;
-    for (var i = 0; i < 8; i++) {
-      seed[i] = (now >> (i * 8)) & 0xFF;
-    }
-    // Mix in some extra entropy from the current time in nanoseconds
-    final extra = DateTime.now().millisecondsSinceEpoch;
-    for (var i = 0; i < 8; i++) {
-      seed[8 + i] = (extra >> (i * 8)) & 0xFF;
-    }
-    random.seed(KeyParameter(seed));
-    return random.nextBytes(length);
+    final random = Random.secure();
+    return Uint8List.fromList(
+      List<int>.generate(length, (_) => random.nextInt(256)),
+    );
   }
 
   // ── Import extractor ───────────────────────────────────────────────────────
@@ -826,6 +846,47 @@ class ProjectPorter {
           if (portableId != null) {
             vulnerabilityIdMap[portableId] = insertedVulnerabilityId;
           }
+        }
+
+        // Restore targeted retest and spot-test history after vulnerability IDs
+        // have been remapped to this imported project.
+        for (final run
+            in (manifest['validation_runs'] as List? ?? [])
+                .cast<Map<String, dynamic>>()) {
+          final addr = run['targetAddress'] as String? ?? '';
+          final targetId = addressToTargetId[addr];
+          if (targetId == null) {
+            throw const FormatException(
+              'Validation history references an unknown target.',
+            );
+          }
+          final portableVulnerabilityId =
+              (run['vulnerability_portable_id'] as num?)?.toInt();
+          final vulnerabilityId = portableVulnerabilityId == null
+              ? null
+              : vulnerabilityIdMap[portableVulnerabilityId];
+          if (portableVulnerabilityId != null && vulnerabilityId == null) {
+            throw const FormatException(
+              'Validation history references an unknown finding.',
+            );
+          }
+          await txn.insert('validation_runs', {
+            'projectId': projectId,
+            'targetId': targetId,
+            'vulnerabilityId': vulnerabilityId,
+            'mode': run['mode'] ?? 'spotTest',
+            'title': run['title'] ?? '',
+            'objective': run['objective'] ?? '',
+            'parameters': run['parameters'] ?? '',
+            'expectedResult': run['expectedResult'] ?? '',
+            'constraints': run['constraints'] ?? '',
+            'statusBefore': run['statusBefore'] ?? '',
+            'statusAfter': run['statusAfter'] ?? '',
+            'outcome': run['outcome'] ?? 'pending',
+            'summary': run['summary'] ?? '',
+            'startedAt': run['startedAt'] ?? now.toIso8601String(),
+            'completedAt': run['completedAt'],
+          });
         }
 
         // Insert command logs

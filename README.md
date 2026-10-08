@@ -140,6 +140,15 @@ When a confirmed finding grants high-value access (RCE, command injection, authe
 - Options: **Allow Once**, **Always Allow** (adds to whitelist), or **Deny** (LLM is notified to try a different approach)
 - The toggle takes effect immediately — enabling or disabling mid-execution applies to the very next command
 
+### Targeted Retests and Spot Tests
+
+- In **PROOF / EXPLOIT**, use a finding's replay action to run a fresh remediation retest without repeating recon or full vulnerability analysis.
+- Retests force active target interaction; historical evidence is retained as baseline context but cannot reconfirm a finding by itself.
+- Use **SPOT TEST** to select an existing project target and provide one narrow objective, parameters, expected secure result, and additional safety constraints.
+- Spot tests are revalidated against the project's current scope and exclusions, remain command-approval gated, and do not trigger post-exploitation.
+- Passwords, bearer values, cookies, private keys, and session secrets are rejected from spot-test parameters; use session-only authenticated access instead.
+- Each run is stored in project-local validation history with its mode, before/after status, outcome, summary, and timestamps.
+
 ### Authenticated Web Access (Session-Only)
 
 - Use the key icon in the workspace app bar to provide a target URL plus username/password, bearer token, cookies, and an optional CSRF header for the next matching web execution.

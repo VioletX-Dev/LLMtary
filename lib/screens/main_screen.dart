@@ -19,8 +19,12 @@ import '../widgets/admin_password_dialog.dart';
 import '../widgets/command_approval_widget.dart';
 import '../widgets/results_modal.dart';
 import '../widgets/authenticated_access_dialog.dart';
+import '../widgets/targeted_test_dialog.dart';
 import '../models/authenticated_access.dart';
+import '../models/targeted_test_request.dart';
+import '../models/validation_run.dart';
 import '../utils/app_exceptions.dart';
+import '../utils/scope_validator.dart';
 import '../services/storage_service.dart';
 import '../services/evidence_storage_service.dart';
 import '../services/prompt_templates.dart';
@@ -192,6 +196,8 @@ class _MainScreenState extends State<MainScreen> {
                     onExportPrompts: _exportPrompts,
                     onExportDebug: _exportDebug,
                     executingAddresses: _executingAddresses,
+                    onRetestFinding: _retestFinding,
+                    onRunSpotTest: _runTargetedSpotTest,
                   ),
                   const ResultReportTab(),
                 ],
@@ -795,6 +801,387 @@ class _MainScreenState extends State<MainScreen> {
   void _toggleSelection(Vulnerability v, bool selected) {
     v.selected = selected;
     setState(() {});
+  }
+
+  Future<void> _runTargetedSpotTest() async {
+    if (_isExecuting) return;
+    final appState = context.read<AppState>();
+    final projectId = appState.currentProject?.id;
+    if (projectId == null || appState.targets.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Add an authorized project target before running a spot test.',
+          ),
+        ),
+      );
+      return;
+    }
+    final request = await showDialog<TargetedTestRequest>(
+      context: context,
+      builder: (_) => TargetedTestDialog(targets: appState.targets),
+    );
+    if (request == null || !mounted) return;
+    final errors = request.validateAgainst(appState.targets);
+    if (errors.isNotEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(errors.join(' '))));
+      return;
+    }
+    if (!await _ensureSessionPassword()) return;
+    final target = appState.targets.firstWhere(
+      (candidate) => candidate.id == request.targetId,
+    );
+    final projectScope = appState.currentProject?.scopeList ?? const <String>[];
+    final scopeResult = ScopeValidator.validate(
+      target.address,
+      projectScope.isEmpty ? const ['*'] : projectScope,
+      appState.currentProject?.exclusionList ?? const [],
+    );
+    if (scopeResult == ScopeResult.excluded ||
+        scopeResult == ScopeResult.outOfScope) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(ScopeValidator.describeResult(scopeResult, target.address)),
+          ),
+        );
+      }
+      return;
+    }
+    final draft = _buildSpotTestVulnerability(request, projectId);
+    final findingId = await DatabaseHelper.insertVulnerability(draft);
+    var run = ValidationRun(
+      projectId: projectId,
+      targetId: request.targetId,
+      vulnerabilityId: findingId,
+      mode: ValidationRunMode.spotTest,
+      title: request.title,
+      objective: request.objective,
+      parameters: request.parameters,
+      expectedResult: request.expectedResult,
+      constraints: request.constraints,
+      statusBefore: VulnerabilityStatus.pending.name,
+      startedAt: DateTime.now().toUtc(),
+    );
+    final runId = await DatabaseHelper.insertValidationRun(run);
+    run = run.copyWith(id: runId);
+    try {
+      await appState.loadVulnerabilities();
+      final persisted = appState.vulnerabilities.firstWhere(
+        (candidate) => candidate.id == findingId,
+      );
+      final status = await _executeTargetedValidation(
+        vulnerability: persisted,
+        target: target,
+        executionDirective: request.executionDirective,
+      );
+      run = run.copyWith(
+        statusAfter: status.name,
+        outcome: _validationOutcome(ValidationRunMode.spotTest, status),
+        summary: persisted.statusReason,
+        completedAt: DateTime.now().toUtc(),
+      );
+      await DatabaseHelper.updateValidationRun(run);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Spot test completed: ${run.outcome.name}')),
+        );
+      }
+    } catch (error) {
+      await DatabaseHelper.updateValidationRun(
+        run.copyWith(
+          outcome: ValidationRunOutcome.error,
+          summary: 'Spot test failed: $error',
+          completedAt: DateTime.now().toUtc(),
+        ),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Spot test failed: $error')));
+      }
+    }
+  }
+
+  Vulnerability _buildSpotTestVulnerability(
+    TargetedTestRequest request,
+    int projectId, {
+    int? id,
+  }) => Vulnerability(
+    id: id,
+    projectId: projectId,
+    targetId: request.targetId,
+    targetAddress: request.targetAddress,
+    problem: request.title,
+    description: request.objective,
+    severity: 'MEDIUM',
+    confidence: 'MEDIUM',
+    evidence:
+        'Operator-requested targeted validation. Active proof is required.',
+    recommendation: request.expectedResult.isEmpty
+        ? 'Review the targeted validation result.'
+        : request.expectedResult,
+    vulnerabilityType: 'Targeted Spot Test',
+    status: VulnerabilityStatus.pending,
+    reportReady: false,
+  );
+
+  Future<void> _retestFinding(Vulnerability vulnerability) async {
+    if (_isExecuting || vulnerability.id == null) return;
+    final appState = context.read<AppState>();
+    final projectId = appState.currentProject?.id;
+    if (projectId == null || vulnerability.targetId == null) return;
+    final targetMatches = appState.targets.where(
+      (target) =>
+          target.id == vulnerability.targetId &&
+          target.address == vulnerability.targetAddress &&
+          target.status != TargetStatus.excluded,
+    );
+    if (targetMatches.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('The finding target is missing or excluded.'),
+        ),
+      );
+      return;
+    }
+    final target = targetMatches.single;
+    final projectScope = appState.currentProject?.scopeList ?? const <String>[];
+    final scopeResult = ScopeValidator.validate(
+      target.address,
+      projectScope.isEmpty ? const ['*'] : projectScope,
+      appState.currentProject?.exclusionList ?? const [],
+    );
+    if (scopeResult == ScopeResult.excluded ||
+        scopeResult == ScopeResult.outOfScope) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ScopeValidator.describeResult(scopeResult, target.address)),
+        ),
+      );
+      return;
+    }
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF161929),
+        title: const Text(
+          'Retest finding',
+          style: TextStyle(color: Color(0xFFFFBB33)),
+        ),
+        content: Text(
+          'Run a fresh, narrow validation of “${vulnerability.problem}” on '
+          '${vulnerability.targetAddress}? Historical evidence and command logs will be retained.',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('CANCEL'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('RETEST'),
+          ),
+        ],
+      ),
+    );
+    if (approved != true || !mounted || !await _ensureSessionPassword()) return;
+
+    final beforeStatus = vulnerability.status;
+    final beforeReason = vulnerability.statusReason;
+    final beforeProofCommand = vulnerability.proofCommand;
+    final beforeProofOutput = vulnerability.proofOutput;
+    final beforeConfirmedAt = vulnerability.confirmedAt;
+    var run = ValidationRun(
+      projectId: projectId,
+      targetId: target.id!,
+      vulnerabilityId: vulnerability.id,
+      mode: ValidationRunMode.retest,
+      title: 'Retest: ${vulnerability.problem}',
+      objective:
+          'Determine whether the original finding is still reproducible after remediation.',
+      expectedResult:
+          'The original vulnerable behavior can no longer be reproduced.',
+      constraints:
+          'Repeat only the minimum safe validation needed for this finding.',
+      statusBefore: beforeStatus.name,
+      baselineStatusReason: beforeReason,
+      baselineProofCommand: beforeProofCommand ?? '',
+      baselineProofOutput: beforeProofOutput ?? '',
+      startedAt: DateTime.now().toUtc(),
+    );
+    final runId = await DatabaseHelper.insertValidationRun(run);
+    run = run.copyWith(id: runId);
+    vulnerability.status = VulnerabilityStatus.pending;
+    vulnerability.statusReason = '';
+    vulnerability.proofCommand = null;
+    vulnerability.proofOutput = null;
+    vulnerability.confirmedAt = null;
+    await DatabaseHelper.updateVulnerability(vulnerability);
+    final directive = '''
+## TARGETED FINDING RETEST
+This is a remediation validation, not a new full assessment. Historical evidence is
+baseline context only and MUST NOT be used to confirm the retest. Actively repeat
+the minimum safe proof required for this specific finding. Do not expand scope,
+enumerate unrelated attack surface, or run post-exploitation. A result is FIXED only
+when the original vulnerable behavior is actively tested and cannot be reproduced.
+''';
+    try {
+      final status = await _executeTargetedValidation(
+        vulnerability: vulnerability,
+        target: target,
+        executionDirective: directive,
+      );
+      run = run.copyWith(
+        statusAfter: status.name,
+        outcome: _validationOutcome(ValidationRunMode.retest, status),
+        summary: vulnerability.statusReason,
+        completedAt: DateTime.now().toUtc(),
+      );
+      await DatabaseHelper.updateValidationRun(run);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Retest completed: ${run.outcome.name}')),
+        );
+      }
+    } catch (error) {
+      vulnerability.status = beforeStatus;
+      vulnerability.statusReason = beforeReason;
+      vulnerability.proofCommand = beforeProofCommand;
+      vulnerability.proofOutput = beforeProofOutput;
+      vulnerability.confirmedAt = beforeConfirmedAt;
+      await DatabaseHelper.updateVulnerability(vulnerability);
+      await DatabaseHelper.updateValidationRun(
+        run.copyWith(
+          statusAfter: beforeStatus.name,
+          outcome: ValidationRunOutcome.error,
+          summary: 'Retest failed before a conclusion: $error',
+          completedAt: DateTime.now().toUtc(),
+        ),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Retest failed: $error')));
+      }
+    }
+  }
+
+  ValidationRunOutcome _validationOutcome(
+    ValidationRunMode mode,
+    VulnerabilityStatus status,
+  ) {
+    if (status == VulnerabilityStatus.undetermined ||
+        status == VulnerabilityStatus.pending) {
+      return ValidationRunOutcome.inconclusive;
+    }
+    if (mode == ValidationRunMode.retest) {
+      return status == VulnerabilityStatus.confirmed
+          ? ValidationRunOutcome.stillVulnerable
+          : ValidationRunOutcome.fixed;
+    }
+    return status == VulnerabilityStatus.confirmed
+        ? ValidationRunOutcome.conditionObserved
+        : ValidationRunOutcome.conditionNotObserved;
+  }
+
+  Future<VulnerabilityStatus> _executeTargetedValidation({
+    required Vulnerability vulnerability,
+    required Target target,
+    required String executionDirective,
+  }) async {
+    final appState = context.read<AppState>();
+    setState(() {
+      _isExecuting = true;
+      _executingAddresses.add(target.address);
+    });
+    appState.setExecutionStatus(
+      '[${target.address}] Running targeted validation...',
+    );
+    CommandExecutor.clearAllCaches();
+    await ExploitExecutor.preflightMetasploit();
+    try {
+      final deviceJson =
+          target.jsonFilePath.isNotEmpty &&
+              await File(target.jsonFilePath).exists()
+          ? await File(target.jsonFilePath).readAsString()
+          : jsonEncode({
+              'device': {'ip_address': target.address, 'name': target.address},
+              'open_ports': <Object>[],
+            });
+      final outputDir = StorageService.toShellPath(
+        await StorageService.getTargetPath(
+          appState.currentProjectName,
+          target.address,
+        ),
+      );
+      await appState.loadVulnerabilities();
+      final index = appState.vulnerabilities.indexWhere(
+        (candidate) => candidate.id == vulnerability.id,
+      );
+      if (index < 0)
+        throw StateError('Targeted validation finding was not found.');
+      final executor = ExploitExecutor(
+        deviceData: deviceJson,
+        vulnerabilityIndex: index,
+        outputDir: outputDir,
+        onProgress: appState.addDebugLog,
+        onCommandExecuted: (command, output, _) async {
+          appState.addDebugLog('[${target.address}] Command: $command');
+          await appState.loadCommandLogs();
+        },
+        onPromptResponse: appState.addPromptLog,
+        onTokensUsed: (sent, received) => appState.recordTokenUsage(
+          'execute',
+          sent,
+          received,
+          targetId: target.id ?? 0,
+        ),
+        adminPassword: appState.adminPassword,
+        onApprovalNeeded: (command) async {
+          if (!appState.requireApproval) return 'once';
+          _approvalCompleter = Completer<String?>();
+          appState.setPendingCommand(command);
+          return _approvalCompleter!.future;
+        },
+        onPasswordNeeded: _onInstallPasswordNeeded,
+        credentialBankContext: appState.credentialBankPromptBlock(
+          target.address,
+        ),
+        confirmedFindingsContext: appState.confirmedFindingsPromptBlock(
+          target.address,
+        ),
+        authenticatedAccess: appState.authenticatedAccessForTarget(
+          target.address,
+        ),
+        runPostExploitation: false,
+      );
+      final status = await executor.testVulnerability(
+        vulnerability,
+        appState.llmSettings,
+        appState.requireApproval,
+        projectId: appState.currentProject?.id ?? 0,
+        targetId: target.id ?? 0,
+        scopeNotes: appState.currentProject?.scopeNotes,
+        executionDirective: executionDirective,
+        forceActiveTesting: true,
+      );
+      vulnerability.status = status;
+      await appState.loadVulnerabilities();
+      await appState.loadCommandLogs();
+      return status;
+    } finally {
+      appState.setExecutionStatus('');
+      if (mounted) {
+        setState(() {
+          _isExecuting = false;
+          _executingAddresses.remove(target.address);
+        });
+      }
+    }
   }
 
   Future<void> _executeSelected() async {
