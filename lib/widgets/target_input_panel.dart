@@ -6,6 +6,7 @@ import '../utils/file_dialog.dart';
 import '../utils/scope_validator.dart';
 import '../models/target.dart';
 import '../services/recon_service.dart';
+import '../services/recon_batch_runner.dart';
 import '../models/llm_settings.dart';
 import 'app_state.dart';
 
@@ -149,7 +150,11 @@ class TargetInputPanelState extends State<TargetInputPanel> {
           return r == ScopeResult.excluded;
         }).toList();
         if (excluded.isNotEmpty) {
-          for (final addr in excluded) widget.onProgress('[$addr] Excluded by engagement scope — skipping');
+          for (final addr in excluded) {
+            widget.onProgress(
+              '[$addr] Excluded by engagement scope — skipping',
+            );
+          }
           toScan = toScan.where((a) => !excluded.contains(a)).toList();
         }
       }
@@ -246,52 +251,71 @@ class TargetInputPanelState extends State<TargetInputPanel> {
         );
         batchStart += batch.length;
 
-        for (final addr in batch) _updateTargetStatus(addr, TargetStatus.scanning);
-
-        final batchResults = await Future.wait(batch.map((addr) async {
-          final recon = ReconService(
-            settings: widget.llmSettings,
-            requireApproval: widget.requireApproval,
-            adminPassword: widget.adminPassword,
-            onApprovalNeeded: widget.onApprovalNeeded,
-            onPasswordNeeded: widget.onInstallPasswordNeeded,
-            onCommandExecuted: widget.onCommandExecuted,
-            onProgress: (msg) {
-              widget.onProgress(msg);
-              if (mounted) setState(() => _statusMessage = msg);
-            },
-            onPromptResponse: widget.onPromptResponse,
-            onTokensUsed: (sent, received) {
-              // Use the captured appState reference — safe across async gaps.
-              appState.recordTokenUsage('recon', sent, received);
-            },
-          );
-          _activeRecons.add(recon);
-          final result = await recon.reconTarget(
-            addr, widget.projectName,
-            projectId: widget.projectId,
-            targetId: widget.getTargetId?.call(addr) ?? 0,
-            scopeNotes: widget.scopeNotes,
-          );
-          _activeRecons.remove(recon);
-          return MapEntry(addr, result);
-        }));
-
-        for (final entry in batchResults) {
-          final addr = entry.key;
-          final filePath = entry.value;
-          if (filePath != null) {
-            _updateTargetStatus(addr, TargetStatus.complete, jsonFilePath: filePath);
-          } else if (_cancelRequested) {
-            // Recon was interrupted — keep as pending so RESUME picks it up.
-            _updateTargetStatus(addr, TargetStatus.pending);
-          } else {
-            _updateTargetStatus(addr, TargetStatus.excluded);
-          }
+        for (final addr in batch) {
+          _updateTargetStatus(addr, TargetStatus.scanning);
         }
 
-        final useful = _liveTargets.where((t) => t.status == TargetStatus.complete).toList();
-        await widget.onTargetsDiscovered(List.from(useful));
+        await ReconBatchRunner.run<String?>(
+          addresses: batch,
+          scan: (addr) async {
+            final recon = ReconService(
+              settings: widget.llmSettings,
+              requireApproval: widget.requireApproval,
+              adminPassword: widget.adminPassword,
+              onApprovalNeeded: widget.onApprovalNeeded,
+              onPasswordNeeded: widget.onInstallPasswordNeeded,
+              onCommandExecuted: widget.onCommandExecuted,
+              onProgress: (msg) {
+                widget.onProgress(msg);
+                if (mounted) setState(() => _statusMessage = msg);
+              },
+              onPromptResponse: widget.onPromptResponse,
+              onTokensUsed: (sent, received) {
+                // Use the captured appState reference — safe across async gaps.
+                appState.recordTokenUsage('recon', sent, received);
+              },
+            );
+            _activeRecons.add(recon);
+            try {
+              return await recon.reconTarget(
+                addr,
+                widget.projectName,
+                projectId: widget.projectId,
+                targetId: widget.getTargetId?.call(addr) ?? 0,
+                scopeNotes: widget.scopeNotes,
+              );
+            } finally {
+              _activeRecons.remove(recon);
+            }
+          },
+          onResult: (addr, filePath) async {
+            if (filePath != null) {
+              _updateTargetStatus(
+                addr,
+                TargetStatus.complete,
+                jsonFilePath: filePath,
+              );
+            } else if (_cancelRequested) {
+              // Recon was interrupted — keep as pending so RESUME picks it up.
+              _updateTargetStatus(addr, TargetStatus.pending);
+            } else {
+              _updateTargetStatus(addr, TargetStatus.excluded);
+            }
+
+            // Checkpoint this target immediately. Do not wait for slow or
+            // failed siblings in the concurrent batch before saving it.
+            final target = _liveTargets.firstWhere((t) => t.address == addr);
+            await widget.onTargetsDiscovered([target]);
+          },
+          onError: (addr, error, _) async {
+            // Preserve the target for RESUME and continue checkpointing the
+            // rest of the batch instead of discarding every sibling result.
+            _updateTargetStatus(addr, TargetStatus.pending);
+            final target = _liveTargets.firstWhere((t) => t.address == addr);
+            await widget.onTargetsDiscovered([target]);
+            widget.onProgress('[$addr] Recon failed: $error — saved for resume');
+          },
+        );
       }
 
       final completeCount = _liveTargets.where((t) => t.status == TargetStatus.complete).length;
