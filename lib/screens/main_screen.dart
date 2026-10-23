@@ -29,6 +29,8 @@ import '../services/storage_service.dart';
 import '../services/evidence_storage_service.dart';
 import '../services/prompt_templates.dart';
 import '../services/llm_service.dart';
+import '../services/test_budget.dart';
+import '../widgets/test_budget_dialog.dart';
 import 'tabs/scope_recon_tab.dart';
 import 'tabs/vuln_hunt_tab.dart' show VulnHuntTab, showAnalysisCompleteDialog;
 import 'tabs/proof_exploit_tab.dart'
@@ -286,6 +288,27 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  Future<void> _configureTestBudget() async {
+    final appState = context.read<AppState>();
+    final project = appState.currentProject;
+    if (project?.id == null) return;
+    final budget = await showTestBudgetDialog(
+      context,
+      project: project,
+      defaultMode: TestBudgetPolicy.defaultModeFor(
+        appState.llmSettings.provider,
+      ),
+    );
+    if (budget == null || !mounted) return;
+    await DatabaseHelper.updateProjectBudget(
+      project!.id!,
+      mode: budget.mode.name,
+      limit: budget.limit,
+    );
+    final refreshed = await DatabaseHelper.getProject(project.id!);
+    if (refreshed != null && mounted) appState.updateCurrentProject(refreshed);
+  }
+
   AppBar _buildAppBar() {
     return AppBar(
       backgroundColor: const Color(0xFF0A0C16),
@@ -331,6 +354,22 @@ class _MainScreenState extends State<MainScreen> {
         ],
       ),
       actions: [
+        Consumer<AppState>(
+          builder: (context, state, _) {
+            final project = state.currentProject;
+            final api = project?.budgetMode?.name == 'apiCost';
+            final label = !project!.hasBudget
+                ? 'SET BUDGET'
+                : api
+                ? 'EST \$${project.budgetSpentUsd.toStringAsFixed(2)} / \$${project.budgetLimit!.toStringAsFixed(2)}'
+                : '${project.budgetLimit!.toStringAsFixed(0)} MIN LOCAL';
+            return TextButton.icon(
+              onPressed: _configureTestBudget,
+              icon: const Icon(Icons.account_balance_wallet_outlined, size: 16),
+              label: Text(label, style: const TextStyle(fontSize: 11)),
+            );
+          },
+        ),
         IconButton(
           icon: const Icon(Icons.key, color: Color(0xFF7C5CFC)),
           tooltip: 'Authenticated web access (memory only)',
@@ -844,7 +883,9 @@ class _MainScreenState extends State<MainScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(ScopeValidator.describeResult(scopeResult, target.address)),
+            content: Text(
+              ScopeValidator.describeResult(scopeResult, target.address),
+            ),
           ),
         );
       }
@@ -958,7 +999,9 @@ class _MainScreenState extends State<MainScreen> {
         scopeResult == ScopeResult.outOfScope) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(ScopeValidator.describeResult(scopeResult, target.address)),
+          content: Text(
+            ScopeValidator.describeResult(scopeResult, target.address),
+          ),
         ),
       );
       return;

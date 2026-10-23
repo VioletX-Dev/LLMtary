@@ -29,7 +29,7 @@ class _LlmSetupWizardState extends State<LlmSetupWizard> {
   bool _testing = false;
   bool _testPassed = false;
   String _testResult = '';
-  final _llmService = LLMService(enableDebugLogging: false);
+  final _llmService = LLMService(enableDebugLogging: false, enforceProjectBudget: false);
 
   static const _bg = Color(0xFF0A0E27);
   static const _card = Color(0xFF1A1F3A);

@@ -5,8 +5,10 @@ import '../database/database_helper.dart';
 import '../models/project.dart';
 import '../services/project_porter.dart';
 import '../services/storage_service.dart';
+import '../services/test_budget.dart';
 import '../widgets/app_state.dart';
 import '../widgets/llm_setup_wizard.dart';
+import '../widgets/test_budget_dialog.dart';
 import 'main_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -109,6 +111,14 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    if (!mounted) return;
+    final provider = context.read<AppState>().llmSettings.provider;
+    final budget = await showTestBudgetDialog(
+      context,
+      defaultMode: TestBudgetPolicy.defaultModeFor(provider),
+    );
+    if (budget == null || !mounted) return;
+
     final folderPath = await StorageService.getProjectPath(name);
     final now = DateTime.now();
     final project = Project(
@@ -116,6 +126,8 @@ class _HomeScreenState extends State<HomeScreen> {
       folderPath: folderPath,
       createdAt: now,
       lastOpenedAt: now,
+      budgetMode: budget.mode,
+      budgetLimit: budget.limit,
     );
     final id = await DatabaseHelper.insertProject(project);
     final created = Project(
@@ -124,11 +136,24 @@ class _HomeScreenState extends State<HomeScreen> {
       folderPath: project.folderPath,
       createdAt: project.createdAt,
       lastOpenedAt: project.lastOpenedAt,
+      budgetMode: project.budgetMode,
+      budgetLimit: project.budgetLimit,
     );
     await _openProject(created);
   }
 
   Future<void> _openProject(Project project) async {
+    if (!project.hasBudget) {
+      final provider = context.read<AppState>().llmSettings.provider;
+      final budget = await showTestBudgetDialog(
+        context,
+        project: project,
+        defaultMode: TestBudgetPolicy.defaultModeFor(provider),
+      );
+      if (budget == null || !mounted) return;
+      await DatabaseHelper.updateProjectBudget(project.id!, mode: budget.mode.name, limit: budget.limit);
+      project = (await DatabaseHelper.getProject(project.id!))!;
+    }
     await DatabaseHelper.updateProjectLastOpened(project.id!);
     if (!mounted) return;
     final appState = context.read<AppState>();

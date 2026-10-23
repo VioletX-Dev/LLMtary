@@ -33,7 +33,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 25,
+      version: 26,
       singleInstance: true,
       onConfigure: (db) async {
         await db.execute('PRAGMA busy_timeout=5000');
@@ -112,7 +112,11 @@ class DatabaseHelper {
             scope TEXT,
             scope_exclusions TEXT,
             scope_notes TEXT,
-            customer_testing_requests TEXT
+            customer_testing_requests TEXT,
+            budget_mode TEXT,
+            budget_limit REAL,
+            budget_spent_usd REAL NOT NULL DEFAULT 0,
+            budget_started_at TEXT
           )
         ''');
 
@@ -455,11 +459,21 @@ class DatabaseHelper {
           try { await db.execute("ALTER TABLE validation_runs ADD COLUMN baselineProofCommand TEXT NOT NULL DEFAULT ''"); } catch (_) {}
           try { await db.execute("ALTER TABLE validation_runs ADD COLUMN baselineProofOutput TEXT NOT NULL DEFAULT ''"); } catch (_) {}
         }
+        if (oldVersion < 26) {
+          await migrateProjectBudgets(db);
+        }
       },
     );
     final version = await db.getVersion();
     debugPrint('[DB] openDatabase() returned successfully, schema version=$version');
     return db;
+  }
+
+  static Future<void> migrateProjectBudgets(Database db) async {
+    try { await db.execute('ALTER TABLE projects ADD COLUMN budget_mode TEXT'); } catch (_) {}
+    try { await db.execute('ALTER TABLE projects ADD COLUMN budget_limit REAL'); } catch (_) {}
+    try { await db.execute('ALTER TABLE projects ADD COLUMN budget_spent_usd REAL NOT NULL DEFAULT 0'); } catch (_) {}
+    try { await db.execute('ALTER TABLE projects ADD COLUMN budget_started_at TEXT'); } catch (_) {}
   }
 
   static Future<int> insertVulnerability(Vulnerability vuln) async {
@@ -647,6 +661,31 @@ class DatabaseHelper {
     final maps = await db.query('projects', orderBy: 'lastOpenedAt DESC');
     debugPrint('[DB] getProjects() found ${maps.length} row(s): ${maps.map((m) => m['name']).toList()}');
     return maps.map((m) => Project.fromMap(m)).toList();
+  }
+
+  static Future<Project?> getProject(int id) async {
+    final db = await database;
+    final maps = await db.query('projects', where: 'id = ?', whereArgs: [id], limit: 1);
+    return maps.isEmpty ? null : Project.fromMap(maps.first);
+  }
+
+  static Future<void> updateProjectBudget(int id, {required String mode, required double limit}) async {
+    if (limit <= 0) throw ArgumentError.value(limit, 'limit', 'must be positive');
+    final db = await database;
+    await db.update('projects', {'budget_mode': mode, 'budget_limit': limit}, where: 'id = ?', whereArgs: [id]);
+  }
+
+  static Future<DateTime> startProjectBudgetIfNeeded(int id, DateTime now) async {
+    final db = await database;
+    await db.rawUpdate('UPDATE projects SET budget_started_at = COALESCE(budget_started_at, ?) WHERE id = ?', [now.toIso8601String(), id]);
+    return (await getProject(id))!.budgetStartedAt!;
+  }
+
+  static Future<double> addProjectBudgetSpend(int id, double amountUsd) async {
+    if (amountUsd < 0) throw ArgumentError.value(amountUsd, 'amountUsd', 'cannot be negative');
+    final db = await database;
+    await db.rawUpdate('UPDATE projects SET budget_spent_usd = budget_spent_usd + ? WHERE id = ?', [amountUsd, id]);
+    return (await getProject(id))!.budgetSpentUsd;
   }
 
   static Future<void> updateProjectLastOpened(int id) async {

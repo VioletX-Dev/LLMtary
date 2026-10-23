@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../models/llm_settings.dart';
 import '../models/llm_provider.dart';
 import '../utils/app_exceptions.dart';
+import 'test_budget.dart';
 
 /// Phase A.3: Simple counting semaphore for limiting concurrent LLM calls.
 ///
@@ -63,6 +64,7 @@ class LLMSemaphore {
 
 class LLMService {
   final Function(String, String)? onPromptResponse;
+  final bool enforceProjectBudget;
   bool enableDebugLogging;
 
   /// Phase E.4: Session-level retry counter — incremented on every retry across
@@ -80,7 +82,11 @@ class LLMService {
   /// are analyzed in parallel. Default: 10 concurrent cloud calls.
   static final LLMSemaphore globalCloudSemaphore = LLMSemaphore(10);
 
-  LLMService({this.onPromptResponse, this.enableDebugLogging = false});
+  LLMService({
+    this.onPromptResponse,
+    this.enableDebugLogging = false,
+    this.enforceProjectBudget = true,
+  });
 
   /// Builds an OpenAI Chat Completions payload with model-compatible fields.
   static Map<String, dynamic> buildChatGPTRequestBody({
@@ -90,7 +96,9 @@ class LLMService {
     required int maxTokens,
   }) {
     final normalizedModel = modelName.trim().toLowerCase();
-    final isReasoningModel = RegExp(r'^(gpt-5|o[1-9])(?:[-.]|$)').hasMatch(normalizedModel);
+    final isReasoningModel = RegExp(
+      r'^(gpt-5|o[1-9])(?:[-.]|$)',
+    ).hasMatch(normalizedModel);
     final body = <String, dynamic>{
       'model': modelName,
       'messages': messages,
@@ -102,14 +110,16 @@ class LLMService {
       body['temperature'] = temperature;
       body['max_tokens'] = maxTokens;
     }
-    if (normalizedModel.contains('gpt-4o') || normalizedModel.contains('gpt-4-turbo')) {
+    if (normalizedModel.contains('gpt-4o') ||
+        normalizedModel.contains('gpt-4-turbo')) {
       body['response_format'] = {'type': 'json_object'};
     }
     return body;
   }
 
   /// Returns a `[HH:MM:SS.mmm]` timestamp string for console output.
-  static String _ts() => '[${DateTime.now().toIso8601String().substring(11, 23)}]';
+  static String _ts() =>
+      '[${DateTime.now().toIso8601String().substring(11, 23)}]';
 
   /// Prints [text] in chunks so Flutter's debug console doesn't truncate it.
   static void _printLong(String label, String text) {
@@ -121,11 +131,18 @@ class LLMService {
     }
     print('$ts $label (${text.length} chars):');
     for (var i = 0; i < text.length; i += chunkSize) {
-      print(text.substring(i, i + chunkSize > text.length ? text.length : i + chunkSize));
+      print(
+        text.substring(
+          i,
+          i + chunkSize > text.length ? text.length : i + chunkSize,
+        ),
+      );
     }
   }
+
   // System prompt establishing expertise and enabling web search behavior
-  static const String _securityExpertSystemPrompt = '''You are an elite penetration tester and cybersecurity expert with deep expertise in:
+  static const String _securityExpertSystemPrompt =
+      '''You are an elite penetration tester and cybersecurity expert with deep expertise in:
 - Vulnerability assessment and exploitation techniques
 - CVE analysis and exploit development
 - Network security, web application security, and infrastructure security
@@ -146,13 +163,16 @@ class LLMService {
 - Do NOT suggest curling Google, MITRE, or NVD websites — they return CAPTCHAs or block automated requests
 - Use your training knowledge for CVE details and exploit techniques''';
 
-  Future<String> sendMessage(LLMSettings settings, String message, {
+  Future<String> sendMessage(
+    LLMSettings settings,
+    String message, {
     bool useSystemPrompt = true,
     String? systemPromptOverride,
     void Function(int sent, int received)? onTokensUsed,
   }) async {
-    final timeout = Duration(seconds: settings.timeoutSeconds);
-    final systemPrompt = systemPromptOverride ?? (useSystemPrompt ? _securityExpertSystemPrompt : null);
+    final systemPrompt =
+        systemPromptOverride ??
+        (useSystemPrompt ? _securityExpertSystemPrompt : null);
 
     print('${_ts()}\n=== LLM REQUEST ===');
     print('${_ts()} Provider: ${settings.provider.displayName}');
@@ -167,12 +187,53 @@ class LLMService {
     for (int attempt = 0; attempt <= _maxRetries; attempt++) {
       if (attempt > 0) {
         _sessionRetryCount++;
-        print('${_ts()} LLM call failed, retrying (attempt ${attempt + 1}/${_maxRetries + 1})...');
+        print(
+          '${_ts()} LLM call failed, retrying (attempt ${attempt + 1}/${_maxRetries + 1})...',
+        );
         // E.4: warn when session accumulates many retries
         if (_sessionRetryCount == _retryWarningThreshold) {
-          print('${_ts()} WARNING: Multiple LLM timeouts detected ($_sessionRetryCount retries). '
-              'Consider increasing timeout in AI Settings or checking provider status.');
+          print(
+            '${_ts()} WARNING: Multiple LLM timeouts detected ($_sessionRetryCount retries). '
+            'Consider increasing timeout in AI Settings or checking provider status.',
+          );
         }
+      }
+
+      final budgetSession = enforceProjectBudget
+          ? TestBudgetRuntime.activeSession
+          : null;
+      BudgetAllowance? allowance;
+      var effectiveSettings = settings;
+      var timeout = Duration(seconds: settings.timeoutSeconds);
+      Future<void>? budgetWrite;
+      var usageRecorded = false;
+      if (budgetSession != null) {
+        allowance = await budgetSession.beforeRequest(
+          provider: settings.provider,
+          modelName: settings.modelName,
+          estimatedInputTokens: utf8
+              .encode(message + (systemPrompt ?? ''))
+              .length,
+          configuredMaxOutputTokens: settings.maxTokens,
+          configuredTimeout: timeout,
+          now: DateTime.now(),
+        );
+        timeout = allowance.timeout;
+        effectiveSettings = settings.copyWith(
+          maxTokens: allowance.maxOutputTokens,
+          timeoutSeconds: timeout.inSeconds,
+        );
+      }
+      void trackedTokens(int sent, int received) {
+        usageRecorded = true;
+        if (budgetSession != null) {
+          budgetWrite = budgetSession.recordUsage(
+            inputTokens: sent,
+            outputTokens: received,
+            allowance: allowance,
+          );
+        }
+        onTokensUsed?.call(sent, received);
       }
 
       try {
@@ -180,29 +241,72 @@ class LLMService {
         // overwhelming rate limits when multiple targets run analysis in parallel.
         // Local providers (Ollama, LM Studio) skip the semaphore entirely.
         Future<String> doProviderCall() async {
-          switch (settings.provider) {
+          switch (effectiveSettings.provider) {
             case LLMProvider.ollama:
-              return await _sendOllama(settings, message, timeout, systemPrompt, onTokensUsed: onTokensUsed);
+              return await _sendOllama(
+                effectiveSettings,
+                message,
+                timeout,
+                systemPrompt,
+                onTokensUsed: trackedTokens,
+              );
             case LLMProvider.lmStudio:
-              return await _sendLMStudio(settings, message, timeout, systemPrompt, onTokensUsed: onTokensUsed);
+              return await _sendLMStudio(
+                effectiveSettings,
+                message,
+                timeout,
+                systemPrompt,
+                onTokensUsed: trackedTokens,
+              );
             case LLMProvider.claude:
-              return await _sendClaude(settings, message, timeout, systemPrompt, onTokensUsed: onTokensUsed);
+              return await _sendClaude(
+                effectiveSettings,
+                message,
+                timeout,
+                systemPrompt,
+                onTokensUsed: trackedTokens,
+              );
             case LLMProvider.chatGPT:
-              return await _sendChatGPT(settings, message, timeout, systemPrompt, onTokensUsed: onTokensUsed);
+              return await _sendChatGPT(
+                effectiveSettings,
+                message,
+                timeout,
+                systemPrompt,
+                onTokensUsed: trackedTokens,
+              );
             case LLMProvider.gemini:
-              return await _sendGemini(settings, message, timeout, systemPrompt, onTokensUsed: onTokensUsed);
+              return await _sendGemini(
+                effectiveSettings,
+                message,
+                timeout,
+                systemPrompt,
+                onTokensUsed: trackedTokens,
+              );
             case LLMProvider.openRouter:
-              return await _sendOpenRouter(settings, message, timeout, systemPrompt, onTokensUsed: onTokensUsed);
+              return await _sendOpenRouter(
+                effectiveSettings,
+                message,
+                timeout,
+                systemPrompt,
+                onTokensUsed: trackedTokens,
+              );
             default:
               throw const ConfigurationException('No AI provider selected');
           }
         }
 
-        if (LLMSemaphore.isCloudProvider(settings.provider)) {
+        if (LLMSemaphore.isCloudProvider(effectiveSettings.provider)) {
           response = await globalCloudSemaphore.run(doProviderCall);
         } else {
           response = await doProviderCall();
         }
+        if (!usageRecorded && budgetSession != null) {
+          trackedTokens(
+            utf8.encode(message + (systemPrompt ?? '')).length,
+            utf8.encode(response).length,
+          );
+        }
+        if (budgetWrite != null) await budgetWrite;
         // Success — exit retry loop
         lastException = null;
         break;
@@ -213,8 +317,10 @@ class LLMService {
           if (attempt < _maxRetries) {
             // Phase E.1: 429 uses Retry-After if available, else exponential backoff
             final backoffSeconds = attempt == 0 ? 5 : 15;
-            print('${_ts()} HTTP ${e.statusCode} from ${settings.provider.displayName} — '
-                'waiting ${backoffSeconds}s before retry ${attempt + 2}/${_maxRetries + 1}...');
+            print(
+              '${_ts()} HTTP ${e.statusCode} from ${settings.provider.displayName} — '
+              'waiting ${backoffSeconds}s before retry ${attempt + 2}/${_maxRetries + 1}...',
+            );
             await Future.delayed(Duration(seconds: backoffSeconds));
           }
         } else {
@@ -224,13 +330,18 @@ class LLMService {
         lastException = e;
         if (attempt < _maxRetries) {
           final backoffSeconds = attempt == 0 ? 3 : 10;
-          print('${_ts()} LLM call timed out — waiting ${backoffSeconds}s before retry '
-              '${attempt + 2}/${_maxRetries + 1}...');
+          print(
+            '${_ts()} LLM call timed out — waiting ${backoffSeconds}s before retry '
+            '${attempt + 2}/${_maxRetries + 1}...',
+          );
           await Future.delayed(Duration(seconds: backoffSeconds));
         }
       } catch (e) {
         // Non-retryable errors (config errors, network hard failures, etc.)
         rethrow;
+      } finally {
+        if (allowance != null && !usageRecorded)
+          budgetSession?.cancel(allowance);
       }
     }
 
@@ -264,26 +375,36 @@ class LLMService {
       print('${_ts()} DEBUG [$providerName]: POST $url');
       print('${_ts()} DEBUG [$providerName]: Model: ${body['model'] ?? 'N/A'}');
       if (headers.length > 1) {
-        print('${_ts()} DEBUG [$providerName]: Headers: ${headers.keys.join(", ")}');
+        print(
+          '${_ts()} DEBUG [$providerName]: Headers: ${headers.keys.join(", ")}',
+        );
       }
     }
 
     final client = http.Client();
     try {
-      final response = await client.post(
-        Uri.parse(url),
-        headers: headers,
-        body: json.encode(body),
-      ).timeout(timeout, onTimeout: () {
-        // Forcibly close the client to tear down the TCP socket.
-        client.close();
-        throw TimeoutException('$providerName request timed out after ${timeout.inSeconds}s', timeout);
-      });
+      final response = await client
+          .post(Uri.parse(url), headers: headers, body: json.encode(body))
+          .timeout(
+            timeout,
+            onTimeout: () {
+              // Forcibly close the client to tear down the TCP socket.
+              client.close();
+              throw TimeoutException(
+                '$providerName request timed out after ${timeout.inSeconds}s',
+                timeout,
+              );
+            },
+          );
 
       if (enableDebugLogging) {
-        print('${_ts()} DEBUG [$providerName]: Response status: ${response.statusCode}');
+        print(
+          '${_ts()} DEBUG [$providerName]: Response status: ${response.statusCode}',
+        );
         if (response.statusCode != 200) {
-          print('${_ts()} DEBUG [$providerName]: Response body: ${response.body}');
+          print(
+            '${_ts()} DEBUG [$providerName]: Response body: ${response.body}',
+          );
         }
       }
 
@@ -302,7 +423,9 @@ class LLMService {
   /// it falls back to extracting the last user message and system prompt.
   /// Phase E.2: sendMessages() uses the same retry logic as sendMessage().
   /// The retry wraps the outer provider call so all providers benefit from it.
-  Future<String> sendMessages(LLMSettings settings, List<Map<String, String>> messages, {
+  Future<String> sendMessages(
+    LLMSettings settings,
+    List<Map<String, String>> messages, {
     void Function(int sent, int received)? onTokensUsed,
   }) async {
     // Extract system prompt and last user message for providers that need them
@@ -326,8 +449,12 @@ class LLMService {
       case LLMProvider.openRouter:
         break; // handled below with retry loop
       default:
-        return await sendMessage(settings, lastUserMessage,
-            systemPromptOverride: systemPrompt, onTokensUsed: onTokensUsed);
+        return await sendMessage(
+          settings,
+          lastUserMessage,
+          systemPromptOverride: systemPrompt,
+          onTokensUsed: onTokensUsed,
+        );
     }
 
     // Phase E.2: Retry loop for OpenAI-compatible multi-turn providers
@@ -336,10 +463,14 @@ class LLMService {
     for (int attempt = 0; attempt <= _maxRetries; attempt++) {
       if (attempt > 0) {
         _sessionRetryCount++;
-        print('${_ts()} LLM conversation failed, retrying (attempt ${attempt + 1}/${_maxRetries + 1})...');
+        print(
+          '${_ts()} LLM conversation failed, retrying (attempt ${attempt + 1}/${_maxRetries + 1})...',
+        );
         if (_sessionRetryCount == _retryWarningThreshold) {
-          print('${_ts()} WARNING: Multiple LLM timeouts detected ($_sessionRetryCount retries). '
-              'Consider increasing timeout in AI Settings or checking provider status.');
+          print(
+            '${_ts()} WARNING: Multiple LLM timeouts detected ($_sessionRetryCount retries). '
+            'Consider increasing timeout in AI Settings or checking provider status.',
+          );
         }
       }
 
@@ -347,15 +478,31 @@ class LLMService {
         Future<String> doConversationCall() async {
           switch (settings.provider) {
             case LLMProvider.lmStudio:
-              return await _sendLMStudioMessages(settings, messages, timeout, onTokensUsed: onTokensUsed);
+              return await _sendLMStudioMessages(
+                settings,
+                messages,
+                timeout,
+                onTokensUsed: onTokensUsed,
+              );
             case LLMProvider.chatGPT:
-              return await _sendChatGPTMessages(settings, messages, timeout, onTokensUsed: onTokensUsed);
+              return await _sendChatGPTMessages(
+                settings,
+                messages,
+                timeout,
+                onTokensUsed: onTokensUsed,
+              );
             case LLMProvider.openRouter:
-              return await _sendOpenRouterMessages(settings, messages, timeout, onTokensUsed: onTokensUsed);
+              return await _sendOpenRouterMessages(
+                settings,
+                messages,
+                timeout,
+                onTokensUsed: onTokensUsed,
+              );
             default:
               return '';
           }
         }
+
         // Phase A.3: All conversation providers here are cloud providers
         response = await globalCloudSemaphore.run(doConversationCall);
         lastException = null;
@@ -365,8 +512,10 @@ class LLMService {
           lastException = e;
           if (attempt < _maxRetries) {
             final backoffSeconds = attempt == 0 ? 5 : 15;
-            print('${_ts()} HTTP ${e.statusCode} — waiting ${backoffSeconds}s before retry '
-                '${attempt + 2}/${_maxRetries + 1}...');
+            print(
+              '${_ts()} HTTP ${e.statusCode} — waiting ${backoffSeconds}s before retry '
+              '${attempt + 2}/${_maxRetries + 1}...',
+            );
             await Future.delayed(Duration(seconds: backoffSeconds));
           }
         } else {
@@ -376,8 +525,10 @@ class LLMService {
         lastException = e;
         if (attempt < _maxRetries) {
           final backoffSeconds = attempt == 0 ? 3 : 10;
-          print('${_ts()} LLM conversation timed out — waiting ${backoffSeconds}s before retry '
-              '${attempt + 2}/${_maxRetries + 1}...');
+          print(
+            '${_ts()} LLM conversation timed out — waiting ${backoffSeconds}s before retry '
+            '${attempt + 2}/${_maxRetries + 1}...',
+          );
           await Future.delayed(Duration(seconds: backoffSeconds));
         }
       } catch (e) {
@@ -396,7 +547,12 @@ class LLMService {
   }
 
   /// LM Studio: send full conversation message list.
-  Future<String> _sendLMStudioMessages(LLMSettings settings, List<Map<String, String>> messages, Duration timeout, {void Function(int, int)? onTokensUsed}) async {
+  Future<String> _sendLMStudioMessages(
+    LLMSettings settings,
+    List<Map<String, String>> messages,
+    Duration timeout, {
+    void Function(int, int)? onTokensUsed,
+  }) async {
     final body = <String, dynamic>{
       'model': settings.modelName,
       'messages': messages,
@@ -405,20 +561,32 @@ class LLMService {
     };
     final url = '${settings.baseUrl}/v1/chat/completions';
     final response = await _sendHttpPost(
-      url, {'Content-Type': 'application/json'}, body, timeout, 'LM Studio',
+      url,
+      {'Content-Type': 'application/json'},
+      body,
+      timeout,
+      'LM Studio',
     );
     if (response.statusCode == 200) {
       final decoded = json.decode(response.body);
       final usage = decoded['usage'] as Map<String, dynamic>?;
       if (onTokensUsed != null && usage != null) {
-        onTokensUsed(usage['prompt_tokens'] as int? ?? 0, usage['completion_tokens'] as int? ?? 0);
+        onTokensUsed(
+          usage['prompt_tokens'] as int? ?? 0,
+          usage['completion_tokens'] as int? ?? 0,
+        );
       }
     }
     return _extractChatResponse(response, 'LM Studio');
   }
 
   /// ChatGPT: send full conversation message list.
-  Future<String> _sendChatGPTMessages(LLMSettings settings, List<Map<String, String>> messages, Duration timeout, {void Function(int, int)? onTokensUsed}) async {
+  Future<String> _sendChatGPTMessages(
+    LLMSettings settings,
+    List<Map<String, String>> messages,
+    Duration timeout, {
+    void Function(int, int)? onTokensUsed,
+  }) async {
     final body = buildChatGPTRequestBody(
       modelName: settings.modelName,
       messages: messages,
@@ -427,21 +595,34 @@ class LLMService {
     );
     final response = await _sendHttpPost(
       'https://api.openai.com/v1/chat/completions',
-      {'Content-Type': 'application/json', 'Authorization': 'Bearer ${settings.apiKey ?? ''}'},
-      body, timeout, 'ChatGPT',
+      {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ${settings.apiKey ?? ''}',
+      },
+      body,
+      timeout,
+      'ChatGPT',
     );
     if (response.statusCode == 200) {
       final decoded = json.decode(response.body);
       final usage = decoded['usage'] as Map<String, dynamic>?;
       if (onTokensUsed != null && usage != null) {
-        onTokensUsed(usage['prompt_tokens'] as int? ?? 0, usage['completion_tokens'] as int? ?? 0);
+        onTokensUsed(
+          usage['prompt_tokens'] as int? ?? 0,
+          usage['completion_tokens'] as int? ?? 0,
+        );
       }
     }
     return _extractChatResponse(response, 'ChatGPT');
   }
 
   /// OpenRouter: send full conversation message list.
-  Future<String> _sendOpenRouterMessages(LLMSettings settings, List<Map<String, String>> messages, Duration timeout, {void Function(int, int)? onTokensUsed}) async {
+  Future<String> _sendOpenRouterMessages(
+    LLMSettings settings,
+    List<Map<String, String>> messages,
+    Duration timeout, {
+    void Function(int, int)? onTokensUsed,
+  }) async {
     final body = <String, dynamic>{
       'model': settings.modelName,
       'messages': messages,
@@ -450,20 +631,31 @@ class LLMService {
     };
     final response = await _sendHttpPost(
       'https://openrouter.ai/api/v1/chat/completions',
-      {'Content-Type': 'application/json', 'Authorization': 'Bearer ${settings.apiKey ?? ''}'},
-      body, timeout, 'OpenRouter',
+      {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ${settings.apiKey ?? ''}',
+      },
+      body,
+      timeout,
+      'OpenRouter',
     );
     if (response.statusCode == 200) {
       final decoded = json.decode(response.body);
       final usage = decoded['usage'] as Map<String, dynamic>?;
       if (onTokensUsed != null && usage != null) {
-        onTokensUsed(usage['prompt_tokens'] as int? ?? 0, usage['completion_tokens'] as int? ?? 0);
+        onTokensUsed(
+          usage['prompt_tokens'] as int? ?? 0,
+          usage['completion_tokens'] as int? ?? 0,
+        );
       }
     }
     return _extractChatResponse(response, 'OpenRouter');
   }
 
-  List<Map<String, String>> _buildChatMessages(String message, String? systemPrompt) {
+  List<Map<String, String>> _buildChatMessages(
+    String message,
+    String? systemPrompt,
+  ) {
     final messages = <Map<String, String>>[];
     if (systemPrompt != null) {
       messages.add({'role': 'system', 'content': systemPrompt});
@@ -483,7 +675,13 @@ class LLMService {
 
   // --- Provider implementations ---
 
-  Future<String> _sendOllama(LLMSettings settings, String message, Duration timeout, String? systemPrompt, {void Function(int, int)? onTokensUsed}) async {
+  Future<String> _sendOllama(
+    LLMSettings settings,
+    String message,
+    Duration timeout,
+    String? systemPrompt, {
+    void Function(int, int)? onTokensUsed,
+  }) async {
     final body = <String, dynamic>{
       'model': settings.modelName,
       'prompt': message,
@@ -501,7 +699,11 @@ class LLMService {
 
     final url = '${settings.baseUrl}/api/generate';
     final response = await _sendHttpPost(
-      url, {'Content-Type': 'application/json'}, body, timeout, 'Ollama',
+      url,
+      {'Content-Type': 'application/json'},
+      body,
+      timeout,
+      'Ollama',
     );
 
     if (response.statusCode == 200) {
@@ -517,7 +719,13 @@ class LLMService {
     throw LLMApiException('Ollama', response.statusCode, response.body);
   }
 
-  Future<String> _sendLMStudio(LLMSettings settings, String message, Duration timeout, String? systemPrompt, {void Function(int, int)? onTokensUsed}) async {
+  Future<String> _sendLMStudio(
+    LLMSettings settings,
+    String message,
+    Duration timeout,
+    String? systemPrompt, {
+    void Function(int, int)? onTokensUsed,
+  }) async {
     final body = <String, dynamic>{
       'model': settings.modelName,
       'messages': _buildChatMessages(message, systemPrompt),
@@ -532,7 +740,13 @@ class LLMService {
 
     final baseUrl = settings.baseUrl?.replaceAll(RegExp(r'/v1/?$'), '') ?? '';
     final url = '$baseUrl/v1/chat/completions';
-    final response = await _sendHttpPost(url, headers, body, timeout, 'LM Studio');
+    final response = await _sendHttpPost(
+      url,
+      headers,
+      body,
+      timeout,
+      'LM Studio',
+    );
     if (response.statusCode == 200) {
       final decoded = json.decode(response.body);
       final usage = decoded['usage'] as Map<String, dynamic>?;
@@ -546,11 +760,19 @@ class LLMService {
     return _extractChatResponse(response, 'LM Studio');
   }
 
-  Future<String> _sendClaude(LLMSettings settings, String message, Duration timeout, String? systemPrompt, {void Function(int, int)? onTokensUsed}) async {
+  Future<String> _sendClaude(
+    LLMSettings settings,
+    String message,
+    Duration timeout,
+    String? systemPrompt, {
+    void Function(int, int)? onTokensUsed,
+  }) async {
     final body = <String, dynamic>{
       'model': settings.modelName,
       'max_tokens': settings.maxTokens,
-      'messages': [{'role': 'user', 'content': message}],
+      'messages': [
+        {'role': 'user', 'content': message},
+      ],
     };
 
     if (systemPrompt != null) {
@@ -558,7 +780,8 @@ class LLMService {
     }
 
     // Enable extended thinking for supported models (requires temperature=1)
-    if (settings.modelName.contains('sonnet') || settings.modelName.contains('opus')) {
+    if (settings.modelName.contains('sonnet') ||
+        settings.modelName.contains('opus')) {
       body['thinking'] = {'type': 'enabled', 'budget_tokens': 10000};
       body['temperature'] = 1;
     } else {
@@ -598,7 +821,13 @@ class LLMService {
     throw LLMApiException('Claude', response.statusCode, response.body);
   }
 
-  Future<String> _sendChatGPT(LLMSettings settings, String message, Duration timeout, String? systemPrompt, {void Function(int, int)? onTokensUsed}) async {
+  Future<String> _sendChatGPT(
+    LLMSettings settings,
+    String message,
+    Duration timeout,
+    String? systemPrompt, {
+    void Function(int, int)? onTokensUsed,
+  }) async {
     final body = buildChatGPTRequestBody(
       modelName: settings.modelName,
       messages: _buildChatMessages(message, systemPrompt),
@@ -629,13 +858,21 @@ class LLMService {
     return _extractChatResponse(response, 'ChatGPT');
   }
 
-  Future<String> _sendGemini(LLMSettings settings, String message, Duration timeout, String? systemPrompt, {void Function(int, int)? onTokensUsed}) async {
+  Future<String> _sendGemini(
+    LLMSettings settings,
+    String message,
+    Duration timeout,
+    String? systemPrompt, {
+    void Function(int, int)? onTokensUsed,
+  }) async {
     final body = <String, dynamic>{
       'contents': [
         {
           'role': 'user',
-          'parts': [{'text': message}]
-        }
+          'parts': [
+            {'text': message},
+          ],
+        },
       ],
       'generationConfig': {
         'temperature': settings.temperature,
@@ -646,7 +883,9 @@ class LLMService {
 
     if (systemPrompt != null) {
       body['systemInstruction'] = {
-        'parts': [{'text': systemPrompt}]
+        'parts': [
+          {'text': systemPrompt},
+        ],
       };
     }
 
@@ -657,14 +896,19 @@ class LLMService {
           'dynamicRetrievalConfig': {
             'mode': 'MODE_DYNAMIC',
             'dynamicThreshold': 0.1,
-          }
-        }
-      }
+          },
+        },
+      },
     ];
 
-    final url = 'https://generativelanguage.googleapis.com/v1beta/models/${settings.modelName}:generateContent?key=${settings.apiKey}';
+    final url =
+        'https://generativelanguage.googleapis.com/v1beta/models/${settings.modelName}:generateContent?key=${settings.apiKey}';
     final response = await _sendHttpPost(
-      url, {'Content-Type': 'application/json'}, body, timeout, 'Gemini',
+      url,
+      {'Content-Type': 'application/json'},
+      body,
+      timeout,
+      'Gemini',
     );
 
     if (response.statusCode == 200) {
@@ -683,7 +927,13 @@ class LLMService {
     throw LLMApiException('Gemini', response.statusCode, response.body);
   }
 
-  Future<String> _sendOpenRouter(LLMSettings settings, String message, Duration timeout, String? systemPrompt, {void Function(int, int)? onTokensUsed}) async {
+  Future<String> _sendOpenRouter(
+    LLMSettings settings,
+    String message,
+    Duration timeout,
+    String? systemPrompt, {
+    void Function(int, int)? onTokensUsed,
+  }) async {
     final body = <String, dynamic>{
       'model': settings.modelName,
       'messages': _buildChatMessages(message, systemPrompt),
@@ -692,7 +942,9 @@ class LLMService {
       'provider': {'data_collection': 'deny'},
     };
 
-    final baseUrl = settings.baseUrl?.isNotEmpty == true ? settings.baseUrl : 'https://openrouter.ai/api/v1';
+    final baseUrl = settings.baseUrl?.isNotEmpty == true
+        ? settings.baseUrl
+        : 'https://openrouter.ai/api/v1';
     final url = '$baseUrl/chat/completions';
     final response = await _sendHttpPost(
       url,
@@ -719,7 +971,11 @@ class LLMService {
       final choices = decoded['choices'] as List?;
       final content = choices?[0]['message']['content'] as String? ?? '';
       if (content.isEmpty || content == 'No response') {
-        throw const LLMApiException('OpenRouter', 200, 'Model returned empty response');
+        throw const LLMApiException(
+          'OpenRouter',
+          200,
+          'Model returned empty response',
+        );
       }
       return content;
     }
@@ -740,7 +996,9 @@ class LLMService {
     final response = await http.get(Uri.parse(url), headers: headers);
 
     if (enableDebugLogging) {
-      print('${_ts()} DEBUG [$providerName Models]: Response status: ${response.statusCode}');
+      print(
+        '${_ts()} DEBUG [$providerName Models]: Response status: ${response.statusCode}',
+      );
     }
 
     if (response.statusCode == 200) {
@@ -756,55 +1014,94 @@ class LLMService {
 
   Future<List<String>> fetchAvailableModels(LLMSettings settings) async {
     try {
-      print('${_ts()} DEBUG: fetchAvailableModels called for ${settings.provider}');
+      print(
+        '${_ts()} DEBUG: fetchAvailableModels called for ${settings.provider}',
+      );
       switch (settings.provider) {
         case LLMProvider.ollama:
           return _fetchModelList(
-            '${settings.baseUrl}/api/tags', {}, 'Ollama',
-            (data) => (data['models'] as List?)?.map((m) => m['name'] as String).toList() ?? [],
+            '${settings.baseUrl}/api/tags',
+            {},
+            'Ollama',
+            (data) =>
+                (data['models'] as List?)
+                    ?.map((m) => m['name'] as String)
+                    .toList() ??
+                [],
           );
         case LLMProvider.lmStudio:
           final headers = <String, String>{};
           if (settings.apiKey != null && settings.apiKey!.trim().isNotEmpty) {
             headers['Authorization'] = 'Bearer ${settings.apiKey}';
           }
-          final baseUrl = settings.baseUrl?.replaceAll(RegExp(r'/v1/?$'), '') ?? '';
+          final baseUrl =
+              settings.baseUrl?.replaceAll(RegExp(r'/v1/?$'), '') ?? '';
           return _fetchModelList(
-            '$baseUrl/v1/models', headers, 'LM Studio',
-            (data) => (data['data'] as List?)?.map((m) => m['id'] as String).toList() ?? [],
+            '$baseUrl/v1/models',
+            headers,
+            'LM Studio',
+            (data) =>
+                (data['data'] as List?)
+                    ?.map((m) => m['id'] as String)
+                    .toList() ??
+                [],
           );
         case LLMProvider.claude:
           return _fetchModelList(
             'https://api.anthropic.com/v1/models',
-            {'x-api-key': settings.apiKey ?? '', 'anthropic-version': '2023-06-01'},
+            {
+              'x-api-key': settings.apiKey ?? '',
+              'anthropic-version': '2023-06-01',
+            },
             'Claude',
-            (data) => (data['data'] as List?)?.map((m) => m['id'] as String).toList() ?? [],
+            (data) =>
+                (data['data'] as List?)
+                    ?.map((m) => m['id'] as String)
+                    .toList() ??
+                [],
           );
         case LLMProvider.chatGPT:
           return _fetchModelList(
             'https://api.openai.com/v1/models',
             {'Authorization': 'Bearer ${settings.apiKey ?? ''}'},
             'ChatGPT',
-            (data) => (data['data'] as List?)
-                ?.map((m) => m['id'] as String)
-                .where((id) => id.startsWith('gpt'))
-                .toList() ?? [],
+            (data) =>
+                (data['data'] as List?)
+                    ?.map((m) => m['id'] as String)
+                    .where((id) => id.startsWith('gpt'))
+                    .toList() ??
+                [],
           );
         case LLMProvider.gemini:
           return _fetchModelList(
             'https://generativelanguage.googleapis.com/v1beta/models?key=${settings.apiKey}',
-            {}, 'Gemini',
-            (data) => (data['models'] as List?)
-                ?.where((m) => (m['supportedGenerationMethods'] as List?)?.contains('generateContent') ?? false)
-                .map((m) => (m['name'] as String).replaceFirst('models/', ''))
-                .toList() ?? [],
+            {},
+            'Gemini',
+            (data) =>
+                (data['models'] as List?)
+                    ?.where(
+                      (m) =>
+                          (m['supportedGenerationMethods'] as List?)?.contains(
+                            'generateContent',
+                          ) ??
+                          false,
+                    )
+                    .map(
+                      (m) => (m['name'] as String).replaceFirst('models/', ''),
+                    )
+                    .toList() ??
+                [],
           );
         case LLMProvider.openRouter:
           return _fetchModelList(
             'https://openrouter.ai/api/v1/models',
             {'Authorization': 'Bearer ${settings.apiKey ?? ''}'},
             'OpenRouter',
-            (data) => (data['data'] as List?)?.map((m) => m['id'] as String).toList() ?? [],
+            (data) =>
+                (data['data'] as List?)
+                    ?.map((m) => m['id'] as String)
+                    .toList() ??
+                [],
           );
         default:
           return [];

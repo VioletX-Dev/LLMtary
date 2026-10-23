@@ -8,8 +8,10 @@ class LLMSettings {
   final double temperature;
   final int maxTokens;
   final int timeoutSeconds;
+
   /// Max exploit-loop iterations when the finding has a known CVE. Default 30.
   final int maxIterationsWithCve;
+
   /// Max exploit-loop iterations for generic/no-CVE findings. Default 15.
   final int maxIterationsNoCve;
 
@@ -38,7 +40,10 @@ class LLMSettings {
   };
 
   factory LLMSettings.fromJson(Map<String, dynamic> json) => LLMSettings(
-    provider: LLMProvider.values.firstWhere((e) => e.name == json['provider'], orElse: () => LLMProvider.none),
+    provider: LLMProvider.values.firstWhere(
+      (e) => e.name == json['provider'],
+      orElse: () => LLMProvider.none,
+    ),
     baseUrl: json['baseUrl'] as String?,
     apiKey: json['apiKey'] as String?,
     modelName: json['modelName'] as String? ?? '',
@@ -49,5 +54,18 @@ class LLMSettings {
     maxIterationsNoCve: json['maxIterationsNoCve'] as int? ?? 15,
   );
 
-  factory LLMSettings.defaultSettings() => LLMSettings(provider: LLMProvider.none, modelName: '');
+  factory LLMSettings.defaultSettings() =>
+      LLMSettings(provider: LLMProvider.none, modelName: '');
+
+  LLMSettings copyWith({int? maxTokens, int? timeoutSeconds}) => LLMSettings(
+    provider: provider,
+    baseUrl: baseUrl,
+    apiKey: apiKey,
+    modelName: modelName,
+    temperature: temperature,
+    maxTokens: maxTokens ?? this.maxTokens,
+    timeoutSeconds: timeoutSeconds ?? this.timeoutSeconds,
+    maxIterationsWithCve: maxIterationsWithCve,
+    maxIterationsNoCve: maxIterationsNoCve,
+  );
 }

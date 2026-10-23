@@ -1,3 +1,5 @@
+import 'test_budget_mode.dart';
+
 class Project {
   final int? id;
   final String name;
@@ -15,14 +17,24 @@ class Project {
   final String? methodology;
   final String? riskRatingModel;
   final String? conclusion;
+
   /// Newline-separated list of in-scope targets (IPs, CIDRs, FQDNs, wildcards, or "*" for all).
   final String? scope;
+
   /// Newline-separated list of explicitly out-of-scope targets.
   final String? scopeExclusions;
+
   /// Free-text rules of engagement notes (e.g. "no DoS", "no lockouts").
   final String? scopeNotes;
+
   /// Customer-provided testing priorities and requests for the LLM.
   final String? customerTestingRequests;
+  final TestBudgetMode? budgetMode;
+
+  /// USD when [budgetMode] is apiCost; minutes when it is localRuntime.
+  final double? budgetLimit;
+  final double budgetSpentUsd;
+  final DateTime? budgetStartedAt;
 
   Project({
     this.id,
@@ -45,15 +57,27 @@ class Project {
     this.scopeExclusions,
     this.scopeNotes,
     this.customerTestingRequests,
+    this.budgetMode,
+    this.budgetLimit,
+    this.budgetSpentUsd = 0,
+    this.budgetStartedAt,
   });
 
+  bool get hasBudget => budgetMode != null && (budgetLimit ?? 0) > 0;
+
   /// Parsed in-scope list (non-empty lines only).
-  List<String> get scopeList =>
-      (scope ?? '').split('\n').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+  List<String> get scopeList => (scope ?? '')
+      .split('\n')
+      .map((s) => s.trim())
+      .where((s) => s.isNotEmpty)
+      .toList();
 
   /// Parsed exclusion list (non-empty lines only).
-  List<String> get exclusionList =>
-      (scopeExclusions ?? '').split('\n').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+  List<String> get exclusionList => (scopeExclusions ?? '')
+      .split('\n')
+      .map((s) => s.trim())
+      .where((s) => s.isNotEmpty)
+      .toList();
 
   Map<String, dynamic> toMap() => {
     'id': id,
@@ -76,6 +100,10 @@ class Project {
     'scope_exclusions': scopeExclusions,
     'scope_notes': scopeNotes,
     'customer_testing_requests': customerTestingRequests,
+    'budget_mode': budgetMode?.name,
+    'budget_limit': budgetLimit,
+    'budget_spent_usd': budgetSpentUsd,
+    'budget_started_at': budgetStartedAt?.toIso8601String(),
   };
 
   factory Project.fromMap(Map<String, dynamic> map) => Project(
@@ -87,8 +115,12 @@ class Project {
     scanComplete: (map['scanComplete'] as int? ?? 0) == 1,
     analysisComplete: (map['analysisComplete'] as int? ?? 0) == 1,
     hasResults: (map['hasResults'] as int? ?? 0) == 1,
-    firstAnalysisAt: DateTime.tryParse(map['first_analysis_at'] as String? ?? ''),
-    lastExecutionAt: DateTime.tryParse(map['last_execution_at'] as String? ?? ''),
+    firstAnalysisAt: DateTime.tryParse(
+      map['first_analysis_at'] as String? ?? '',
+    ),
+    lastExecutionAt: DateTime.tryParse(
+      map['last_execution_at'] as String? ?? '',
+    ),
     reportTitle: map['report_title'] as String?,
     pentesterName: map['pentester_name'] as String?,
     executiveSummary: map['executive_summary'] as String?,
@@ -99,6 +131,15 @@ class Project {
     scopeExclusions: map['scope_exclusions'] as String?,
     scopeNotes: map['scope_notes'] as String?,
     customerTestingRequests: map['customer_testing_requests'] as String?,
+    budgetMode: TestBudgetMode.values.cast<TestBudgetMode?>().firstWhere(
+      (mode) => mode?.name == map['budget_mode'],
+      orElse: () => null,
+    ),
+    budgetLimit: (map['budget_limit'] as num?)?.toDouble(),
+    budgetSpentUsd: (map['budget_spent_usd'] as num?)?.toDouble() ?? 0,
+    budgetStartedAt: DateTime.tryParse(
+      map['budget_started_at'] as String? ?? '',
+    ),
   );
 
   Project copyWith({
@@ -118,6 +159,10 @@ class Project {
     String? scopeExclusions,
     String? scopeNotes,
     String? customerTestingRequests,
+    TestBudgetMode? budgetMode,
+    double? budgetLimit,
+    double? budgetSpentUsd,
+    DateTime? budgetStartedAt,
   }) => Project(
     id: id,
     name: name,
@@ -138,6 +183,11 @@ class Project {
     scope: scope ?? this.scope,
     scopeExclusions: scopeExclusions ?? this.scopeExclusions,
     scopeNotes: scopeNotes ?? this.scopeNotes,
-    customerTestingRequests: customerTestingRequests ?? this.customerTestingRequests,
+    customerTestingRequests:
+        customerTestingRequests ?? this.customerTestingRequests,
+    budgetMode: budgetMode ?? this.budgetMode,
+    budgetLimit: budgetLimit ?? this.budgetLimit,
+    budgetSpentUsd: budgetSpentUsd ?? this.budgetSpentUsd,
+    budgetStartedAt: budgetStartedAt ?? this.budgetStartedAt,
   );
 }

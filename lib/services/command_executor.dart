@@ -7,6 +7,7 @@ import '../utils/json_parser.dart';
 import '../utils/output_sanitizer.dart';
 import 'llm_service.dart';
 import 'tool_manager.dart';
+import 'test_budget.dart';
 
 // Re-export tool_manager types so existing callers don't need to change imports
 export 'tool_manager.dart' show ToolUsageInfo, ToolOption, ToolExample;
@@ -1875,6 +1876,10 @@ Respond ONLY with valid JSON:
   /// Global command timeout. Generous to accommodate any tool the LLM chooses.
   static const Duration _commandTimeout = Duration(minutes: 30);
 
+  static Duration _effectiveCommandTimeout() =>
+      TestBudgetRuntime.activeSession?.operationTimeout(_commandTimeout, DateTime.now()) ??
+      _commandTimeout;
+
   /// Write (or overwrite) a thin sudo wrapper at a fixed path in /tmp so that
   /// any 'sudo' call within a command chain receives the password automatically
   /// via stdin without requiring an interactive TTY.
@@ -2030,7 +2035,7 @@ Respond ONLY with valid JSON:
         }
       });
 
-      final exitCode = await process.exitCode.timeout(_commandTimeout);
+      final exitCode = await process.exitCode.timeout(_effectiveCommandTimeout());
       if (killed) {
         return CommandResult(
           -1,
@@ -2144,7 +2149,7 @@ Respond ONLY with valid JSON:
         }
       });
 
-      final exitCode = await process.exitCode.timeout(_commandTimeout);
+      final exitCode = await process.exitCode.timeout(_effectiveCommandTimeout());
       if (killed) {
         return CommandResult(
           -1,
@@ -2258,7 +2263,7 @@ Respond ONLY with valid JSON:
         }
       });
 
-      final exitCode = await process.exitCode.timeout(_commandTimeout);
+      final exitCode = await process.exitCode.timeout(_effectiveCommandTimeout());
       if (killed) {
         return CommandResult(
           -1,

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:llmtary/database/database_helper.dart';
 
 /// Tests that the database migration chain preserves data across upgrades.
 void main() {
@@ -167,6 +168,41 @@ void main() {
     expect(rows.length, 1);
     expect(rows.first['proofCommandExpectedOutput'], 'expected output');
 
+    await db.close();
+  });
+
+  test('v26 budget migration preserves projects and adds budget columns', () async {
+    final db = await openDatabase(
+      inMemoryDatabasePath,
+      version: 1,
+      singleInstance: false,
+      onCreate: (db, version) async {
+        await db.execute('''
+          CREATE TABLE projects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            folderPath TEXT NOT NULL,
+            createdAt TEXT NOT NULL,
+            lastOpenedAt TEXT NOT NULL
+          )
+        ''');
+      },
+    );
+    await db.insert('projects', {
+      'name': 'legacy',
+      'folderPath': '/tmp/legacy',
+      'createdAt': DateTime.utc(2026).toIso8601String(),
+      'lastOpenedAt': DateTime.utc(2026).toIso8601String(),
+    });
+
+    await DatabaseHelper.migrateProjectBudgets(db);
+
+    final columns = await db.rawQuery('PRAGMA table_info(projects)');
+    final names = columns.map((row) => row['name']).toSet();
+    expect(names, containsAll(['budget_mode', 'budget_limit', 'budget_spent_usd', 'budget_started_at']));
+    final rows = await db.query('projects');
+    expect(rows.single['name'], 'legacy');
+    expect((rows.single['budget_spent_usd'] as num).toDouble(), 0.0);
     await db.close();
   });
 }

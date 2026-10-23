@@ -12,6 +12,7 @@ import '../database/database_helper.dart';
 import '../constants/app_constants.dart';
 import '../services/storage_service.dart';
 import '../services/background_process_manager.dart';
+import '../services/test_budget.dart';
 
 class PromptLog {
   final String prompt;
@@ -381,7 +382,42 @@ Raise confidence to HIGH for any finding where these credentials directly enable
 
   void updateCurrentProject(Project project) {
     _currentProject = project;
+    _configureBudget(project);
     notifyListeners();
+  }
+
+  void _configureBudget(Project? project) {
+    if (project?.id == null) {
+      TestBudgetRuntime.clear();
+      return;
+    }
+    TestBudgetRuntime.configure(
+      ProjectBudgetSession(
+        project: project!,
+        onSpend: (amount) async {
+          final total = await DatabaseHelper.addProjectBudgetSpend(
+            project.id!,
+            amount,
+          );
+          if (_currentProject?.id == project.id) {
+            _currentProject = _currentProject!.copyWith(budgetSpentUsd: total);
+            notifyListeners();
+          }
+        },
+        onStart: (startedAt) async {
+          final stored = await DatabaseHelper.startProjectBudgetIfNeeded(
+            project.id!,
+            startedAt,
+          );
+          if (_currentProject?.id == project.id) {
+            _currentProject = _currentProject!.copyWith(
+              budgetStartedAt: stored,
+            );
+            notifyListeners();
+          }
+        },
+      ),
+    );
   }
 
   /// Stop all background listener processes (Responder, ntlmrelayx, etc.).
@@ -395,6 +431,7 @@ Raise confidence to HIGH for any finding where these credentials directly enable
     await _closeDebugLogFile();
     _createDebugLog = false;
     _currentProject = project;
+    _configureBudget(project);
     _authenticatedAccess = null;
     _adminPassword = null;
     _targets = [];

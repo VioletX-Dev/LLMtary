@@ -30,7 +30,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _maxIterationsNoCve = 15;
   List<String> _availableModels = [];
   bool _isLoadingModels = false;
-  final _llmService = LLMService();
+  final _llmService = LLMService(enforceProjectBudget: false);
   List<String> _whitelistedCommands = [];
   String _storagePath = '';
 
@@ -785,7 +785,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => _TestDialog(settings: settings, llmService: LLMService(enableDebugLogging: true)),
+      builder: (context) => _TestDialog(settings: settings, llmService: LLMService(enableDebugLogging: true, enforceProjectBudget: false)),
     );
   }
 
