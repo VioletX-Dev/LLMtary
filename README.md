@@ -229,6 +229,20 @@ LLMtary includes multiple layers of protection against accidental or destructive
 
 Provider settings are saved per-provider — switching providers restores that provider's previously saved API key, model, and base URL.
 
+### RunPod Ollama over SSH
+
+Keep Ollama bound to `127.0.0.1:11434` on the Pod and expose only SSH. In **Settings → Ollama → Connect RunPod Ollama**, import the connection values from RunPod. The setup panel generates a copyable, paste-ready command in this form:
+
+```bash
+ssh -i /path/to/private-key -p <RUNPOD_SSH_PORT> root@<RUNPOD_PUBLIC_IP>
+```
+
+LLMtary converts that command into a loopback-only SSH forward and verifies Ollama through `/api/tags`. RunPod's direct SSH host or port can change after a Pod restart; reopen the Pod's Connect panel and regenerate the command before reconnecting. Disconnecting the tunnel does not stop GPU billing—stop or terminate the Pod separately, retaining its network volume only when model persistence is required.
+
+### Pause and resume an assessment
+
+Use **PAUSE SESSION** during analysis or vulnerability execution. LLMtary finishes the current model request or approved command, checkpoints completed targets, findings, evidence, token usage, and remaining finding IDs, then exposes **RESUME ANALYSIS** or **RESUME TEST**. The checkpoint is project-scoped and survives an application restart. Reconnaissance uses the equivalent **PAUSE** / **RESUME** controls and does not rerun completed targets.
+
 ### LLM Requirements
 
 LLMtary's prompts are large and require strong reasoning. The exploit system prompt alone exceeds 6,000 tokens and the recon system prompt exceeds 5,600 tokens — a 4K context window is physically too small.

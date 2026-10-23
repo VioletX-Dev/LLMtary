@@ -628,6 +628,11 @@ class DatabaseHelper {
     return maps.isNotEmpty ? maps.first['value'] as String : null;
   }
 
+  static Future<void> deleteSetting(String key) async {
+    final db = await database;
+    await db.delete('settings', where: 'key = ?', whereArgs: [key]);
+  }
+
   static Future<bool> isCommandWhitelisted(String command) async {
     final db = await database;
     // Extract base command, skipping sudo/echo prefixes

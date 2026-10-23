@@ -32,6 +32,7 @@ import '../services/prompt_templates.dart';
 import '../services/llm_service.dart';
 import '../services/test_budget.dart';
 import '../services/cloud_assist_service.dart';
+import '../services/assessment_session_checkpoint.dart';
 import '../widgets/test_budget_dialog.dart';
 import '../widgets/cloud_assist_dialog.dart';
 import 'tabs/scope_recon_tab.dart';
@@ -54,6 +55,8 @@ class _MainScreenState extends State<MainScreen> {
   Completer<String?>? _approvalCompleter;
   final Set<String> _analyzingAddresses = {};
   final Set<String> _executingAddresses = {};
+  final AssessmentPauseGate _pauseGate = AssessmentPauseGate();
+  AssessmentSessionCheckpoint? _sessionCheckpoint;
 
   void _scrollToProof(int vulnIdx) async {
     final appState = context.read<AppState>();
@@ -100,6 +103,106 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadSessionCheckpoint();
+    });
+  }
+
+  Future<void> _loadSessionCheckpoint() async {
+    if (!mounted) return;
+    final projectId = context.read<AppState>().currentProject?.id;
+    if (projectId == null) return;
+    final encoded = await DatabaseHelper.getSetting(
+      AssessmentSessionCheckpoint.settingKey(projectId),
+    );
+    if (encoded == null || !mounted) return;
+    try {
+      var checkpoint = AssessmentSessionCheckpoint.decode(encoded);
+      if (checkpoint.projectId != projectId || !checkpoint.canResume) return;
+      if (checkpoint.status == AssessmentSessionStatus.running ||
+          checkpoint.status == AssessmentSessionStatus.pauseRequested) {
+        checkpoint = checkpoint.asPaused();
+        await DatabaseHelper.saveSetting(
+          AssessmentSessionCheckpoint.settingKey(projectId),
+          checkpoint.encode(),
+        );
+      }
+      setState(() => _sessionCheckpoint = checkpoint);
+    } catch (_) {
+      // Project data remains authoritative if an old checkpoint is unreadable.
+    }
+  }
+
+  Future<void> _saveSessionCheckpoint(
+    AssessmentSessionPhase phase,
+    AssessmentSessionStatus status, {
+    List<int> pendingVulnerabilityIds = const [],
+  }) async {
+    final projectId = context.read<AppState>().currentProject?.id;
+    if (projectId == null) return;
+    final checkpoint = AssessmentSessionCheckpoint(
+      projectId: projectId,
+      phase: phase,
+      status: status,
+      pendingVulnerabilityIds: pendingVulnerabilityIds,
+      updatedAt: DateTime.now().toUtc(),
+    );
+    await DatabaseHelper.saveSetting(
+      AssessmentSessionCheckpoint.settingKey(projectId),
+      checkpoint.encode(),
+    );
+    if (mounted) setState(() => _sessionCheckpoint = checkpoint);
+  }
+
+  Future<void> _clearSessionCheckpoint() async {
+    final projectId = context.read<AppState>().currentProject?.id;
+    if (projectId != null) {
+      await DatabaseHelper.deleteSetting(
+        AssessmentSessionCheckpoint.settingKey(projectId),
+      );
+    }
+    _pauseGate.reset();
+    if (mounted) setState(() => _sessionCheckpoint = null);
+  }
+
+  List<int> _pendingExecutionIds(AppState appState, Iterable<int> runIds) {
+    final ids = runIds.toSet();
+    return appState.vulnerabilities
+        .where((vulnerability) =>
+            vulnerability.id != null &&
+            ids.contains(vulnerability.id) &&
+            vulnerability.status == VulnerabilityStatus.pending)
+        .map((vulnerability) => vulnerability.id!)
+        .toList(growable: false);
+  }
+
+  Future<void> _requestSessionPause() async {
+    final checkpoint = _sessionCheckpoint;
+    if (checkpoint == null || (!_isAnalyzing && !_isExecuting)) return;
+    _pauseGate.requestPause();
+    await _saveSessionCheckpoint(
+      checkpoint.phase,
+      AssessmentSessionStatus.pauseRequested,
+      pendingVulnerabilityIds: checkpoint.pendingVulnerabilityIds,
+    );
+    if (!mounted) return;
+    context.read<AppState>().setExecutionStatus(
+      'Pause requested — finishing the current safe step...',
+    );
+  }
+
+  Future<void> _resumeSession() async {
+    final checkpoint = _sessionCheckpoint;
+    if (checkpoint == null || _isAnalyzing || _isExecuting) return;
+    _pauseGate.reset();
+    if (checkpoint.phase == AssessmentSessionPhase.analysis) {
+      await _analyzeDevice(resuming: true);
+    } else {
+      await _executeSelected(
+        resuming: true,
+        resumeVulnerabilityIds: checkpoint.pendingVulnerabilityIds,
+      );
+    }
   }
 
   Future<bool> _ensureSessionPassword() async {
@@ -384,6 +487,34 @@ class _MainScreenState extends State<MainScreen> {
         ],
       ),
       actions: [
+        if (_isAnalyzing || _isExecuting)
+          TextButton.icon(
+            key: const Key('pause-assessment-session'),
+            onPressed: _pauseGate.isPauseRequested
+                ? null
+                : _requestSessionPause,
+            icon: const Icon(Icons.pause_circle_outline, size: 17),
+            label: Text(
+              _pauseGate.isPauseRequested ? 'PAUSING…' : 'PAUSE SESSION',
+              style: const TextStyle(fontSize: 11),
+            ),
+          )
+        else if (_sessionCheckpoint?.canResume ?? false)
+          TextButton.icon(
+            key: const Key('resume-assessment-session'),
+            onPressed: _resumeSession,
+            icon: const Icon(
+              Icons.play_circle_outline,
+              size: 17,
+              color: Color(0xFF3DFFA0),
+            ),
+            label: Text(
+              _sessionCheckpoint!.phase == AssessmentSessionPhase.analysis
+                  ? 'RESUME ANALYSIS'
+                  : 'RESUME TEST',
+              style: const TextStyle(color: Color(0xFF3DFFA0), fontSize: 11),
+            ),
+          ),
         Consumer<AppState>(
           builder: (context, state, _) {
             final project = state.currentProject;
@@ -552,9 +683,10 @@ class _MainScreenState extends State<MainScreen> {
 
   // --- Business logic ---
 
-  Future<void> _analyzeDevice() async {
+  Future<void> _analyzeDevice({bool resuming = false}) async {
     if (!await _ensureSessionPassword()) return;
     setState(() => _isAnalyzing = true);
+    var checkpointStarted = false;
     try {
       final appState = context.read<AppState>();
 
@@ -602,6 +734,18 @@ class _MainScreenState extends State<MainScreen> {
         return;
       }
 
+      _pauseGate.reset();
+      await _saveSessionCheckpoint(
+        AssessmentSessionPhase.analysis,
+        AssessmentSessionStatus.running,
+      );
+      checkpointStarted = true;
+      appState.addDebugLog(
+        resuming
+            ? 'Resuming analysis from the persisted target checkpoint'
+            : 'Analysis session checkpoint created',
+      );
+
       // Record first analysis timestamp (only on first run for this project)
       final project = appState.currentProject;
       if (project?.id != null && project!.firstAnalysisAt == null) {
@@ -623,6 +767,16 @@ class _MainScreenState extends State<MainScreen> {
         batchStart < targetsToAnalyze.length;
         batchStart += analysisParallelism
       ) {
+        if (_pauseGate.isPauseRequested) {
+          await _saveSessionCheckpoint(
+            AssessmentSessionPhase.analysis,
+            AssessmentSessionStatus.paused,
+          );
+          appState.setExecutionStatus(
+            'Analysis paused safely. Completed targets were saved.',
+          );
+          return;
+        }
         final batch = targetsToAnalyze
             .skip(batchStart)
             .take(analysisParallelism)
@@ -804,15 +958,32 @@ class _MainScreenState extends State<MainScreen> {
 
         appState.loadVulnerabilities();
         if (mounted) setState(() {});
+        if (_pauseGate.isPauseRequested) {
+          await _saveSessionCheckpoint(
+            AssessmentSessionPhase.analysis,
+            AssessmentSessionStatus.paused,
+          );
+          appState.setExecutionStatus(
+            'Analysis paused safely. Completed targets were saved.',
+          );
+          return;
+        }
       }
 
       appState.setAnalysisComplete(true);
       appState.setExecutionStatus('');
+      await _clearSessionCheckpoint();
       if (mounted) {
         final totalVulns = appState.vulnerabilities.length;
         showAnalysisCompleteDialog(context, appState, totalVulns, analyzed);
       }
     } catch (e) {
+      if (checkpointStarted) {
+        await _saveSessionCheckpoint(
+          AssessmentSessionPhase.analysis,
+          AssessmentSessionStatus.paused,
+        );
+      }
       context.read<AppState>().addDebugLog('Error: $e');
       ScaffoldMessenger.of(
         context,
@@ -1350,16 +1521,28 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
     }
   }
 
-  Future<void> _executeSelected() async {
+  Future<void> _executeSelected({
+    bool resuming = false,
+    List<int> resumeVulnerabilityIds = const [],
+  }) async {
     if (!await _ensureSessionPassword()) return;
     final appState = context.read<AppState>();
     appState.addDebugLog('Execute Selected button clicked');
 
-    final selected = appState.vulnerabilities.where((v) => v.selected).toList();
+    final resumeIds = resumeVulnerabilityIds.toSet();
+    final selected = resuming
+        ? appState.vulnerabilities
+              .where((v) =>
+                  v.id != null &&
+                  resumeIds.contains(v.id) &&
+                  v.status == VulnerabilityStatus.pending)
+              .toList()
+        : appState.vulnerabilities.where((v) => v.selected).toList();
     appState.addDebugLog('Found ${selected.length} selected vulnerabilities');
 
     if (selected.isEmpty) {
       appState.addDebugLog('No vulnerabilities selected - aborting execution');
+      if (resuming) await _clearSessionCheckpoint();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please select at least one vulnerability to test'),
@@ -1482,6 +1665,7 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
     }
 
     if (pendingVulns.isEmpty) {
+      if (resuming) await _clearSessionCheckpoint();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No vulnerabilities to execute')),
       );
@@ -1493,6 +1677,22 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
       final t = targetMap[v.targetAddress];
       return t == null || !t.executionComplete || alreadyCompleted.contains(v);
     }).toList();
+
+    final runVulnerabilityIds = pendingVulns
+        .where((vulnerability) => vulnerability.id != null)
+        .map((vulnerability) => vulnerability.id!)
+        .toList(growable: false);
+    _pauseGate.reset();
+    await _saveSessionCheckpoint(
+      AssessmentSessionPhase.execution,
+      AssessmentSessionStatus.running,
+      pendingVulnerabilityIds: runVulnerabilityIds,
+    );
+    appState.addDebugLog(
+      resuming
+          ? 'Resuming vulnerability execution from the persisted finding checkpoint'
+          : 'Execution session checkpoint created',
+    );
 
     setState(() => _isExecuting = true);
 
@@ -1564,6 +1764,7 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
           final targetVulns = vulnsByTarget[targetAddr]!;
 
           for (final vuln in targetVulns) {
+            if (_pauseGate.isPauseRequested) break;
             // Lookup index each time (stable within the batch — loadVulnerabilities
             // is only called after the batch completes)
             final vulnIdx = appState.vulnerabilities.indexWhere(
@@ -1796,6 +1997,27 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
       }
       await appState.loadCommandLogs();
       if (mounted) setState(() {});
+      if (_pauseGate.isPauseRequested) {
+        final pendingIds = _pendingExecutionIds(
+          appState,
+          runVulnerabilityIds,
+        );
+        await _saveSessionCheckpoint(
+          AssessmentSessionPhase.execution,
+          AssessmentSessionStatus.paused,
+          pendingVulnerabilityIds: pendingIds,
+        );
+        appState.setExecutionStatus(
+          'Testing paused safely. Completed findings and evidence were saved.',
+        );
+        if (mounted) {
+          setState(() {
+            _isExecuting = false;
+            _executingAddresses.clear();
+          });
+        }
+        return;
+      }
     } // end batch loop
 
     // Phase 36.3: Post-execution exploit chain reasoning pass
@@ -1875,6 +2097,7 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
     }
 
     appState.setExecutionStatus('');
+    await _clearSessionCheckpoint();
     setState(() {
       _isExecuting = false;
       _executingAddresses.clear();

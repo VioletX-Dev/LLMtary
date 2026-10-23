@@ -40,7 +40,7 @@ class _ScopeReconTabState extends State<ScopeReconTab> {
   final Set<String> _activeAddresses = {};
   final _targetPanelKey = GlobalKey<TargetInputPanelState>();
   bool _starting = false; // true for the brief gap between GO press and first UI update
-  bool _scanStopped = false; // true after user presses STOP mid-scan
+  bool _scanStopped = false; // true after user pauses mid-scan
 
   // Scope field controllers — mirror ScopeConfigDialog
   late final TextEditingController _scopeCtrl;
@@ -456,7 +456,7 @@ class _ScopePanel extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             _field(customerRequestsCtrl, 'e.g. Test checkout authorization and password reset', 4),
-            // Bottom action button: STOP while scanning, RESUME after stop
+            // Bottom action button: PAUSE while scanning, RESUME afterwards.
             if (isScanning) ...[
               const SizedBox(height: 14),
               Center(
@@ -466,7 +466,7 @@ class _ScopePanel extends StatelessWidget {
                   child: ElevatedButton.icon(
                     onPressed: onStop,
                     icon: const Icon(Icons.stop, color: Colors.white, size: 16),
-                    label: const Text('STOP',
+                    label: const Text('PAUSE',
                         style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.red.withValues(alpha: 0.7),

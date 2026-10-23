@@ -19,6 +19,9 @@ void main() {
     expect(find.byKey(const Key('runpod-key-path')), findsOneWidget);
     expect(find.byKey(const Key('runpod-local-port')), findsOneWidget);
     expect(find.byKey(const Key('connect-runpod-ollama')), findsOneWidget);
+    expect(find.text('LLMtary SSH command'), findsOneWidget);
+    expect(find.byKey(const Key('llmtary-ssh-command-output')), findsOneWidget);
+    expect(find.byKey(const Key('copy-llmtary-ssh-command')), findsOneWidget);
     expect(find.text('CONNECT & VERIFY'), findsOneWidget);
     expect(
       find.textContaining(

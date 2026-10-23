@@ -46,6 +46,10 @@ void main() {
     expect(config.user, 'root');
     expect(config.sshPort, 22022);
     expect(config.identityFile, '/home/llmtary/My Keys/runpod');
+    expect(
+      config.toSshCommand(),
+      'ssh -i "/home/llmtary/My Keys/runpod" -p 22022 root@203.0.113.10',
+    );
   });
 
   test('RunPod SSH tunnel rejects malformed or incomplete input', () {

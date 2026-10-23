@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../constants/app_constants.dart';
 import '../database/database_helper.dart';
@@ -169,6 +170,11 @@ class _OllamaSshTunnelDialogState extends State<OllamaSshTunnelDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final currentConfig = _config();
+    final generatedSshCommand =
+        currentConfig.host.isNotEmpty && currentConfig.identityFile.isNotEmpty
+        ? currentConfig.toSshCommand()
+        : 'Enter or import the RunPod connection values to generate the exact SSH command.';
     return AlertDialog(
       backgroundColor: const Color(0xFF1A1F3A),
       title: const Row(
@@ -218,6 +224,7 @@ class _OllamaSshTunnelDialogState extends State<OllamaSshTunnelDialog> {
                     child: TextField(
                       key: const Key('runpod-host'),
                       controller: _host,
+                      onChanged: (_) => setState(() {}),
                       style: const TextStyle(color: Colors.white),
                       decoration: _decoration('Pod IP or SSH host'),
                     ),
@@ -227,6 +234,7 @@ class _OllamaSshTunnelDialogState extends State<OllamaSshTunnelDialog> {
                     child: TextField(
                       key: const Key('runpod-ssh-port'),
                       controller: _sshPort,
+                      onChanged: (_) => setState(() {}),
                       keyboardType: TextInputType.number,
                       style: const TextStyle(color: Colors.white),
                       decoration: _decoration('SSH port'),
@@ -237,6 +245,7 @@ class _OllamaSshTunnelDialogState extends State<OllamaSshTunnelDialog> {
                     child: TextField(
                       key: const Key('runpod-user'),
                       controller: _user,
+                      onChanged: (_) => setState(() {}),
                       style: const TextStyle(color: Colors.white),
                       decoration: _decoration('User'),
                     ),
@@ -266,6 +275,56 @@ class _OllamaSshTunnelDialogState extends State<OllamaSshTunnelDialog> {
                   keyboardType: TextInputType.number,
                   style: const TextStyle(color: Colors.white),
                   decoration: _decoration('Local port'),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'LLMtary SSH command',
+                style: TextStyle(
+                  color: Color(0xFF00F5FF),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0A0E27),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SelectableText(
+                        generatedSshCommand,
+                        key: const Key('llmtary-ssh-command-output'),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      key: const Key('copy-llmtary-ssh-command'),
+                      tooltip: 'Copy SSH command for LLMtary',
+                      onPressed:
+                          currentConfig.host.isEmpty || currentConfig.identityFile.isEmpty
+                          ? null
+                          : () async {
+                              await Clipboard.setData(
+                                ClipboardData(text: generatedSshCommand),
+                              );
+                              if (mounted) {
+                                setState(() => _message =
+                                    'SSH command copied. Paste it into LLMtary on the appliance that has this key path.');
+                              }
+                            },
+                      icon: const Icon(Icons.copy, size: 18),
+                    ),
+                  ],
                 ),
               ),
               if (_message != null) ...[

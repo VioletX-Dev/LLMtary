@@ -21,6 +21,17 @@ class OllamaSshTunnelConfig {
 
   String get baseUrl => 'http://127.0.0.1:$localPort';
 
+  /// Paste-ready command shown by RunPod setup output and accepted by LLMtary.
+  String toSshCommand() {
+    String quote(String value) {
+      if (!value.contains(RegExp(r'[\s"\\]'))) return value;
+      final escaped = value.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+      return '"$escaped"';
+    }
+
+    return 'ssh -i ${quote(identityFile)} -p $sshPort $user@$host';
+  }
+
   String? validate() {
     if (host.trim().isEmpty || host.contains(RegExp(r'\s'))) {
       return 'Enter the RunPod SSH host or IP address.';

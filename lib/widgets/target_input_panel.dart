@@ -387,7 +387,8 @@ class TargetInputPanelState extends State<TargetInputPanel> {
 
   bool get isScanning => _isScanning;
 
-  /// Cancel all active recon loops.
+  /// Pause all active recon loops. Completed targets remain checkpointed and
+  /// interrupted targets return to pending so RESUME continues remaining work.
   void stopScan() {
     _cancelRequested = true;
     for (final recon in _activeRecons) {
@@ -395,7 +396,7 @@ class TargetInputPanelState extends State<TargetInputPanel> {
     }
     _activeRecons.clear();
     setState(() {
-      _statusMessage = 'Scan stopped by user';
+      _statusMessage = 'Recon paused — completed targets saved for resume';
       _isScanning = false;
     });
   }
