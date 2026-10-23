@@ -27,6 +27,7 @@ class SettingsKeys {
   static const baseUrl = 'baseUrl';
   static const apiKey = 'apiKey';
   static const storageBasePath = 'storage_base_path';
+  static const ollamaSshTunnel = 'ollama_ssh_tunnel';
   static const String maxIterations = 'maxIterations';
 }
 
