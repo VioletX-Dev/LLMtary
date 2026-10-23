@@ -20,5 +20,11 @@ void main() {
     expect(find.byKey(const Key('runpod-local-port')), findsOneWidget);
     expect(find.byKey(const Key('connect-runpod-ollama')), findsOneWidget);
     expect(find.text('CONNECT & VERIFY'), findsOneWidget);
+    expect(
+      find.textContaining(
+        'Stopping the SSH tunnel does not stop the RunPod pod',
+      ),
+      findsOneWidget,
+    );
   });
 }

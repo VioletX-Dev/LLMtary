@@ -189,6 +189,14 @@ class _OllamaSshTunnelDialogState extends State<OllamaSshTunnelDialog> {
                 'Paste the SSH values from RunPod’s Connect panel. LLMtary opens the encrypted tunnel and verifies /api/tags automatically.',
                 style: TextStyle(color: Colors.white70),
               ),
+              const SizedBox(height: 10),
+              const Text(
+                'TEARDOWN: Stopping the SSH tunnel does not stop the RunPod pod. When the test ends, disconnect here and stop or terminate the pod in RunPod to end GPU billing. Keep the network volume if you want the downloaded model to persist.',
+                style: TextStyle(
+                  color: Colors.orangeAccent,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               const SizedBox(height: 16),
               TextField(
                 key: const Key('runpod-ssh-command'),
