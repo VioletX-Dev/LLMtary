@@ -11,6 +11,7 @@ import '../models/project.dart';
 import '../models/credential.dart';
 import '../models/evidence_artifact.dart';
 import '../models/validation_run.dart';
+import '../models/cloud_assist.dart';
 import '../services/evidence_repository.dart';
 import '../services/validation_run_repository.dart';
 
@@ -33,7 +34,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 26,
+      version: 27,
       singleInstance: true,
       onConfigure: (db) async {
         await db.execute('PRAGMA busy_timeout=5000');
@@ -116,7 +117,13 @@ class DatabaseHelper {
             budget_mode TEXT,
             budget_limit REAL,
             budget_spent_usd REAL NOT NULL DEFAULT 0,
-            budget_started_at TEXT
+            budget_started_at TEXT,
+            cloud_assist_enabled INTEGER NOT NULL DEFAULT 0,
+            cloud_assist_provider TEXT,
+            cloud_assist_finding_review INTEGER NOT NULL DEFAULT 0,
+            cloud_assist_report_review INTEGER NOT NULL DEFAULT 0,
+            cloud_assist_budget_usd REAL NOT NULL DEFAULT 0,
+            cloud_assist_spent_usd REAL NOT NULL DEFAULT 0
           )
         ''');
 
@@ -248,6 +255,7 @@ class DatabaseHelper {
         );
         await EvidenceRepository.createTable(db);
         await ValidationRunRepository.createTable(db);
+        await migrateCloudAssist(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         debugPrint('[DB] onUpgrade: $oldVersion → $newVersion');
@@ -462,6 +470,9 @@ class DatabaseHelper {
         if (oldVersion < 26) {
           await migrateProjectBudgets(db);
         }
+        if (oldVersion < 27) {
+          await migrateCloudAssist(db);
+        }
       },
     );
     final version = await db.getVersion();
@@ -474,6 +485,29 @@ class DatabaseHelper {
     try { await db.execute('ALTER TABLE projects ADD COLUMN budget_limit REAL'); } catch (_) {}
     try { await db.execute('ALTER TABLE projects ADD COLUMN budget_spent_usd REAL NOT NULL DEFAULT 0'); } catch (_) {}
     try { await db.execute('ALTER TABLE projects ADD COLUMN budget_started_at TEXT'); } catch (_) {}
+  }
+
+  static Future<void> migrateCloudAssist(Database db) async {
+    try { await db.execute('ALTER TABLE projects ADD COLUMN cloud_assist_enabled INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
+    try { await db.execute('ALTER TABLE projects ADD COLUMN cloud_assist_provider TEXT'); } catch (_) {}
+    try { await db.execute('ALTER TABLE projects ADD COLUMN cloud_assist_finding_review INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
+    try { await db.execute('ALTER TABLE projects ADD COLUMN cloud_assist_report_review INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
+    try { await db.execute('ALTER TABLE projects ADD COLUMN cloud_assist_budget_usd REAL NOT NULL DEFAULT 0'); } catch (_) {}
+    try { await db.execute('ALTER TABLE projects ADD COLUMN cloud_assist_spent_usd REAL NOT NULL DEFAULT 0'); } catch (_) {}
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS cloud_assist_reviews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL,
+        target_id INTEGER,
+        phase TEXT NOT NULL,
+        status TEXT NOT NULL,
+        provider TEXT NOT NULL DEFAULT '',
+        model_name TEXT NOT NULL DEFAULT '',
+        note TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+      )
+    ''');
   }
 
   static Future<int> insertVulnerability(Vulnerability vuln) async {
@@ -688,6 +722,46 @@ class DatabaseHelper {
     return (await getProject(id))!.budgetSpentUsd;
   }
 
+  static Future<void> updateCloudAssistConfiguration(
+    int id, {
+    required bool enabled,
+    required String provider,
+    required bool findingReview,
+    required bool reportReview,
+    required double budgetUsd,
+  }) async {
+    if (enabled && budgetUsd <= 0) {
+      throw ArgumentError.value(budgetUsd, 'budgetUsd', 'must be positive');
+    }
+    final db = await database;
+    await db.update('projects', {
+      'cloud_assist_enabled': enabled ? 1 : 0,
+      'cloud_assist_provider': provider,
+      'cloud_assist_finding_review': findingReview ? 1 : 0,
+      'cloud_assist_report_review': reportReview ? 1 : 0,
+      'cloud_assist_budget_usd': enabled ? budgetUsd : 0,
+    }, where: 'id = ?', whereArgs: [id]);
+  }
+
+  static Future<double> addCloudAssistSpend(int id, double amountUsd) async {
+    if (amountUsd < 0) throw ArgumentError.value(amountUsd, 'amountUsd', 'cannot be negative');
+    final db = await database;
+    await db.rawUpdate('UPDATE projects SET cloud_assist_spent_usd = cloud_assist_spent_usd + ? WHERE id = ?', [amountUsd, id]);
+    return (await getProject(id))!.cloudAssistSpentUsd;
+  }
+
+  static Future<int> insertCloudAssistReview(CloudAssistReview review) async {
+    final db = await database;
+    final map = Map<String, dynamic>.from(review.toMap())..remove('id');
+    return db.insert('cloud_assist_reviews', map);
+  }
+
+  static Future<List<CloudAssistReview>> getCloudAssistReviews(int projectId) async {
+    final db = await database;
+    final rows = await db.query('cloud_assist_reviews', where: 'project_id = ?', whereArgs: [projectId], orderBy: 'created_at DESC');
+    return rows.map(CloudAssistReview.fromMap).toList();
+  }
+
   static Future<void> updateProjectLastOpened(int id) async {
     final db = await database;
     await db.update('projects', {'lastOpenedAt': DateTime.now().toIso8601String()}, where: 'id = ?', whereArgs: [id]);
@@ -711,6 +785,7 @@ class DatabaseHelper {
     await db.delete('debug_logs', where: 'projectId = ?', whereArgs: [id]);
     await db.delete('targets', where: 'projectId = ?', whereArgs: [id]);
     await db.delete('discovered_credentials', where: 'project_id = ?', whereArgs: [id]);
+    await db.delete('cloud_assist_reviews', where: 'project_id = ?', whereArgs: [id]);
     await db.delete('projects', where: 'id = ?', whereArgs: [id]);
   }
 

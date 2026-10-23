@@ -41,6 +41,7 @@ Whether you're running a local model on your own GPU with **zero data leaving yo
 ### Why LLMtary?
 
 - **Local-first AI pentesting** — run entirely on-premise with Ollama or LM Studio; no cloud required
+- **Optional budgeted cloud assurance** — keep the full workflow local, or opt into capped cloud finding confirmation and report review without making cloud a completion dependency
 - **Structured agentic loop** — not just suggestion generation; LLMtary actually runs commands, reads output, and iterates
 - **Multi-phase enrichment** — Phase 1 findings feed into Phase 2 prompts, producing sharper, more targeted vulnerabilities
 - **Production-quality output** — CVSS metadata, business risk scoring, BloodHound-style AD attack chains, and professional HTML/Markdown reports

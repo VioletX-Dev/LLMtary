@@ -65,6 +65,7 @@ class LLMSemaphore {
 class LLMService {
   final Function(String, String)? onPromptResponse;
   final bool enforceProjectBudget;
+  final ProjectBudgetSession? budgetSession;
   bool enableDebugLogging;
 
   /// Phase E.4: Session-level retry counter — incremented on every retry across
@@ -86,7 +87,12 @@ class LLMService {
     this.onPromptResponse,
     this.enableDebugLogging = false,
     this.enforceProjectBudget = true,
+    this.budgetSession,
   });
+
+  ProjectBudgetSession? get effectiveBudgetSession => !enforceProjectBudget
+      ? null
+      : budgetSession ?? TestBudgetRuntime.activeSession;
 
   /// Builds an OpenAI Chat Completions payload with model-compatible fields.
   static Map<String, dynamic> buildChatGPTRequestBody({
@@ -199,9 +205,7 @@ class LLMService {
         }
       }
 
-      final budgetSession = enforceProjectBudget
-          ? TestBudgetRuntime.activeSession
-          : null;
+      final budgetSession = effectiveBudgetSession;
       BudgetAllowance? allowance;
       var effectiveSettings = settings;
       var timeout = Duration(seconds: settings.timeoutSeconds);

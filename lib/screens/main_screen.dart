@@ -23,6 +23,7 @@ import '../widgets/targeted_test_dialog.dart';
 import '../models/authenticated_access.dart';
 import '../models/targeted_test_request.dart';
 import '../models/validation_run.dart';
+import '../models/cloud_assist.dart';
 import '../utils/app_exceptions.dart';
 import '../utils/scope_validator.dart';
 import '../services/storage_service.dart';
@@ -30,7 +31,9 @@ import '../services/evidence_storage_service.dart';
 import '../services/prompt_templates.dart';
 import '../services/llm_service.dart';
 import '../services/test_budget.dart';
+import '../services/cloud_assist_service.dart';
 import '../widgets/test_budget_dialog.dart';
+import '../widgets/cloud_assist_dialog.dart';
 import 'tabs/scope_recon_tab.dart';
 import 'tabs/vuln_hunt_tab.dart' show VulnHuntTab, showAnalysisCompleteDialog;
 import 'tabs/proof_exploit_tab.dart'
@@ -309,6 +312,33 @@ class _MainScreenState extends State<MainScreen> {
     if (refreshed != null && mounted) appState.updateCurrentProject(refreshed);
   }
 
+  Future<void> _configureCloudAssist() async {
+    final appState = context.read<AppState>();
+    final project = appState.currentProject;
+    if (project?.id == null) return;
+    final activeProject = project!;
+    final provider = LLMProvider.values.firstWhere(
+      (value) => value.name == activeProject.cloudAssistProvider,
+      orElse: () => LLMProvider.chatGPT,
+    );
+    final config = await showCloudAssistDialog(
+      context,
+      enabled: activeProject.cloudAssistEnabled,
+      provider: provider,
+      findingReview: activeProject.cloudAssistFindingReview,
+      reportReview: activeProject.cloudAssistReportReview,
+      budgetUsd: activeProject.cloudAssistBudgetUsd,
+    );
+    if (config == null || !mounted) return;
+    await appState.configureCloudAssist(
+      enabled: config.enabled,
+      provider: config.provider.name,
+      findingReview: config.findingReview,
+      reportReview: config.reportReview,
+      budgetUsd: config.budgetUsd,
+    );
+  }
+
   AppBar _buildAppBar() {
     return AppBar(
       backgroundColor: const Color(0xFF0A0C16),
@@ -366,6 +396,24 @@ class _MainScreenState extends State<MainScreen> {
             return TextButton.icon(
               onPressed: _configureTestBudget,
               icon: const Icon(Icons.account_balance_wallet_outlined, size: 16),
+              label: Text(label, style: const TextStyle(fontSize: 11)),
+            );
+          },
+        ),
+        Consumer<AppState>(
+          builder: (context, state, _) {
+            final project = state.currentProject!;
+            final label = project.cloudAssistEnabled
+                ? 'CLOUD EST \$${project.cloudAssistSpentUsd.toStringAsFixed(2)} / \$${project.cloudAssistBudgetUsd.toStringAsFixed(2)}'
+                : 'LOCAL ONLY';
+            return TextButton.icon(
+              onPressed: _configureCloudAssist,
+              icon: Icon(
+                project.cloudAssistEnabled
+                    ? Icons.cloud_done_outlined
+                    : Icons.computer_outlined,
+                size: 16,
+              ),
               label: Text(label, style: const TextStyle(fontSize: 11)),
             );
           },
@@ -699,6 +747,47 @@ class _MainScreenState extends State<MainScreen> {
           final targetDeviceJson = await File(
             target.jsonFilePath,
           ).readAsString();
+          final cloudProject = appState.currentProject;
+          if (cloudProject != null &&
+              cloudProject.cloudAssistEnabled &&
+              cloudProject.cloudAssistFindingReview) {
+            appState.setExecutionStatus(
+              '[${target.address}] Optional cloud confirmation...',
+            );
+            try {
+              final evidence = targetDeviceJson.length > 24000
+                  ? '${targetDeviceJson.substring(0, 24000)}\n...[truncated]'
+                  : targetDeviceJson;
+              final review = await CloudAssistService.review(
+                project: cloudProject,
+                targetId: target.id,
+                phase: CloudAssistPhase.findingConfirmation,
+                prompt: appState.redactCloudReviewPayload(
+                  CloudAssistService.buildFindingReviewPrompt(
+                    targetAddress: target.address,
+                    deviceEvidence: evidence,
+                    localFindings: vulns.isEmpty
+                        ? 'No findings reported by the local model.'
+                        : jsonEncode(vulns.map((v) => v.toMap()).toList()),
+                  ),
+                ),
+                onSpend: appState.recordCloudAssistSpend,
+                onTokensUsed: (sent, received) => appState.recordTokenUsage(
+                  'cloud-confirm',
+                  sent,
+                  received,
+                  targetId: target.id ?? 0,
+                ),
+              );
+              appState.addDebugLog(
+                '[${target.address}] Optional cloud confirmation: ${review.status.name}',
+              );
+            } catch (error) {
+              appState.addDebugLog(
+                '[${target.address}] Optional cloud confirmation audit failed; local analysis remains complete: $error',
+              );
+            }
+          }
           final targetNetContext = VulnerabilityAnalyzer.extractNetworkContext(
             vulns,
             targetDeviceJson,
@@ -819,6 +908,40 @@ class _MainScreenState extends State<MainScreen> {
         v.targetId = target.id;
         v.projectId = appState.currentProject?.id;
         await DatabaseHelper.insertVulnerability(v);
+      }
+      final cloudProject = appState.currentProject;
+      if (cloudProject != null &&
+          cloudProject.cloudAssistEnabled &&
+          cloudProject.cloudAssistFindingReview) {
+        try {
+          final evidence = deviceJson.length > 24000
+              ? '${deviceJson.substring(0, 24000)}\n...[truncated]'
+              : deviceJson;
+          final review = await CloudAssistService.review(
+            project: cloudProject,
+            targetId: target.id,
+            phase: CloudAssistPhase.findingConfirmation,
+            prompt: appState.redactCloudReviewPayload(
+              CloudAssistService.buildFindingReviewPrompt(
+                targetAddress: target.address,
+                deviceEvidence: evidence,
+                localFindings: vulns.isEmpty
+                    ? 'No findings reported by the local model.'
+                    : jsonEncode(vulns.map((v) => v.toMap()).toList()),
+              ),
+            ),
+            onSpend: appState.recordCloudAssistSpend,
+            onTokensUsed: (sent, received) => appState.recordTokenUsage(
+              'cloud-confirm', sent, received, targetId: target.id ?? 0),
+          );
+          appState.addDebugLog(
+            '[${target.address}] Optional cloud confirmation: ${review.status.name}',
+          );
+        } catch (error) {
+          appState.addDebugLog(
+            '[${target.address}] Optional cloud confirmation audit failed; local re-analysis remains complete: $error',
+          );
+        }
       }
       target.analysisComplete = true;
       target.noFindings = vulns.isEmpty;

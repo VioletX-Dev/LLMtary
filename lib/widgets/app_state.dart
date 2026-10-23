@@ -13,6 +13,7 @@ import '../constants/app_constants.dart';
 import '../services/storage_service.dart';
 import '../services/background_process_manager.dart';
 import '../services/test_budget.dart';
+import '../services/cloud_assist_service.dart';
 
 class PromptLog {
   final String prompt;
@@ -74,6 +75,15 @@ class AppState extends ChangeNotifier {
   List<PromptLog> get promptLogs => _promptLogs;
   List<DebugLog> get debugLogs => _debugLogs;
   List<DiscoveredCredential> get credentials => List.unmodifiable(_credentials);
+
+  String redactCloudReviewPayload(String input) {
+    var redacted = _authenticatedAccess?.redactSecrets(input) ?? input;
+    redacted = CloudAssistService.redactSecrets(
+      redacted,
+      _credentials.map((credential) => credential.secret),
+    );
+    return redacted;
+  }
   List<Map<String, String>> get confirmedArtifacts =>
       List.unmodifiable(_confirmedArtifacts);
   String get executionStatus => _executionStatus;
@@ -384,6 +394,46 @@ Raise confidence to HIGH for any finding where these credentials directly enable
     _currentProject = project;
     _configureBudget(project);
     notifyListeners();
+  }
+
+  Future<void> configureCloudAssist({
+    required bool enabled,
+    required String provider,
+    required bool findingReview,
+    required bool reportReview,
+    required double budgetUsd,
+  }) async {
+    final project = _currentProject;
+    if (project?.id == null) return;
+    await DatabaseHelper.updateCloudAssistConfiguration(
+      project!.id!,
+      enabled: enabled,
+      provider: provider,
+      findingReview: findingReview,
+      reportReview: reportReview,
+      budgetUsd: budgetUsd,
+    );
+    _currentProject = project.copyWith(
+      cloudAssistEnabled: enabled,
+      cloudAssistProvider: provider,
+      cloudAssistFindingReview: enabled && findingReview,
+      cloudAssistReportReview: enabled && reportReview,
+      cloudAssistBudgetUsd: enabled ? budgetUsd : 0,
+    );
+    notifyListeners();
+  }
+
+  Future<void> recordCloudAssistSpend(double amountUsd) async {
+    final project = _currentProject;
+    if (project?.id == null) return;
+    final total = await DatabaseHelper.addCloudAssistSpend(
+      project!.id!,
+      amountUsd,
+    );
+    if (_currentProject?.id == project.id) {
+      _currentProject = _currentProject!.copyWith(cloudAssistSpentUsd: total);
+      notifyListeners();
+    }
   }
 
   void _configureBudget(Project? project) {

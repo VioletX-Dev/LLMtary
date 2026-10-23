@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:llmtary/models/llm_provider.dart';
 import 'package:llmtary/models/project.dart';
 import 'package:llmtary/services/test_budget.dart';
+import 'package:llmtary/services/llm_service.dart';
 
 void main() {
   group('TestBudgetPolicy', () {
@@ -201,6 +202,21 @@ void main() {
       expect(second.maxOutputTokens, lessThan(first.maxOutputTokens));
       session.cancel(first);
       session.cancel(second);
+    });
+
+    test('LLM service uses a scoped budget session over the global session', () {
+      final global = ProjectBudgetSession(
+        project: project(mode: TestBudgetMode.localRuntime, limit: 60),
+      );
+      final scoped = ProjectBudgetSession(
+        project: project(mode: TestBudgetMode.apiCost, limit: 5),
+      );
+      TestBudgetRuntime.configure(global);
+
+      final service = LLMService(budgetSession: scoped);
+
+      expect(service.effectiveBudgetSession, same(scoped));
+      TestBudgetRuntime.clear();
     });
 
     test('starts local runtime once and clamps timeout to remainder', () async {

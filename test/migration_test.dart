@@ -171,6 +171,55 @@ void main() {
     await db.close();
   });
 
+  test('v27 cloud-assist migration is additive and defaults to local-only', () async {
+    final db = await openDatabase(
+      inMemoryDatabasePath,
+      version: 1,
+      singleInstance: false,
+      onCreate: (db, version) async {
+        await db.execute('''
+          CREATE TABLE projects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            folderPath TEXT NOT NULL,
+            createdAt TEXT NOT NULL,
+            lastOpenedAt TEXT NOT NULL
+          )
+        ''');
+      },
+    );
+    await db.insert('projects', {
+      'name': 'legacy-local',
+      'folderPath': '/tmp/legacy-local',
+      'createdAt': DateTime.utc(2026).toIso8601String(),
+      'lastOpenedAt': DateTime.utc(2026).toIso8601String(),
+    });
+
+    await DatabaseHelper.migrateCloudAssist(db);
+
+    final columns = await db.rawQuery('PRAGMA table_info(projects)');
+    final names = columns.map((row) => row['name']).toSet();
+    expect(names, containsAll([
+      'cloud_assist_enabled',
+      'cloud_assist_provider',
+      'cloud_assist_finding_review',
+      'cloud_assist_report_review',
+      'cloud_assist_budget_usd',
+      'cloud_assist_spent_usd',
+    ]));
+    final reviewTable = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='cloud_assist_reviews'",
+    );
+    expect(reviewTable, hasLength(1));
+    final row = (await db.query('projects')).single;
+    expect(row['cloud_assist_enabled'], 0);
+    expect(row['cloud_assist_finding_review'], 0);
+    expect(row['cloud_assist_report_review'], 0);
+    expect((row['cloud_assist_budget_usd'] as num).toDouble(), 0);
+    expect((row['cloud_assist_spent_usd'] as num).toDouble(), 0);
+    await db.close();
+  });
+
   test('v26 budget migration preserves projects and adds budget columns', () async {
     final db = await openDatabase(
       inMemoryDatabasePath,

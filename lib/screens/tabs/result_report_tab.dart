@@ -10,8 +10,10 @@ import '../../database/database_helper.dart';
 import '../../models/command_log.dart';
 import '../../models/evidence_artifact.dart';
 import '../../models/report_evidence.dart';
+import '../../models/cloud_assist.dart';
 import '../../services/report_generator.dart';
 import '../../services/report_content_service.dart';
+import '../../services/cloud_assist_service.dart';
 import '../../services/evidence_package_builder.dart';
 import '../../services/evidence_storage_service.dart';
 import '../../utils/file_dialog.dart';
@@ -323,8 +325,40 @@ class _InlineReportFormState extends State<_InlineReportForm> {
         _      => '',
       };
 
+      final cloudProject = widget.appState.currentProject;
+      CloudAssistResult? reportReview;
+      if (cloudProject != null &&
+          cloudProject.cloudAssistEnabled &&
+          cloudProject.cloudAssistReportReview) {
+        final reviewContent = content.length > 60000
+            ? '${content.substring(0, 60000)}\n...[truncated for review]'
+            : content;
+        try {
+          reportReview = await CloudAssistService.review(
+            project: cloudProject,
+            phase: CloudAssistPhase.reportReview,
+            prompt: CloudAssistService.buildReportReviewPrompt(
+              widget.appState.redactCloudReviewPayload(reviewContent),
+            ),
+            onSpend: widget.appState.recordCloudAssistSpend,
+            onTokensUsed: (sent, received) => widget.appState.recordTokenUsage(
+              'cloud-report-review', sent, received),
+          );
+          widget.appState.addDebugLog(
+            'Optional cloud report review: ${reportReview.status.name}',
+          );
+        } catch (error) {
+          widget.appState.addDebugLog(
+            'Optional cloud report review audit failed; report remains locally complete: $error',
+          );
+        }
+      }
+
       await File(path).writeAsString(content);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Report saved')));
+      if (mounted) {
+        final suffix = reportReview == null ? '' : ' — ${reportReview.status.name}';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Report saved$suffix')));
+      }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Report generation failed: $e')));
     } finally {
@@ -476,6 +510,9 @@ class _InlineReportFormState extends State<_InlineReportForm> {
               children: cards.map((c) => SizedBox(width: 72, child: c)).toList(),
             );
           }),
+          const SizedBox(height: 24),
+
+          _CloudReviewHistory(projectId: appState.currentProject?.id),
           const SizedBox(height: 24),
 
           // Attack chains
@@ -946,6 +983,48 @@ class _ChainCardState extends State<_ChainCard> {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Optional cloud review audit
+// ---------------------------------------------------------------------------
+
+class _CloudReviewHistory extends StatelessWidget {
+  final int? projectId;
+  const _CloudReviewHistory({required this.projectId});
+
+  @override
+  Widget build(BuildContext context) {
+    if (projectId == null) return const SizedBox.shrink();
+    return FutureBuilder<List<CloudAssistReview>>(
+      future: DatabaseHelper.getCloudAssistReviews(projectId!),
+      builder: (context, snapshot) {
+        final reviews = snapshot.data ?? const <CloudAssistReview>[];
+        if (reviews.isEmpty) {
+          return const Text('REVIEW PATH: LOCAL MODEL ONLY', style: TextStyle(color: Colors.white38, fontSize: 10, letterSpacing: 1));
+        }
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: const Color(0xFF1A1F3A), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFF00F5FF).withValues(alpha: 0.25))),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('OPTIONAL CLOUD REVIEW AUDIT', style: TextStyle(color: Color(0xFF00F5FF), fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+              const SizedBox(height: 8),
+              for (final review in reviews.take(8))
+                ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  dense: true,
+                  title: Text('${review.phase.name} — ${review.status.name}', style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                  subtitle: Text('${review.provider}${review.modelName.isEmpty ? '' : ' / ${review.modelName}'}', style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                  children: [Align(alignment: Alignment.centerLeft, child: SelectableText(review.note, style: const TextStyle(color: Colors.white60, fontSize: 11)))],
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

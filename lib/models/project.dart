@@ -35,6 +35,12 @@ class Project {
   final double? budgetLimit;
   final double budgetSpentUsd;
   final DateTime? budgetStartedAt;
+  final bool cloudAssistEnabled;
+  final String? cloudAssistProvider;
+  final bool cloudAssistFindingReview;
+  final bool cloudAssistReportReview;
+  final double cloudAssistBudgetUsd;
+  final double cloudAssistSpentUsd;
 
   Project({
     this.id,
@@ -61,9 +67,17 @@ class Project {
     this.budgetLimit,
     this.budgetSpentUsd = 0,
     this.budgetStartedAt,
+    this.cloudAssistEnabled = false,
+    this.cloudAssistProvider,
+    this.cloudAssistFindingReview = false,
+    this.cloudAssistReportReview = false,
+    this.cloudAssistBudgetUsd = 0,
+    this.cloudAssistSpentUsd = 0,
   });
 
   bool get hasBudget => budgetMode != null && (budgetLimit ?? 0) > 0;
+  bool get hasCloudAssistBudget =>
+      cloudAssistEnabled && cloudAssistBudgetUsd > cloudAssistSpentUsd;
 
   /// Parsed in-scope list (non-empty lines only).
   List<String> get scopeList => (scope ?? '')
@@ -104,6 +118,12 @@ class Project {
     'budget_limit': budgetLimit,
     'budget_spent_usd': budgetSpentUsd,
     'budget_started_at': budgetStartedAt?.toIso8601String(),
+    'cloud_assist_enabled': cloudAssistEnabled ? 1 : 0,
+    'cloud_assist_provider': cloudAssistProvider,
+    'cloud_assist_finding_review': cloudAssistFindingReview ? 1 : 0,
+    'cloud_assist_report_review': cloudAssistReportReview ? 1 : 0,
+    'cloud_assist_budget_usd': cloudAssistBudgetUsd,
+    'cloud_assist_spent_usd': cloudAssistSpentUsd,
   };
 
   factory Project.fromMap(Map<String, dynamic> map) => Project(
@@ -140,6 +160,16 @@ class Project {
     budgetStartedAt: DateTime.tryParse(
       map['budget_started_at'] as String? ?? '',
     ),
+    cloudAssistEnabled: (map['cloud_assist_enabled'] as int? ?? 0) == 1,
+    cloudAssistProvider: map['cloud_assist_provider'] as String?,
+    cloudAssistFindingReview:
+        (map['cloud_assist_finding_review'] as int? ?? 0) == 1,
+    cloudAssistReportReview:
+        (map['cloud_assist_report_review'] as int? ?? 0) == 1,
+    cloudAssistBudgetUsd:
+        (map['cloud_assist_budget_usd'] as num?)?.toDouble() ?? 0,
+    cloudAssistSpentUsd:
+        (map['cloud_assist_spent_usd'] as num?)?.toDouble() ?? 0,
   );
 
   Project copyWith({
@@ -163,6 +193,12 @@ class Project {
     double? budgetLimit,
     double? budgetSpentUsd,
     DateTime? budgetStartedAt,
+    bool? cloudAssistEnabled,
+    String? cloudAssistProvider,
+    bool? cloudAssistFindingReview,
+    bool? cloudAssistReportReview,
+    double? cloudAssistBudgetUsd,
+    double? cloudAssistSpentUsd,
   }) => Project(
     id: id,
     name: name,
@@ -189,5 +225,13 @@ class Project {
     budgetLimit: budgetLimit ?? this.budgetLimit,
     budgetSpentUsd: budgetSpentUsd ?? this.budgetSpentUsd,
     budgetStartedAt: budgetStartedAt ?? this.budgetStartedAt,
+    cloudAssistEnabled: cloudAssistEnabled ?? this.cloudAssistEnabled,
+    cloudAssistProvider: cloudAssistProvider ?? this.cloudAssistProvider,
+    cloudAssistFindingReview:
+        cloudAssistFindingReview ?? this.cloudAssistFindingReview,
+    cloudAssistReportReview:
+        cloudAssistReportReview ?? this.cloudAssistReportReview,
+    cloudAssistBudgetUsd: cloudAssistBudgetUsd ?? this.cloudAssistBudgetUsd,
+    cloudAssistSpentUsd: cloudAssistSpentUsd ?? this.cloudAssistSpentUsd,
   );
 }
