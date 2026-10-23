@@ -14,6 +14,7 @@ import '../services/storage_service.dart';
 import '../services/background_process_manager.dart';
 import '../services/test_budget.dart';
 import '../services/cloud_assist_service.dart';
+import '../services/llm_service.dart';
 
 class PromptLog {
   final String prompt;
@@ -84,6 +85,7 @@ class AppState extends ChangeNotifier {
     );
     return redacted;
   }
+
   List<Map<String, String>> get confirmedArtifacts =>
       List.unmodifiable(_confirmedArtifacts);
   String get executionStatus => _executionStatus;
@@ -862,7 +864,20 @@ Raise confidence to HIGH for any finding where these credentials directly enable
   }
 
   void addPromptLog(String prompt, String response) {
-    _promptLogs.add(PromptLog(prompt, response, DateTime.now()));
+    final pendingIndex = _promptLogs.lastIndexWhere(
+      (entry) =>
+          entry.prompt == prompt &&
+          entry.response == LLMService.pendingResponseMarker,
+    );
+    if (response == LLMService.pendingResponseMarker) {
+      _promptLogs.add(PromptLog(prompt, response, DateTime.now()));
+      notifyListeners();
+      return;
+    }
+    final timestamp = pendingIndex >= 0
+        ? _promptLogs.removeAt(pendingIndex).timestamp
+        : DateTime.now();
+    _promptLogs.add(PromptLog(prompt, response, timestamp));
     if (_projectId > 0) {
       DatabaseHelper.insertPromptLog(
         _projectId,

@@ -33,6 +33,7 @@ import '../services/llm_service.dart';
 import '../services/test_budget.dart';
 import '../services/cloud_assist_service.dart';
 import '../services/assessment_session_checkpoint.dart';
+import '../services/assessment_execution_policy.dart';
 import '../widgets/test_budget_dialog.dart';
 import '../widgets/cloud_assist_dialog.dart';
 import 'tabs/scope_recon_tab.dart';
@@ -168,10 +169,12 @@ class _MainScreenState extends State<MainScreen> {
   List<int> _pendingExecutionIds(AppState appState, Iterable<int> runIds) {
     final ids = runIds.toSet();
     return appState.vulnerabilities
-        .where((vulnerability) =>
-            vulnerability.id != null &&
-            ids.contains(vulnerability.id) &&
-            vulnerability.status == VulnerabilityStatus.pending)
+        .where(
+          (vulnerability) =>
+              vulnerability.id != null &&
+              ids.contains(vulnerability.id) &&
+              vulnerability.status == VulnerabilityStatus.pending,
+        )
         .map((vulnerability) => vulnerability.id!)
         .toList(growable: false);
   }
@@ -1103,7 +1106,11 @@ class _MainScreenState extends State<MainScreen> {
             ),
             onSpend: appState.recordCloudAssistSpend,
             onTokensUsed: (sent, received) => appState.recordTokenUsage(
-              'cloud-confirm', sent, received, targetId: target.id ?? 0),
+              'cloud-confirm',
+              sent,
+              received,
+              targetId: target.id ?? 0,
+            ),
           );
           appState.addDebugLog(
             '[${target.address}] Optional cloud confirmation: ${review.status.name}',
@@ -1532,10 +1539,12 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
     final resumeIds = resumeVulnerabilityIds.toSet();
     final selected = resuming
         ? appState.vulnerabilities
-              .where((v) =>
-                  v.id != null &&
-                  resumeIds.contains(v.id) &&
-                  v.status == VulnerabilityStatus.pending)
+              .where(
+                (v) =>
+                    v.id != null &&
+                    resumeIds.contains(v.id) &&
+                    v.status == VulnerabilityStatus.pending,
+              )
               .toList()
         : appState.vulnerabilities.where((v) => v.selected).toList();
     appState.addDebugLog('Found ${selected.length} selected vulnerabilities');
@@ -1727,7 +1736,9 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
     final targetAddresses = vulnsByTarget.keys.toList();
 
     // Phase B.2: Process batches of up to 3 targets in parallel.
-    const int executionParallelism = 3;
+    final executionParallelism = AssessmentExecutionPolicy.targetParallelism(
+      requireApproval: appState.requireApproval,
+    );
 
     for (
       int batchStart = 0;
@@ -1998,10 +2009,7 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
       await appState.loadCommandLogs();
       if (mounted) setState(() {});
       if (_pauseGate.isPauseRequested) {
-        final pendingIds = _pendingExecutionIds(
-          appState,
-          runVulnerabilityIds,
-        );
+        final pendingIds = _pendingExecutionIds(appState, runVulnerabilityIds);
         await _saveSessionCheckpoint(
           AssessmentSessionPhase.execution,
           AssessmentSessionStatus.paused,

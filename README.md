@@ -243,6 +243,8 @@ LLMtary converts that command into a loopback-only SSH forward and verifies Olla
 
 Use **PAUSE SESSION** during analysis or vulnerability execution. LLMtary finishes the current model request or approved command, checkpoints completed targets, findings, evidence, token usage, and remaining finding IDs, then exposes **RESUME ANALYSIS** or **RESUME TEST**. The checkpoint is project-scoped and survives an application restart. Reconnaissance uses the equivalent **PAUSE** / **RESUME** controls and does not rerun completed targets.
 
+The **Prompt Logs** tab adds each request as soon as it is sent, displays `Request sent — waiting for model response…` while a local model is generating, and replaces that pending entry with the completed response. When operator approval is enabled, vulnerability targets are processed serially so concurrent approval prompts cannot block one another.
+
 ### LLM Requirements
 
 LLMtary's prompts are large and require strong reasoning. The exploit system prompt alone exceeds 6,000 tokens and the recon system prompt exceeds 5,600 tokens — a 4K context window is physically too small.

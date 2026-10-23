@@ -63,6 +63,11 @@ class LLMSemaphore {
 }
 
 class LLMService {
+  static const String pendingResponseMarker =
+      '⏳ Request sent — waiting for model response…';
+  static String failedResponseMarker(Object error) =>
+      '⚠ Request failed (${error.runtimeType})';
+
   final Function(String, String)? onPromptResponse;
   final bool enforceProjectBudget;
   final ProjectBudgetSession? budgetSession;
@@ -170,6 +175,28 @@ class LLMService {
 - Use your training knowledge for CVE details and exploit techniques''';
 
   Future<String> sendMessage(
+    LLMSettings settings,
+    String message, {
+    bool useSystemPrompt = true,
+    String? systemPromptOverride,
+    void Function(int sent, int received)? onTokensUsed,
+  }) async {
+    onPromptResponse?.call(message, pendingResponseMarker);
+    try {
+      return await _sendMessage(
+        settings,
+        message,
+        useSystemPrompt: useSystemPrompt,
+        systemPromptOverride: systemPromptOverride,
+        onTokensUsed: onTokensUsed,
+      );
+    } catch (error) {
+      onPromptResponse?.call(message, failedResponseMarker(error));
+      rethrow;
+    }
+  }
+
+  Future<String> _sendMessage(
     LLMSettings settings,
     String message, {
     bool useSystemPrompt = true,
@@ -432,6 +459,30 @@ class LLMService {
     List<Map<String, String>> messages, {
     void Function(int sent, int received)? onTokensUsed,
   }) async {
+    final lastUserMessage =
+        messages.lastWhere(
+          (message) => message['role'] == 'user',
+          orElse: () => const <String, String>{},
+        )['content'] ??
+        '';
+    onPromptResponse?.call(lastUserMessage, pendingResponseMarker);
+    try {
+      return await _sendMessages(
+        settings,
+        messages,
+        onTokensUsed: onTokensUsed,
+      );
+    } catch (error) {
+      onPromptResponse?.call(lastUserMessage, failedResponseMarker(error));
+      rethrow;
+    }
+  }
+
+  Future<String> _sendMessages(
+    LLMSettings settings,
+    List<Map<String, String>> messages, {
+    void Function(int sent, int received)? onTokensUsed,
+  }) async {
     // Extract system prompt and last user message for providers that need them
     String? systemPrompt;
     String lastUserMessage = '';
@@ -453,7 +504,7 @@ class LLMService {
       case LLMProvider.openRouter:
         break; // handled below with retry loop
       default:
-        return await sendMessage(
+        return await _sendMessage(
           settings,
           lastUserMessage,
           systemPromptOverride: systemPrompt,

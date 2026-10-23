@@ -1207,6 +1207,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _testIntegration() async {
+    final appState = context.read<AppState>();
     final settings = LLMSettings(
       provider: _selectedProvider,
       baseUrl: _baseUrlController.text.trim().isEmpty
@@ -1226,6 +1227,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         llmService: LLMService(
           enableDebugLogging: true,
           enforceProjectBudget: false,
+          onPromptResponse: appState.addPromptLog,
         ),
       ),
     );
