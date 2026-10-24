@@ -106,5 +106,24 @@ void main() {
       );
       expect(session.toPromptBlock(), contains('MFA is not bypassed'));
     });
+
+    test(
+      'never exposes session values or state-changing guidance to prompts',
+      () {
+        final session = WebSession(baseUrl: 'https://example.test');
+        session.addCookie('session', 'dynamic-cookie-secret');
+        session.csrfTokenName = 'X-CSRF-Token';
+        session.csrfTokenValue = 'dynamic-csrf-secret';
+
+        final prompt = session.toPromptBlock();
+
+        expect(prompt, isNot(contains('dynamic-cookie-secret')));
+        expect(prompt, isNot(contains('dynamic-csrf-secret')));
+        expect(prompt, contains('__LLMTARY_COOKIE_0'));
+        expect(prompt, contains('Use only GET or HEAD requests'));
+        expect(prompt, isNot(contains('SET_COOKIE:')));
+        expect(prompt, isNot(contains('CSRF_TOKEN:')));
+      },
+    );
   });
 }

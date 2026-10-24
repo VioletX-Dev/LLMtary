@@ -113,14 +113,30 @@ void main() {
     expect(redacted, contains('[REDACTED]'));
   });
 
-  test('cloud payload redaction masks common secret fields without known values', () {
+  test(
+    'cloud payload redaction masks common secret fields without known values',
+    () {
+      final redacted = CloudAssistService.redactSecrets(
+        '{"password":"not-listed","authorization":"Bearer xyz"}',
+        const [],
+      );
+
+      expect(redacted, isNot(contains('not-listed')));
+      expect(redacted, isNot(contains('Bearer xyz')));
+    },
+  );
+
+  test('prompt redaction masks labeled secrets and private keys', () {
     final redacted = CloudAssistService.redactSecrets(
-      '{"password":"not-listed","authorization":"Bearer xyz"}',
+      'password: unknown-secret\nAuthorization: Bearer abc123\n'
+      '-----BEGIN PRIVATE KEY-----\nkey-material\n-----END PRIVATE KEY-----',
       const [],
     );
 
-    expect(redacted, isNot(contains('not-listed')));
-    expect(redacted, isNot(contains('Bearer xyz')));
+    expect(redacted, isNot(contains('unknown-secret')));
+    expect(redacted, isNot(contains('abc123')));
+    expect(redacted, isNot(contains('key-material')));
+    expect(redacted, contains('[REDACTED]'));
   });
 
   test(

@@ -27,10 +27,10 @@ class CommandValidationResult {
 
   /// Convenience: passed with no changes.
   const CommandValidationResult.pass()
-      : isValid = true,
-        shouldHardBlock = false,
-        correctedCommand = null,
-        reason = '';
+    : isValid = true,
+      shouldHardBlock = false,
+      correctedCommand = null,
+      reason = '';
 }
 
 /// Pre-flight command validator.
@@ -45,16 +45,43 @@ class CommandValidator {
   // makes errors. Update this list when new complex tools are added.
   // ---------------------------------------------------------------------------
   static const _highRiskTools = {
-    'nmap', 'sqlmap', 'gobuster', 'ffuf', 'hydra', 'nuclei',
-    'metasploit', 'msfconsole', 'testssl.sh', 'testssl',
-    'enum4linux', 'enum4linux-ng', 'crackmapexec', 'netexec',
-    'wpscan', 'feroxbuster', 'nikto', 'wfuzz', 'john', 'hashcat',
-    'responder', 'smbclient', 'rpcclient', 'ldapsearch', 'kerbrute',
+    'nmap',
+    'sqlmap',
+    'gobuster',
+    'ffuf',
+    'hydra',
+    'nuclei',
+    'metasploit',
+    'msfconsole',
+    'testssl.sh',
+    'testssl',
+    'enum4linux',
+    'enum4linux-ng',
+    'crackmapexec',
+    'netexec',
+    'wpscan',
+    'feroxbuster',
+    'nikto',
+    'wfuzz',
+    'john',
+    'hashcat',
+    'responder',
+    'smbclient',
+    'rpcclient',
+    'ldapsearch',
+    'kerbrute',
   };
 
   // Known script file extensions — bash/sh executing these is legitimate.
   static const _scriptExtensions = {
-    '.sh', '.bash', '.zsh', '.py', '.rb', '.pl', '.ps1', '.lua',
+    '.sh',
+    '.bash',
+    '.zsh',
+    '.py',
+    '.rb',
+    '.pl',
+    '.ps1',
+    '.lua',
   };
 
   // Known wordlist / data directory patterns — executing files from these is never valid.
@@ -72,7 +99,13 @@ class CommandValidator {
 
   // Known bare-word flag keywords — these should always have a dash prefix.
   static const _bareWordFlagKeywords = {
-    'verbose', 'output', 'port', 'host', 'target', 'wordlist', 'threads',
+    'verbose',
+    'output',
+    'port',
+    'host',
+    'target',
+    'wordlist',
+    'threads',
   };
 
   /// Validate [command] before execution.
@@ -92,11 +125,35 @@ class CommandValidator {
 
     // --- Tier 2 (selective) ---
     final primaryTool = _extractPrimaryTool(command);
-    if (primaryTool != null && _highRiskTools.contains(primaryTool.toLowerCase())) {
-      return await _runTier2(command, primaryTool, settings, llmService);
+    if (primaryTool != null &&
+        _highRiskTools.contains(primaryTool.toLowerCase())) {
+      final tier2 = await _runTier2(command, primaryTool, settings, llmService);
+      final corrected = tier2.correctedCommand;
+      if (corrected != null) {
+        // An LLM-generated correction is untrusted input. Re-run every
+        // deterministic Tier-1 boundary so a safe proposal cannot be changed
+        // into a destructive command after the initial policy check.
+        final correctedTier1 = _runTier1(corrected);
+        if (correctedTier1?.shouldHardBlock == true) {
+          return correctedTier1!;
+        }
+        if (correctedTier1?.correctedCommand != null) {
+          return CommandValidationResult(
+            isValid: true,
+            correctedCommand: correctedTier1!.correctedCommand,
+            reason: '${tier2.reason} ${correctedTier1.reason}'.trim(),
+          );
+        }
+      }
+      return tier2;
     }
 
     return const CommandValidationResult.pass();
+  }
+
+  /// Deterministic validation entry point for tests and non-LLM callers.
+  static CommandValidationResult validateMandatoryPolicy(String command) {
+    return _runTier1(command) ?? const CommandValidationResult.pass();
   }
 
   // ---------------------------------------------------------------------------
@@ -105,6 +162,11 @@ class CommandValidator {
 
   /// Run all static checks. Returns a result if any check fires, null if all pass.
   static CommandValidationResult? _runTier1(String command) {
+    // Mandatory appliance policy: assessment execution is evidence-focused,
+    // non-destructive, and must not perform denial-of-service testing.
+    final safetyBlock = _checkNonDestructivePolicy(command);
+    if (safetyBlock != null) return safetyBlock;
+
     // 6.3a — Non-script file execution (HARD BLOCK)
     final nonScriptBlock = _checkNonScriptExecution(command);
     if (nonScriptBlock != null) return nonScriptBlock;
@@ -118,8 +180,139 @@ class CommandValidator {
     if (wslCorrection != null) return wslCorrection;
 
     // 6.3d — Bare-word flag detection (soft warning, pass through)
-    _checkBareWordFlags(command); // side-effect: logs only, no return value needed
+    _checkBareWordFlags(
+      command,
+    ); // side-effect: logs only, no return value needed
 
+    return null;
+  }
+
+  static final List<MapEntry<RegExp, String>> _nonDestructiveBlocks = [
+    MapEntry(
+      RegExp(
+        r'\b(?:hping3?|nping)\b.*(?:--flood|--rate\s+[1-9]\d{3,})',
+        caseSensitive: false,
+      ),
+      'denial-of-service or packet flooding is prohibited',
+    ),
+    MapEntry(
+      RegExp(
+        r'\b(?:slowloris|slowhttptest|goldeneye|siege|wrk|ab|hey|vegeta|bombardier)\b',
+        caseSensitive: false,
+      ),
+      'load generation and denial-of-service tools are prohibited',
+    ),
+    MapEntry(
+      RegExp(
+        r'\bnmap\b.*--script(?:=|\s+)[^\n;&|]*(?:\bdos\b|intrusive|exploit|brute|flood|slowloris)',
+        caseSensitive: false,
+      ),
+      'denial-of-service, intrusive, exploit, and brute-force NSE script categories are prohibited',
+    ),
+    MapEntry(
+      RegExp(r'\b(?:shutdown|reboot|poweroff|halt)\b', caseSensitive: false),
+      'service or host disruption is prohibited',
+    ),
+    MapEntry(
+      RegExp(
+        r'\b(?:systemctl\s+(?:stop|restart|disable|mask)|service\s+\S+\s+(?:stop|restart))\b',
+        caseSensitive: false,
+      ),
+      'service modification is prohibited',
+    ),
+    MapEntry(
+      RegExp(r'\b(?:ldapmodify|snmpset)\b', caseSensitive: false),
+      'remote directory or device configuration modification is prohibited',
+    ),
+    MapEntry(
+      RegExp(
+        r'\b(?:useradd|adduser|userdel|groupadd|passwd)\b|\bnet\s+user\b.*\s/add\b',
+        caseSensitive: false,
+      ),
+      'account creation or modification is prohibited',
+    ),
+    MapEntry(
+      RegExp(
+        r'\b(?:schtasks\b.*\s/create\b|sc(?:\.exe)?\s+create\b|crontab\s+-)',
+        caseSensitive: false,
+      ),
+      'persistence creation is prohibited',
+    ),
+    MapEntry(
+      RegExp(
+        r'\b(?:hydra|medusa|patator|hashcat|john)\b|\bkerbrute\b.*(?:passwordspray|bruteuser|bruteforce)|\bpassword\s*spray(?:ing)?\b',
+        caseSensitive: false,
+      ),
+      'password spraying, brute force, and credential cracking are prohibited',
+    ),
+    MapEntry(
+      RegExp(
+        r'\b(?:secretsdump(?:\.py)?|mimikatz|procdump)\b|/etc/shadow\b|\bntds\.dit\b|\blsass(?:\.exe|\.dmp)?\b',
+        caseSensitive: false,
+      ),
+      'credential dumping or sensitive credential-file extraction is prohibited',
+    ),
+    MapEntry(
+      RegExp(
+        r'\bnc(?:at)?\b[^\n;&|]*(?:\s-e\s|\s-[A-Za-z]*l[A-Za-z]*\b)|\bsocat\b[^\n;&|]*(?:listen|exec:)|/dev/tcp/|\bbash\s+-i\b|\bpython\d*(?:\.\d+)?\s+-m\s+http\.server\b',
+        caseSensitive: false,
+      ),
+      'reverse or bind shells are prohibited; use a harmless command marker instead',
+    ),
+    MapEntry(
+      RegExp(
+        r'\bmsfconsole\b.*(?:set\s+payload|meterpreter|\bexploit\s*(?:;|$))',
+        caseSensitive: false,
+      ),
+      'full exploit payloads and interactive sessions are prohibited; use check or scanner modules',
+    ),
+    MapEntry(
+      RegExp(
+        r'\bcurl\b.*(?:-T\s|--upload-file\b|(?:-X|--request)(?:=|\s*)["\x27]?(?:PUT|POST|PATCH|DELETE)\b|(?:^|\s)-(?:d|F)(?:\s|["\x27])|--data(?:-raw|-binary|-urlencode)?\b|--form\b)|\bwget\b.*(?:--post-(?:data|file)\b|--method(?:=|\s+)["\x27]?(?:PUT|POST|PATCH|DELETE)\b)|\bscp\b\s+\S+\s+\S+@[^:]+:|\brsync\b.*\S+@[^:]+:',
+        caseSensitive: false,
+      ),
+      'target uploads and state-changing HTTP methods are prohibited',
+    ),
+    MapEntry(
+      RegExp(
+        r'\brequests\.(?:post|put|patch|delete)\s*\(|\brequests\.request\s*\(\s*["\x27](?:POST|PUT|PATCH|DELETE)\b|\burllib\.request\.Request\s*\([^\n]*(?:method\s*=\s*["\x27](?:POST|PUT|PATCH|DELETE)|data\s*=)|\bInvoke-(?:WebRequest|RestMethod)\b.*-Method\s+["\x27]?(?:POST|PUT|PATCH|DELETE)\b|\bhttp\b\s+(?:POST|PUT|PATCH|DELETE)\s+',
+        caseSensitive: false,
+      ),
+      'state-changing HTTP requests are prohibited',
+    ),
+    MapEntry(
+      RegExp(
+        r'\bredis-cli\b.*\b(?:set|del|flushall|flushdb|config\s+set)\b|\bsmbclient\b.*\s-c\s+["\x27][^"\x27]*(?:put|del|mkdir|rmdir)\b|\bftp\b.*\b(?:put|delete|mkdir|rmdir)\b',
+        caseSensitive: false,
+      ),
+      'remote data or configuration modification is prohibited',
+    ),
+    MapEntry(
+      RegExp(
+        r'\bsqlmap\b.*(?:--os-shell|--os-cmd|--file-write|--file-dest|--dump|--passwords)',
+        caseSensitive: false,
+      ),
+      'database extraction, file writes, and operating-system payloads are prohibited',
+    ),
+    MapEntry(
+      RegExp(
+        r'\b(?:mysql|psql|sqlcmd)\b.*\b(?:insert|update|delete|drop|alter|truncate)\b',
+        caseSensitive: false,
+      ),
+      'database mutation is prohibited',
+    ),
+  ];
+
+  static CommandValidationResult? _checkNonDestructivePolicy(String command) {
+    for (final rule in _nonDestructiveBlocks) {
+      if (!rule.key.hasMatch(command)) continue;
+      return CommandValidationResult(
+        isValid: false,
+        shouldHardBlock: true,
+        reason:
+            'SAFETY BLOCK: ${rule.value}. Use a targeted read-only proof technique.',
+      );
+    }
     return null;
   }
 
@@ -152,11 +345,15 @@ class CommandValidator {
 
       // Hard block if it matches a wordlist directory pattern
       final isWordlistPath = _wordlistDirPatterns.any((p) => lower.contains(p));
-      if (isWordlistPath || lower.endsWith('.txt') || lower.endsWith('.lst') || lower.endsWith('.log')) {
+      if (isWordlistPath ||
+          lower.endsWith('.txt') ||
+          lower.endsWith('.lst') ||
+          lower.endsWith('.log')) {
         return CommandValidationResult(
           isValid: false,
           shouldHardBlock: true,
-          reason: 'HARD BLOCK: command attempts to execute non-script file as shell script: $arg. '
+          reason:
+              'HARD BLOCK: command attempts to execute non-script file as shell script: $arg. '
               'Do not execute wordlist or text files with bash/sh. '
               'Use the appropriate tool (gobuster, ffuf, dirb) with the wordlist as an argument instead.',
         );
@@ -164,22 +361,29 @@ class CommandValidator {
     }
 
     // Also catch: `source <path>` or `. <path>` for non-config files
-    final sourcePattern = RegExp(r'\b(source|\.)\s+([^\s"&|;]+)', caseSensitive: false);
+    final sourcePattern = RegExp(
+      r'\b(source|\.)\s+([^\s"&|;]+)',
+      caseSensitive: false,
+    );
     for (final match in sourcePattern.allMatches(cmd)) {
       final arg = match.group(2) ?? '';
       final lower = arg.toLowerCase();
       // Allow known shell config files
-      if (lower.contains('.bashrc') || lower.contains('.profile') ||
-          lower.contains('.zshrc') || lower.contains('.env') ||
+      if (lower.contains('.bashrc') ||
+          lower.contains('.profile') ||
+          lower.contains('.zshrc') ||
+          lower.contains('.env') ||
           _scriptExtensions.any((ext) => lower.endsWith(ext))) {
         continue;
       }
-      if (lower.endsWith('.txt') || lower.endsWith('.lst') ||
+      if (lower.endsWith('.txt') ||
+          lower.endsWith('.lst') ||
           _wordlistDirPatterns.any((p) => lower.contains(p))) {
         return CommandValidationResult(
           isValid: false,
           shouldHardBlock: true,
-          reason: 'HARD BLOCK: command sources a non-script file: $arg. '
+          reason:
+              'HARD BLOCK: command sources a non-script file: $arg. '
               'Do not source wordlist or text files.',
         );
       }
@@ -197,7 +401,8 @@ class CommandValidator {
       return CommandValidationResult(
         isValid: false,
         shouldHardBlock: true,
-        reason: 'HARD BLOCK: piping file contents into bash/sh is not permitted in the testing loop. '
+        reason:
+            'HARD BLOCK: piping file contents into bash/sh is not permitted in the testing loop. '
             'Execute scripts directly instead.',
       );
     }
@@ -207,7 +412,8 @@ class CommandValidator {
       return CommandValidationResult(
         isValid: false,
         shouldHardBlock: true,
-        reason: 'HARD BLOCK: piping remote content into bash/sh is not permitted. '
+        reason:
+            'HARD BLOCK: piping remote content into bash/sh is not permitted. '
             'Download the script first, inspect it, then execute it explicitly.',
       );
     }
@@ -221,7 +427,10 @@ class CommandValidator {
     // We check synchronously using a cached flag pattern — actual WSL check
     // is async so we use a heuristic: if the command contains a Windows-style
     // absolute path (C:\...) it's almost certainly wrong in a WSL context.
-    final windowsPathPattern = RegExp(r'([A-Za-z]):\\([^\s"]+)', caseSensitive: false);
+    final windowsPathPattern = RegExp(
+      r'([A-Za-z]):\\([^\s"]+)',
+      caseSensitive: false,
+    );
     if (!windowsPathPattern.hasMatch(command)) return null;
 
     var corrected = command;
@@ -238,7 +447,8 @@ class CommandValidator {
       return CommandValidationResult(
         isValid: true,
         correctedCommand: corrected,
-        reason: 'WSL path translation applied: Windows-style paths converted to /mnt/ equivalents.',
+        reason:
+            'WSL path translation applied: Windows-style paths converted to /mnt/ equivalents.',
       );
     }
 
@@ -280,8 +490,11 @@ class CommandValidator {
     LLMService llmService,
   ) async {
     try {
-      final toolInfo = await CommandExecutor.getToolUsageInfo(tool, settings, llmService)
-          .timeout(const Duration(seconds: 15));
+      final toolInfo = await CommandExecutor.getToolUsageInfo(
+        tool,
+        settings,
+        llmService,
+      ).timeout(const Duration(seconds: 15));
       var toolRef = CommandExecutor.formatToolUsageForPrompt(toolInfo);
 
       // Phase 10: For nuclei, append runtime-detected flag summary to toolRef
@@ -294,7 +507,8 @@ class CommandValidator {
           ).timeout(const Duration(seconds: 8));
           final flagOutput = (flagCheck['output'] ?? '').toString().trim();
           if (flagOutput.isNotEmpty) {
-            toolRef += '\n\nACTUAL INSTALLED FLAGS (from nuclei -h):\n$flagOutput\n'
+            toolRef +=
+                '\n\nACTUAL INSTALLED FLAGS (from nuclei -h):\n$flagOutput\n'
                 'Use ONLY these exact flag names. Do not invent flags not shown above.';
           }
         } catch (_) {}
@@ -303,7 +517,8 @@ class CommandValidator {
       final osInfo = await CommandExecutor.getOsInfo();
 
       // 6.4b — Build the validation prompt
-      final prompt = '''You are validating a shell command before execution on $osInfo.
+      final prompt =
+          '''You are validating a shell command before execution on $osInfo.
 
 TOOL REFERENCE:
 $toolRef
@@ -357,7 +572,8 @@ Respond ONLY with valid JSON. No markdown, no explanation outside the JSON.''';
         return CommandValidationResult(
           isValid: true, // corrected command is valid to run
           correctedCommand: corrected,
-          reason: '[PRE-FLIGHT CORRECTION] $tool command corrected. '
+          reason:
+              '[PRE-FLIGHT CORRECTION] $tool command corrected. '
               'Issues: ${issues.join(', ')}. '
               'Original: $command → Corrected: $corrected',
         );
@@ -366,7 +582,8 @@ Respond ONLY with valid JSON. No markdown, no explanation outside the JSON.''';
       // Invalid but no correction — log and pass through (don't stall the loop)
       return CommandValidationResult(
         isValid: true,
-        reason: '[PRE-FLIGHT WARNING] $tool command may have issues: ${issues.join(', ')}. '
+        reason:
+            '[PRE-FLIGHT WARNING] $tool command may have issues: ${issues.join(', ')}. '
             'Proceeding with original command.',
       );
     } on TimeoutException {

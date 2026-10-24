@@ -12,10 +12,11 @@ class CloudAssistService {
   static String redactSecrets(String input, Iterable<String> secrets) {
     var redacted = input;
     for (final secret in secrets) {
-      if (secret.isNotEmpty) redacted = redacted.replaceAll(secret, '[REDACTED]');
+      if (secret.isNotEmpty)
+        redacted = redacted.replaceAll(secret, '[REDACTED]');
     }
     final jsonSecret = RegExp(
-      r'("(?:password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|cookie|set-cookie)"\s*:\s*")[^"]*(")',
+      r'("(?:password|passwd|secret|client[_-]?secret|api[_-]?key|token|access[_-]?token|refresh[_-]?token|authorization|cookie|set-cookie)"\s*:\s*")[^"]*(")',
       caseSensitive: false,
     );
     redacted = redacted.replaceAllMapped(
@@ -23,12 +24,31 @@ class CloudAssistService {
       (match) => '${match.group(1)}[REDACTED]${match.group(2)}',
     );
     final assignmentSecret = RegExp(
-      r'\b(password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|cookie)\s*=\s*[^\s,;]+',
+      r'\b(password|passwd|secret|client[_-]?secret|api[_-]?key|token|access[_-]?token|refresh[_-]?token|authorization|cookie)\s*=\s*[^\s,;]+',
       caseSensitive: false,
     );
     redacted = redacted.replaceAllMapped(
       assignmentSecret,
       (match) => '${match.group(1)}=[REDACTED]',
+    );
+    final labeledSecret = RegExp(
+      r'\b(password|passwd|secret|client[_-]?secret|api[_-]?key|token|access[_-]?token|refresh[_-]?token|authorization|cookie|set-cookie)\s*:\s*[^\r\n,;]+',
+      caseSensitive: false,
+    );
+    redacted = redacted.replaceAllMapped(
+      labeledSecret,
+      (match) => '${match.group(1)}: [REDACTED]',
+    );
+    redacted = redacted.replaceAll(
+      RegExp(r'Authorization:\s*(?:Bearer|Basic)\s+\S+', caseSensitive: false),
+      'Authorization: [REDACTED]',
+    );
+    redacted = redacted.replaceAll(
+      RegExp(
+        r'-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----',
+        caseSensitive: false,
+      ),
+      '[REDACTED PRIVATE KEY]',
     );
     return redacted;
   }

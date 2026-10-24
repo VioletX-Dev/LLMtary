@@ -17,7 +17,6 @@ class WebSession {
   bool manualMfaCompleted = false;
   String? manualMfaNote;
   DateTime? manualMfaCompletedAt;
-  AuthenticatedAccess? _seededAccess;
 
   /// Base URL for the target web application (e.g. "https://example.com").
   final String baseUrl;
@@ -35,7 +34,6 @@ class WebSession {
 
   /// Seed this execution-only session from operator-supplied access.
   void seedFromAccess(AuthenticatedAccess access) {
-    _seededAccess = access;
     cookies.addAll(access.cookies);
     bearerToken = access.bearerToken;
     username = access.username;
@@ -81,8 +79,8 @@ class WebSession {
     return 'X-CSRF-Token';
   }
 
-  /// Prompt block injected into every web-testing iteration.
-  /// The caller must redact supplied secrets before persisting this prompt.
+  /// Prompt block injected into every web-testing iteration. It exposes only
+  /// appliance-materialized placeholders, never session values.
   String toPromptBlock() {
     if (!hasCookies &&
         !hasCsrfToken &&
@@ -100,10 +98,7 @@ class WebSession {
       );
       var cookieIndex = 0;
       for (final e in cookies.entries) {
-        final value = _seededAccess?.cookies.containsKey(e.key) == true
-            ? '__LLMTARY_COOKIE_$cookieIndex'
-            : e.value;
-        buf.writeln('  - ${e.key} = $value');
+        buf.writeln('  - ${e.key} = __LLMTARY_COOKIE_$cookieIndex');
         cookieIndex++;
       }
       final pairs = cookies.keys
@@ -115,12 +110,9 @@ class WebSession {
       buf.writeln('  curl flag: -b "$pairs"');
     }
     if (hasCsrfToken) {
+      buf.writeln('### CSRF token is present locally but must not be used:');
       buf.writeln(
-        '### CSRF token (include with every state-changing POST/PUT/DELETE):',
-      );
-      buf.writeln('  ${csrfTokenName!} = __LLMTARY_CSRF__');
-      buf.writeln(
-        '  curl flag: -H "${_csrfHeader(csrfTokenName!)}: __LLMTARY_CSRF__"',
+        '  State-changing POST/PUT/PATCH/DELETE requests are prohibited.',
       );
     }
     if (hasBearerToken) {
@@ -158,12 +150,10 @@ class WebSession {
     }
     buf.writeln('''
 ### Rules for session-aware testing:
-- Include the cookie flag on EVERY request that requires authentication
-- Include supplied bearer/basic authorization on every authenticated request
-- Re-fetch the CSRF token from a GET response if a POST returns 403/419
+- Use only GET or HEAD requests to read-only resources
+- Include appliance-materialized cookie or authorization placeholders only when authentication is required
 - If the session appears expired (redirect to /login), output SESSION_EXPIRED on its own line
-- If you discover new cookies in a response, output: SET_COOKIE: <name>=<value>
-- If you discover a CSRF token in a response, output: CSRF_TOKEN: <fieldName>=<value>
+- Never output or request cookie values, CSRF values, bearer tokens, passwords, or other session material
 ''');
     return buf.toString();
   }
