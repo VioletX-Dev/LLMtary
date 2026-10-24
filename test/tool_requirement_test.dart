@@ -42,10 +42,27 @@ void main() {
     expect(CommandExecutor.getManagedAptPackage('unknown-tool'), isNull);
   });
 
-  test('managed installer supports only allowlisted logical tools', () {
+  test('managed installer supports audited apt and source tools', () {
     expect(CommandExecutor.canUseManagedInstaller('tshark'), isTrue);
     expect(CommandExecutor.canUseManagedInstaller('ldapsearch'), isTrue);
+    expect(CommandExecutor.canUseManagedInstaller('crackmapexec'), isTrue);
+    expect(CommandExecutor.canUseManagedInstaller('netexec'), isTrue);
+    expect(CommandExecutor.canUseManagedInstaller('searchsploit'), isTrue);
+    expect(CommandExecutor.canUseManagedInstaller('exploitdb'), isTrue);
     expect(CommandExecutor.canUseManagedInstaller('evil-winrm'), isFalse);
+  });
+
+  test('source-managed tools are not misreported as apt packages', () {
+    expect(CommandExecutor.getManagedAptPackage('crackmapexec'), isNull);
+    expect(CommandExecutor.getManagedAptPackage('searchsploit'), isNull);
+    expect(
+      CommandExecutor.getInstallDisplayCommand('apt-get', 'crackmapexec'),
+      '/opt/LLMtary/libexec/llmtary-tool-installer crackmapexec',
+    );
+    expect(
+      CommandExecutor.getInstallDisplayCommand('apt-get', 'searchsploit'),
+      '/opt/LLMtary/libexec/llmtary-tool-installer searchsploit',
+    );
   });
 
   test('Linux managed appliances do not collect an administrator password', () {

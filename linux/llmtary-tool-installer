@@ -6,6 +6,111 @@ if [ "$(id -u)" -ne 0 ] || [ "$#" -ne 1 ]; then
     exit 64
 fi
 
+export DEBIAN_FRONTEND=noninteractive
+exec 9>/run/lock/llmtary-tool-installer.lock
+/usr/bin/flock 9
+
+apt_install() {
+    /usr/bin/apt-get install -y --no-install-recommends "$@"
+}
+
+install_netexec() {
+    commit='c7dc286ba65daf10402cdc470e531b84e6d3d911'
+    destination="/opt/llmtary-tools/netexec-$commit"
+    constraints="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/netexec-v1.5.1-constraints.txt"
+    [ -r "$constraints" ] || {
+        echo "NetExec constraints file is missing" >&2
+        exit 68
+    }
+    if [ ! -x "$destination/bin/nxc" ]; then
+        apt_install git pipx python3-venv rustc cargo build-essential python3-dev libssl-dev libffi-dev
+        /bin/rm -rf "$destination"
+        /usr/bin/install -d -m 0755 /opt/llmtary-tools
+        /usr/bin/install -d -o llmtary -g llmtary -m 0750 "$destination"
+        source="$destination/source"
+        /usr/bin/install -d -o llmtary -g llmtary -m 0750 "$source"
+        /usr/sbin/runuser -u llmtary -- /usr/bin/git -C "$source" init --quiet
+        /usr/sbin/runuser -u llmtary -- /usr/bin/git -C "$source" remote add origin \
+            https://github.com/Pennyw0rth/NetExec.git
+        /usr/sbin/runuser -u llmtary -- /usr/bin/git -C "$source" fetch --quiet --depth 1 origin "$commit"
+        /usr/sbin/runuser -u llmtary -- /usr/bin/git -C "$source" checkout --quiet --detach FETCH_HEAD
+        actual=$(/usr/sbin/runuser -u llmtary -- /usr/bin/git -C "$source" rev-parse HEAD)
+        [ "$actual" = "$commit" ] || {
+            echo "NetExec source revision did not match the audited commit" >&2
+            exit 66
+        }
+        /usr/bin/python3 - "$source/pyproject.toml" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+pins = {
+    'certipy-ad @ git+https://github.com/Pennyw0rth/Certipy':
+        'certipy-ad @ git+https://github.com/Pennyw0rth/Certipy@017dab8ff4d4447976b2a0c2b2203fd61b888681',
+    'impacket @ git+https://github.com/fortra/impacket':
+        'impacket @ git+https://github.com/fortra/impacket@caba5facdd3a01b5d0decc6daf5871839f22f792',
+    'oscrypto @ git+https://github.com/wbond/oscrypto':
+        'oscrypto @ git+https://github.com/wbond/oscrypto@1547f535001ba568b239b8797465536759c742a3',
+    'pynfsclient @ git+https://github.com/Pennyw0rth/NfsClient':
+        'pynfsclient @ git+https://github.com/Pennyw0rth/NfsClient@9b61e0a6385743923ccffa6a80f8dbbf0714121d',
+}
+for old, new in pins.items():
+    if old not in text:
+        raise SystemExit(f'missing audited dependency declaration: {old}')
+    text = text.replace(old, new, 1)
+path.write_text(text)
+PY
+        /usr/sbin/runuser -u llmtary -- /usr/bin/env \
+            HOME=/home/llmtary \
+            PIPX_HOME="$destination/pipx" \
+            PIPX_BIN_DIR="$destination/bin" \
+            PIPX_DEFAULT_PYTHON=/usr/bin/python3 \
+            /usr/bin/pipx install --force \
+            --pip-args "--constraint $constraints" "$source"
+        [ -x "$destination/bin/nxc" ] || {
+            echo "NetExec installation did not produce nxc" >&2
+            exit 67
+        }
+        /usr/bin/chown -R root:root "$destination"
+    fi
+    /usr/bin/chmod -R go-w,a+rX "$destination"
+    /usr/bin/ln -sfn "$destination/bin/nxc" /usr/local/bin/nxc
+    /usr/bin/ln -sfn "$destination/bin/netexec" /usr/local/bin/netexec
+    /usr/bin/ln -sfn "$destination/bin/nxcdb" /usr/local/bin/nxcdb
+    /usr/bin/ln -sfn "$destination/bin/nxc" /usr/local/bin/crackmapexec
+}
+
+install_searchsploit() {
+    commit='ad8ab6d0f38e0378f10861d50052cc05f9b3da7b'
+    destination="/opt/llmtary-tools/exploitdb-$commit"
+    if [ ! -x "$destination/searchsploit" ]; then
+        apt_install git libxml2-utils
+        /usr/bin/install -d -m 0755 /opt/llmtary-tools
+        stage="/opt/llmtary-tools/.exploitdb-$commit-$$"
+        trap 'rm -rf "$stage"' EXIT HUP INT TERM
+        /usr/bin/install -d -o llmtary -g llmtary -m 0750 "$stage"
+        /usr/sbin/runuser -u llmtary -- /usr/bin/git -C "$stage" init --quiet
+        /usr/sbin/runuser -u llmtary -- /usr/bin/git -C "$stage" remote add origin \
+            https://gitlab.com/exploit-database/exploitdb.git
+        /usr/sbin/runuser -u llmtary -- /usr/bin/git -C "$stage" fetch --quiet --depth 1 origin "$commit"
+        /usr/sbin/runuser -u llmtary -- /usr/bin/git -C "$stage" checkout --quiet --detach FETCH_HEAD
+        actual=$(/usr/sbin/runuser -u llmtary -- /usr/bin/git -C "$stage" rev-parse HEAD)
+        [ "$actual" = "$commit" ] || {
+            echo "Exploit-DB source revision did not match the audited commit" >&2
+            exit 66
+        }
+
+        /usr/bin/chown -R root:root "$stage"
+        /usr/bin/mv "$stage" "$destination"
+        trap - EXIT HUP INT TERM
+    fi
+    /usr/bin/chmod -R go-w,a+rX "$destination"
+    /usr/bin/ln -sfn "$destination" /opt/exploitdb
+    /usr/bin/ln -sfn "$destination/searchsploit" /usr/local/bin/searchsploit
+    /usr/bin/ln -sfn /opt/exploitdb/.searchsploit_rc /home/llmtary/.searchsploit_rc
+}
+
 case "$1" in
     smbclient) package=smbclient ;;
     impacket) package=python3-impacket ;;
@@ -18,11 +123,18 @@ case "$1" in
     ip) package=iproute2 ;;
     curl) package=curl ;;
     whatweb) package=whatweb ;;
+    crackmapexec|netexec)
+        install_netexec
+        exit 0
+        ;;
+    searchsploit|exploitdb|exploit-db)
+        install_searchsploit
+        exit 0
+        ;;
     *)
         echo "tool is not in the managed installer allowlist" >&2
         exit 65
         ;;
 esac
 
-export DEBIAN_FRONTEND=noninteractive
 exec /usr/bin/apt-get install -y --no-install-recommends "$package"

@@ -137,3 +137,6 @@ install(FILES "${CMAKE_SOURCE_DIR}/llmtary.png"
 install(PROGRAMS "${CMAKE_SOURCE_DIR}/llmtary-tool-installer"
   DESTINATION "${CMAKE_INSTALL_PREFIX}/libexec"
   COMPONENT Runtime)
+install(FILES "${CMAKE_SOURCE_DIR}/netexec-v1.5.1-constraints.txt"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/libexec"
+  COMPONENT Runtime)

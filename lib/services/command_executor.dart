@@ -163,11 +163,34 @@ class CommandExecutor {
     'whatweb': 'whatweb',
   };
 
+  static const Set<String> _managedSourceTools = {
+    'crackmapexec',
+    'netexec',
+    'searchsploit',
+    'exploitdb',
+    'exploit-db',
+  };
+
   static String? getManagedAptPackage(String tool) =>
       _managedAptPackages[tool.toLowerCase().trim()];
 
-  static bool canUseManagedInstaller(String tool) =>
-      getManagedAptPackage(tool) != null;
+  static bool canUseManagedInstaller(String tool) {
+    final normalized = tool.toLowerCase().trim();
+    return _managedAptPackages.containsKey(normalized) ||
+        _managedSourceTools.contains(normalized);
+  }
+
+  static String getInstallDisplayCommand(String packageManager, String tool) {
+    final normalized = tool.toLowerCase().trim();
+    final aptPackage = getManagedAptPackage(normalized);
+    if (Platform.isLinux &&
+        packageManager == 'apt-get' &&
+        canUseManagedInstaller(normalized)) {
+      if (aptPackage != null) return 'apt-get install $aptPackage';
+      return '/opt/LLMtary/libexec/llmtary-tool-installer $normalized';
+    }
+    return '$packageManager install $tool';
+  }
 
   /// Linux appliances use the root-owned managed installer and must never
   /// collect or cache an administrator password in the assessment session.
