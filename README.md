@@ -259,6 +259,8 @@ The deterministic command validator hard-blocks denial-of-service/load testing, 
 
 Approval-required assessment commands fail closed if the approval callback is unavailable and prompt on every invocation. Legacy tool-whitelist or “always allow” entries cannot bypass per-command operator approval.
 
+Proof/Exploit execution is always serialized and approval-gated, independent of the legacy global approval toggle. The assessment UI cannot auto-return an approval decision.
+
 ### LLM Requirements
 
 LLMtary's prompts are large and require strong reasoning. The exploit system prompt alone exceeds 6,000 tokens and the recon system prompt exceeds 5,600 tokens — a 4K context window is physically too small.

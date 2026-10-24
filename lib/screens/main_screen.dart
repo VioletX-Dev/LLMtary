@@ -1487,7 +1487,6 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
         ),
         adminPassword: appState.adminPassword,
         onApprovalNeeded: (command) async {
-          if (!appState.requireApproval) return 'once';
           _approvalCompleter = Completer<String?>();
           appState.setPendingCommand(command);
           return _approvalCompleter!.future;
@@ -1741,7 +1740,9 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
 
     // Phase B.2: Process batches of up to 3 targets in parallel.
     final executionParallelism = AssessmentExecutionPolicy.targetParallelism(
-      requireApproval: appState.requireApproval,
+      // Proof/Exploit commands always require an explicit operator decision.
+      // Keep execution serialized even if the legacy global toggle is off.
+      requireApproval: true,
     );
 
     for (
@@ -1846,7 +1847,6 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
                 },
                 adminPassword: appState.adminPassword,
                 onApprovalNeeded: (command) async {
-                  if (!appState.requireApproval) return 'once';
                   _approvalCompleter = Completer<String?>();
                   appState.setPendingCommand(command);
                   return await _approvalCompleter!.future;
