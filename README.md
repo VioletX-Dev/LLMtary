@@ -243,6 +243,8 @@ LLMtary converts that command into a loopback-only SSH forward and verifies Olla
 
 Use **PAUSE SESSION** during analysis or vulnerability execution. LLMtary finishes the current model request or approved command, checkpoints completed targets, findings, evidence, token usage, and remaining finding IDs, then exposes **RESUME ANALYSIS** or **RESUME TEST**. The checkpoint is project-scoped and survives an application restart. Reconnaissance uses the equivalent **PAUSE** / **RESUME** controls and does not rerun completed targets.
 
+When resuming vulnerability execution, the persisted pending-finding IDs are authoritative even if the target itself was marked execution-complete by an earlier pass. This prevents a resumed queue from being filtered to zero and incorrectly reported as complete.
+
 The **Prompt Logs** tab adds each request as soon as it is sent, displays `Request sent — waiting for model response…` while a local model is generating, and replaces that pending entry with the completed response. When operator approval is enabled, vulnerability targets are processed serially so concurrent approval prompts cannot block one another.
 
 ### Managed tool installation on Linux appliances

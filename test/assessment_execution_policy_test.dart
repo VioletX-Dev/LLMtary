@@ -18,4 +18,34 @@ void main() {
       3,
     );
   });
+
+  test('resume honors explicit pending findings on completed targets', () {
+    expect(
+      AssessmentExecutionPolicy.includeVulnerabilityForExecution(
+        resuming: true,
+        targetExecutionComplete: true,
+        explicitlyRetesting: false,
+      ),
+      isTrue,
+    );
+  });
+
+  test('new execution still skips completed targets unless re-testing', () {
+    expect(
+      AssessmentExecutionPolicy.includeVulnerabilityForExecution(
+        resuming: false,
+        targetExecutionComplete: true,
+        explicitlyRetesting: false,
+      ),
+      isFalse,
+    );
+    expect(
+      AssessmentExecutionPolicy.includeVulnerabilityForExecution(
+        resuming: false,
+        targetExecutionComplete: true,
+        explicitlyRetesting: true,
+      ),
+      isTrue,
+    );
+  });
 }

@@ -1685,7 +1685,11 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
     // Filter out vulns whose target has executionComplete (unless they were explicitly re-queued)
     pendingVulns = pendingVulns.where((v) {
       final t = targetMap[v.targetAddress];
-      return t == null || !t.executionComplete || alreadyCompleted.contains(v);
+      return AssessmentExecutionPolicy.includeVulnerabilityForExecution(
+        resuming: resuming,
+        targetExecutionComplete: t?.executionComplete ?? false,
+        explicitlyRetesting: alreadyCompleted.contains(v),
+      );
     }).toList();
 
     final runVulnerabilityIds = pendingVulns
