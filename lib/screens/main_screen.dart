@@ -666,11 +666,6 @@ class _MainScreenState extends State<MainScreen> {
                   _approvalCompleter = null;
                   state.setPendingCommand(null);
                 },
-                onAlwaysAllow: () {
-                  _approvalCompleter?.complete('always');
-                  _approvalCompleter = null;
-                  state.setPendingCommand(null);
-                },
                 onDeny: () {
                   _approvalCompleter?.complete('deny');
                   _approvalCompleter = null;

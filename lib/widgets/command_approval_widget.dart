@@ -3,14 +3,12 @@ import 'package:flutter/material.dart';
 class CommandApprovalWidget extends StatelessWidget {
   final String command;
   final VoidCallback onAllowOnce;
-  final VoidCallback onAlwaysAllow;
   final VoidCallback onDeny;
 
   const CommandApprovalWidget({
     super.key,
     required this.command,
     required this.onAllowOnce,
-    required this.onAlwaysAllow,
     required this.onDeny,
   });
 
@@ -124,13 +122,6 @@ class CommandApprovalWidget extends StatelessWidget {
             Icons.check_circle_outline,
             const Color(0xFF00FF88),
             onAllowOnce,
-          ),
-          const SizedBox(width: 12),
-          _buildButton(
-            'ALWAYS ALLOW $_baseCommand',
-            Icons.verified,
-            const Color(0xFF00F5FF),
-            onAlwaysAllow,
           ),
           const SizedBox(width: 12),
           _buildButton(
