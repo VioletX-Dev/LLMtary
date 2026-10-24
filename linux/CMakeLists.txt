@@ -131,3 +131,9 @@ endif()
 install(FILES "${CMAKE_SOURCE_DIR}/llmtary.png"
   DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
+
+# Root-owned, allowlisted package installer used through the narrow sudoers
+# rule provisioned by post-install.sh on managed appliances.
+install(PROGRAMS "${CMAKE_SOURCE_DIR}/llmtary-tool-installer"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/libexec"
+  COMPONENT Runtime)

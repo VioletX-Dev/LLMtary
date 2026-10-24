@@ -1,0 +1,28 @@
+#!/bin/sh
+set -eu
+
+if [ "$(id -u)" -ne 0 ] || [ "$#" -ne 1 ]; then
+    echo "managed installer requires one logical tool name and root" >&2
+    exit 64
+fi
+
+case "$1" in
+    smbclient) package=smbclient ;;
+    impacket) package=python3-impacket ;;
+    requests) package=python3-requests ;;
+    tshark) package=tshark ;;
+    ldapsearch|ldapmodify) package=ldap-utils ;;
+    snmpwalk) package=snmp ;;
+    nc|netcat) package=netcat-openbsd ;;
+    ping) package=iputils-ping ;;
+    ip) package=iproute2 ;;
+    curl) package=curl ;;
+    whatweb) package=whatweb ;;
+    *)
+        echo "tool is not in the managed installer allowlist" >&2
+        exit 65
+        ;;
+esac
+
+export DEBIAN_FRONTEND=noninteractive
+exec /usr/bin/apt-get install -y --no-install-recommends "$package"

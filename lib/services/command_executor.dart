@@ -136,6 +136,39 @@ class CommandExecutor {
     'mariadb-client': 'mysql',
   };
 
+  // Some LLM responses name Python modules rather than executable binaries.
+  // Treat these as import requirements so `requests` and the standard-library
+  // `urllib` are not incorrectly checked with `which` or reinstalled.
+  static const Map<String, String> _pythonModuleMap = {
+    'requests': 'requests',
+    'urllib': 'urllib',
+    'impacket': 'impacket',
+  };
+
+  // Appliance runtime installs are deliberately restricted to this audited
+  // logical-tool allowlist. The root-owned helper performs the same mapping.
+  static const Map<String, String> _managedAptPackages = {
+    'smbclient': 'smbclient',
+    'impacket': 'python3-impacket',
+    'requests': 'python3-requests',
+    'tshark': 'tshark',
+    'ldapsearch': 'ldap-utils',
+    'ldapmodify': 'ldap-utils',
+    'snmpwalk': 'snmp',
+    'nc': 'netcat-openbsd',
+    'netcat': 'netcat-openbsd',
+    'ping': 'iputils-ping',
+    'ip': 'iproute2',
+    'curl': 'curl',
+    'whatweb': 'whatweb',
+  };
+
+  static String? getManagedAptPackage(String tool) =>
+      _managedAptPackages[tool.toLowerCase().trim()];
+
+  static bool canUseManagedInstaller(String tool) =>
+      getManagedAptPackage(tool) != null;
+
   // Get the actual binary name for a tool
   static String getToolBinary(String tool) {
     final normalized = tool.toLowerCase().trim();
@@ -699,6 +732,18 @@ Respond ONLY with valid JSON.''';
       final primaryTool = tool.split(',').first.trim().split(' ').first.trim();
       if (primaryTool.isEmpty) return false;
 
+      final pythonModule = _pythonModuleMap[primaryTool.toLowerCase()];
+      if (pythonModule != null) {
+        final result = await Process.run('python3', [
+          '-c',
+          'import $pythonModule',
+        ]).timeout(const Duration(seconds: 5));
+        print(
+          '${_timestamp()} DEBUG: Python module lookup: $primaryTool -> $pythonModule (exit ${result.exitCode})',
+        );
+        return result.exitCode == 0;
+      }
+
       // Use known binary mapping (avoids LLM call for common tools)
       final binaryName = getToolBinary(primaryTool);
       print(
@@ -898,6 +943,48 @@ Respond ONLY with valid JSON.''';
       print(
         '${_timestamp()} DEBUG: Installing on OS: $os (package manager: $packageManager)',
       );
+
+      if (Platform.isLinux &&
+          packageManager == 'apt-get' &&
+          canUseManagedInstaller(primaryTool)) {
+        final helper = File(
+          '${File(Platform.resolvedExecutable).parent.path}/libexec/llmtary-tool-installer',
+        );
+        if (await helper.exists()) {
+          print(
+            '${_timestamp()} DEBUG: Using managed installer for $primaryTool',
+          );
+          final result = await Process.run('sudo', [
+            '-n',
+            helper.path,
+            primaryTool.toLowerCase(),
+          ]).timeout(const Duration(minutes: 3));
+          if (result.stdout.toString().trim().isNotEmpty) {
+            print('${_timestamp()} [INSTALL STDOUT] ${result.stdout}');
+          }
+          if (result.stderr.toString().trim().isNotEmpty) {
+            print('${_timestamp()} [INSTALL STDERR] ${result.stderr}');
+          }
+          if (result.exitCode != 0) {
+            print(
+              '${_timestamp()} DEBUG: Managed installer failed with exit ${result.exitCode}',
+            );
+            return false;
+          }
+          return checkToolExists(primaryTool, settings, llmService);
+        }
+        print(
+          '${_timestamp()} DEBUG: Managed installer is not provisioned; an appliance administrator must install $primaryTool',
+        );
+        return false;
+      }
+
+      if (Platform.isLinux && packageManager == 'apt-get') {
+        print(
+          '${_timestamp()} DEBUG: $primaryTool is not in the managed installer allowlist; automatic installation is blocked',
+        );
+        return false;
+      }
 
       // Build OS-specific prompt
       String packageManagerInfo;

@@ -797,9 +797,12 @@ Do NOT propose another port scan variant. Instead:
             onProgress?.call('[$address] Install failed for $tool: $e');
             installed = false;
           }
+          final packageName = packageManager == 'apt-get'
+              ? CommandExecutor.getManagedAptPackage(tool) ?? tool
+              : tool;
           final installLog = CommandLog(
             timestamp: DateTime.now(),
-            command: '$packageManager install $tool',
+            command: '$packageManager install $packageName',
             output: installed ? 'Successfully installed $tool' : 'Failed to install $tool',
             exitCode: installed ? 0 : 1,
             vulnerabilityIndex: null,

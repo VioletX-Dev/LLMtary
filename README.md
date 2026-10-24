@@ -245,6 +245,10 @@ Use **PAUSE SESSION** during analysis or vulnerability execution. LLMtary finish
 
 The **Prompt Logs** tab adds each request as soon as it is sent, displays `Request sent — waiting for model response…` while a local model is generating, and replaces that pending entry with the completed response. When operator approval is enabled, vulnerability targets are processed serially so concurrent approval prompts cannot block one another.
 
+### Managed tool installation on Linux appliances
+
+Linux releases include `libexec/llmtary-tool-installer`, a root-owned helper restricted to an audited logical-tool allowlist. The package post-install script grants the `llmtary` service account passwordless access to that helper only; LLM-generated package names and shell commands never reach the package manager. Python modules such as `requests`, `urllib`, and `impacket` are checked with a Python import rather than `which`, and known logical names are mapped to their actual Ubuntu packages (for example, `impacket` → `python3-impacket` and `ldapsearch` → `ldap-utils`). Tools outside the allowlist are reported as unavailable for administrator provisioning instead of requesting or interpolating an administrator password.
+
 ### LLM Requirements
 
 LLMtary's prompts are large and require strong reasoning. The exploit system prompt alone exceeds 6,000 tokens and the recon system prompt exceeds 5,600 tokens — a 4K context window is physically too small.
