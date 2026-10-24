@@ -40,6 +40,10 @@ void main() {
     );
     expect(CommandExecutor.getManagedAptPackage('urllib'), isNull);
     expect(CommandExecutor.getManagedAptPackage('unknown-tool'), isNull);
+    expect(
+      CommandExecutor.getManagedAptPackage('rdesktop'),
+      'freerdp3-x11',
+    );
   });
 
   test('managed installer supports audited apt and source tools', () {
@@ -50,6 +54,23 @@ void main() {
     expect(CommandExecutor.canUseManagedInstaller('searchsploit'), isTrue);
     expect(CommandExecutor.canUseManagedInstaller('exploitdb'), isTrue);
     expect(CommandExecutor.canUseManagedInstaller('evil-winrm'), isFalse);
+    expect(CommandExecutor.canUseManagedInstaller('rdesktop'), isTrue);
+    expect(CommandExecutor.canUseManagedInstaller('xfreerdp'), isTrue);
+    expect(CommandExecutor.canUseManagedInstaller('xfreerdp3'), isTrue);
+  });
+
+  test('legacy RDP requirement resolves to maintained FreeRDP 3', () {
+    expect(CommandExecutor.getToolBinary('rdesktop'), 'xfreerdp3');
+    expect(CommandExecutor.getToolBinary('xfreerdp'), 'xfreerdp3');
+    expect(CommandExecutor.getToolBinary('xfreerdp3'), 'xfreerdp3');
+    expect(
+      CommandExecutor.getInstallDisplayCommand('apt-get', 'rdesktop'),
+      'apt-get install freerdp3-x11',
+    );
+    expect(
+      CommandExecutor.getToolHints(['rdesktop']),
+      contains('xfreerdp3 /v:TARGET'),
+    );
   });
 
   test('source-managed tools are not misreported as apt packages', () {

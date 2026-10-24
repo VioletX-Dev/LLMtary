@@ -135,6 +135,9 @@ class ToolManager {
     'wafw00f': 'wafw00f',
     'commix': 'commix',
     'xxd': 'xxd',
+    'rdesktop': 'xfreerdp3',
+    'xfreerdp': 'xfreerdp3',
+    'xfreerdp3': 'xfreerdp3',
   };
 
   /// Get the actual binary name for a tool.

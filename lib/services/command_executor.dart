@@ -62,6 +62,12 @@ class CommandExecutor {
     'rpcclient': "rpcclient -U '' -N TARGET -c 'enumdomusers'",
     'crackmapexec':
         'crackmapexec smb TARGET [-u USER] [-p PASS] [--shares] [--users] [--pass-pol]',
+    'rdesktop':
+        'Use maintained FreeRDP 3 instead: xfreerdp3 /v:TARGET [/port:PORT] [/u:USER] [/from-stdin] /cert:ignore. Do not emit the obsolete rdesktop command or flags.',
+    'xfreerdp':
+        'Use the Ubuntu 24.04 binary name: xfreerdp3 /v:TARGET [/port:PORT] [/u:USER] [/from-stdin] /cert:ignore.',
+    'xfreerdp3':
+        'xfreerdp3 /v:TARGET [/port:PORT] [/u:USER] [/from-stdin] /cert:ignore',
     'ncat': 'ncat [-w TIMEOUT] [-z] TARGET PORT  (use -w3 for short timeout)',
     'ftp':
         'ftp TARGET PORT  (then: open TARGET PORT, user anonymous, ls, get FILE)',
@@ -134,6 +140,11 @@ class CommandExecutor {
     'mysql': 'mysql',
     'mysql-client': 'mysql',
     'mariadb-client': 'mysql',
+    // rdesktop is obsolete. Ubuntu 24.04 provides the maintained FreeRDP 3
+    // client as xfreerdp3 in the freerdp3-x11 package.
+    'rdesktop': 'xfreerdp3',
+    'xfreerdp': 'xfreerdp3',
+    'xfreerdp3': 'xfreerdp3',
   };
 
   // Some LLM responses name Python modules rather than executable binaries.
@@ -161,6 +172,9 @@ class CommandExecutor {
     'ip': 'iproute2',
     'curl': 'curl',
     'whatweb': 'whatweb',
+    'rdesktop': 'freerdp3-x11',
+    'xfreerdp': 'freerdp3-x11',
+    'xfreerdp3': 'freerdp3-x11',
   };
 
   static const Set<String> _managedSourceTools = {
@@ -276,6 +290,7 @@ class CommandExecutor {
     LLMService llmService,
   ) async {
     final primaryTool = tool.split(',').first.trim().split(' ').first.trim();
+    final usageTool = getToolBinary(primaryTool);
 
     // Check cache first
     if (_toolUsageCache.containsKey(primaryTool)) {
@@ -296,11 +311,11 @@ class CommandExecutor {
     final versionStr = version != null ? ' version $version' : '';
 
     final prompt =
-        '''You are a penetration testing expert. Provide accurate usage information for "$primaryTool"$versionStr on $os (running via $executionEnv).
+        '''You are a penetration testing expert. Provide accurate usage information for "$usageTool"$versionStr on $os (running via $executionEnv).
 
 Respond with JSON:
 {
-  "tool": "$primaryTool",
+  "tool": "$usageTool",
   "version": "${version ?? 'unknown'}",
   "description": "Brief description of what the tool does",
   "basicSyntax": "Basic command syntax pattern",
@@ -327,7 +342,7 @@ Respond ONLY with valid JSON.''';
       final response = await llmService
           .sendMessage(settings, prompt)
           .timeout(Duration(seconds: 45));
-      final info = _parseToolUsageResponse(response, primaryTool, version);
+      final info = _parseToolUsageResponse(response, usageTool, version);
 
       // Cache the result
       _toolUsageCache[primaryTool] = info;
@@ -338,10 +353,10 @@ Respond ONLY with valid JSON.''';
       print('${_timestamp()} DEBUG: getToolUsageInfo error: $e');
       // Return minimal info on error
       return ToolUsageInfo(
-        tool: primaryTool,
+        tool: usageTool,
         version: version,
         description: 'Usage information unavailable',
-        basicSyntax: '$primaryTool [options]',
+        basicSyntax: '$usageTool [options]',
         commonOptions: [],
         exampleCommands: [],
         requirements: [],

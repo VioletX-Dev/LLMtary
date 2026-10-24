@@ -123,6 +123,7 @@ case "$1" in
     ip) package=iproute2 ;;
     curl) package=curl ;;
     whatweb) package=whatweb ;;
+    rdesktop|xfreerdp|xfreerdp3) package=freerdp3-x11 ;;
     crackmapexec|netexec)
         install_netexec
         exit 0
