@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llmtary/models/llm_provider.dart';
 import 'package:llmtary/models/llm_settings.dart';
@@ -44,5 +46,10 @@ void main() {
     expect(CommandExecutor.canUseManagedInstaller('tshark'), isTrue);
     expect(CommandExecutor.canUseManagedInstaller('ldapsearch'), isTrue);
     expect(CommandExecutor.canUseManagedInstaller('evil-winrm'), isFalse);
+  });
+
+  test('Linux managed appliances do not collect an administrator password', () {
+    expect(Platform.isLinux, isTrue);
+    expect(CommandExecutor.sessionAdministratorPasswordRequired, isFalse);
   });
 }

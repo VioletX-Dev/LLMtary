@@ -169,6 +169,10 @@ class CommandExecutor {
   static bool canUseManagedInstaller(String tool) =>
       getManagedAptPackage(tool) != null;
 
+  /// Linux appliances use the root-owned managed installer and must never
+  /// collect or cache an administrator password in the assessment session.
+  static bool get sessionAdministratorPasswordRequired => !Platform.isLinux;
+
   // Get the actual binary name for a tool
   static String getToolBinary(String tool) {
     final normalized = tool.toLowerCase().trim();
@@ -1964,7 +1968,10 @@ Respond ONLY with valid JSON:
   static const Duration _commandTimeout = Duration(minutes: 30);
 
   static Duration _effectiveCommandTimeout() =>
-      TestBudgetRuntime.activeSession?.operationTimeout(_commandTimeout, DateTime.now()) ??
+      TestBudgetRuntime.activeSession?.operationTimeout(
+        _commandTimeout,
+        DateTime.now(),
+      ) ??
       _commandTimeout;
 
   /// Write (or overwrite) a thin sudo wrapper at a fixed path in /tmp so that
@@ -2122,7 +2129,9 @@ Respond ONLY with valid JSON:
         }
       });
 
-      final exitCode = await process.exitCode.timeout(_effectiveCommandTimeout());
+      final exitCode = await process.exitCode.timeout(
+        _effectiveCommandTimeout(),
+      );
       if (killed) {
         return CommandResult(
           -1,
@@ -2236,7 +2245,9 @@ Respond ONLY with valid JSON:
         }
       });
 
-      final exitCode = await process.exitCode.timeout(_effectiveCommandTimeout());
+      final exitCode = await process.exitCode.timeout(
+        _effectiveCommandTimeout(),
+      );
       if (killed) {
         return CommandResult(
           -1,
@@ -2350,7 +2361,9 @@ Respond ONLY with valid JSON:
         }
       });
 
-      final exitCode = await process.exitCode.timeout(_effectiveCommandTimeout());
+      final exitCode = await process.exitCode.timeout(
+        _effectiveCommandTimeout(),
+      );
       if (killed) {
         return CommandResult(
           -1,

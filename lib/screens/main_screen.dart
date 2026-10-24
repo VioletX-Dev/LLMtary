@@ -209,6 +209,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Future<bool> _ensureSessionPassword() async {
+    if (!CommandExecutor.sessionAdministratorPasswordRequired) return true;
     final appState = context.read<AppState>();
     if (appState.sessionPasswordEntered) return true;
     final password = await showDialog<String>(
