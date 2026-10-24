@@ -257,6 +257,8 @@ Assessment execution uses a read-only evidence ladder: protocol metadata and exa
 
 The deterministic command validator hard-blocks denial-of-service/load testing, service disruption, remote configuration writes, account or persistence creation, password spraying and brute force, credential dumping, reverse/bind shells, full exploit payloads, uploads, state-changing HTTP methods, and database mutation. LLM-proposed command corrections are revalidated against the same deterministic policy before execution. Assessment commands still require explicit operator approval. Session values and common secret fields are replaced with appliance-materialized placeholders or `[REDACTED]` before prompts, logs, and model review. These controls do not depend on the model following prompt instructions.
 
+Approval-required assessment commands fail closed if the approval callback is unavailable and prompt on every invocation. Legacy tool-whitelist or “always allow” entries cannot bypass per-command operator approval.
+
 ### LLM Requirements
 
 LLMtary's prompts are large and require strong reasoning. The exploit system prompt alone exceeds 6,000 tokens and the recon system prompt exceeds 5,600 tokens — a 4K context window is physically too small.

@@ -1858,8 +1858,28 @@ Respond ONLY with valid JSON:
       }
     }
 
-    // Check approval via callback (callback decides live whether approval is needed)
-    if (onApprovalNeeded != null) {
+    // Assessment commands marked as approval-required fail closed and must
+    // prompt every time. A prior "always allow"/tool whitelist must never
+    // bypass the per-command operator decision required by assessment policy.
+    if (requireApproval) {
+      if (onApprovalNeeded == null) {
+        return {
+          'exitCode': -2,
+          'output': 'DENIED: Explicit operator approval is required',
+          'error': 'Approval callback unavailable; command was not executed',
+        };
+      }
+      final approval = await onApprovalNeeded(command);
+      if (approval == null || approval == 'deny') {
+        return {
+          'exitCode': -2,
+          'output': 'DENIED: User denied command execution',
+          'error': 'Command execution denied by user',
+        };
+      }
+      // Treat legacy "always" as approval for this invocation only. Mandatory
+      // assessment approval is per command and is never persisted.
+    } else if (onApprovalNeeded != null) {
       final isWhitelisted = await DatabaseHelper.isCommandWhitelisted(command);
       if (!isWhitelisted) {
         final approval = await onApprovalNeeded(command);
