@@ -34,9 +34,9 @@
 
 ## What Is LLMtary?
 
-LLMtary is an open-source Flutter desktop application that brings **large language model intelligence** to every phase of a penetration test. Enter a target — an IP, hostname, FQDN, or CIDR range — and LLMtary autonomously runs recon, identifies vulnerabilities across dozens of attack categories, then executes and validates each finding — all without leaving your machine.
+LLMtary is an open-source Flutter desktop application that brings **large language model intelligence** to non-destructive penetration-test assessment. Enter an authorized target — an IP, hostname, FQDN, or CIDR range — and LLMtary runs recon, identifies potential vulnerabilities, then proposes bounded validation commands for explicit operator approval.
 
-Whether you're running a local model on your own GPU with **zero data leaving your network**, or leveraging a cloud frontier model for maximum accuracy, LLMtary provides a structured, agentic testing loop that mirrors how a real engagement works: **passive recon → service fingerprinting → vulnerability discovery → targeted exploitation → post-exploitation → professional reporting**.
+Whether you're running a local model on your own GPU with **zero data leaving your network**, or using an optional cloud model, LLMtary provides a structured workflow: **passive recon → service fingerprinting → vulnerability discovery → bounded safe proof → professional reporting**.
 
 ### Why LLMtary?
 
@@ -90,44 +90,43 @@ Analysis mirrors the structure of a professional engagement, with Phase 1 result
 
 **Phase 2 — Full Vulnerability Analysis** (enriched with Phase 1 context):
 - **Web application** — four focused passes: core injection/CMS/auth weaknesses, API/CORS/JWT/GraphQL/OAuth, business logic/SSTI/request smuggling/security headers, secrets and configuration exposure
-- **Active Directory** — three focused passes: credential attacks (Kerberoasting, LDAP null bind, password spraying), privilege escalation (ADCS, ACL abuse, delegation attacks), lateral movement (relay attacks, Pass-the-Hash/Ticket, WinRM)
+- **Active Directory** — safe enumeration, configuration analysis, and attack-path reasoning; credential attacks, relay, object modification, lateral movement, and privilege escalation execution are prohibited
 - **SSL/TLS** — cipher strength, protocol versions, certificate validity, known TLS vulnerability classes
-- **Privilege escalation** — OS-level paths: sudo misconfiguration, SUID binaries, service permissions, scheduled tasks, registry abuse, token impersonation
-- **Technology deep-dives** — WordPress, Jenkins, Atlassian, Tomcat, Exchange, Elasticsearch, VMware, GitLab, Citrix, Drupal, MSSQL, ADCS, WAF bypass — each fires only when indicators for that technology are present
+- **Privilege escalation** — analysis and human-handoff paths only; LLMtary does not execute privilege escalation
+- **Technology deep-dives** — WordPress, Jenkins, Atlassian, Tomcat, Exchange, Elasticsearch, VMware, GitLab, Citrix, Drupal, MSSQL, and ADCS; each fires only when relevant indicators are present
 
 **Post-analysis:**
 - Deduplication, evidence-quote validation, and severity/confidence/business-risk sort
 - If ≥2 HIGH/CRITICAL Active Directory findings are found, a **BloodHound-style attack chain reasoning pass** fires to identify multi-step paths to Domain Administrator
 
-### Agentic Exploit Testing Loop
+### Agentic Non-Destructive Validation Loop
 
-Each selected finding goes through a full autonomous validation loop:
+Each selected finding goes through a bounded validation loop:
 
-- The LLM plans its approach, executes real shell commands, reads command output, evaluates results, and adapts — progressing through `RECON → VERIFICATION → EXPLOITATION → CONFIRMATION` phases
+- The LLM plans its approach, proposes commands, reads approved command output, evaluates results, and adapts through `RECON → VERIFICATION → SAFE_PROOF → CONFIRMATION`
+- Every target command requires a fresh operator decision; the only choices are **Allow Once** and **No**
+- Deterministic runtime policy blocks denial of service, credential attacks/dumping, payloads, shells, listeners, uploads, target modification, persistence, lateral movement, privilege escalation, and post-exploitation
 - **Configurable iteration caps** per finding type (CVE-backed vs. speculative)
 - **Duplicate command and semantic approach exhaustion** detection prevent infinite loops
-- **OPSEC-aware prompting** — every iteration includes guidance on request pacing, scan noise reduction, tool signature minimization, and test impact limits
-- **Rate-limit detection** — detects 429, "too many requests", "you have been blocked" signals in command output; notifies the LLM and adjusts its next approach automatically
+- **Evidence-first prompting** — every iteration states a falsifiable hypothesis, evidence goal, expected positive/negative signals, and a materially different follow-up technique
+- **Rate-limit detection** — detects 429 and blocking signals, then backs off, lowers request frequency, or concludes; it does not evade defensive controls
 - **Two-tier pre-execution command validation:**
-  - *Tier 1 (static, zero cost)* — blocks non-script file execution, pipe-to-shell patterns (`curl url | bash`), and auto-corrects Windows paths in WSL contexts
-  - *Tier 2 (LLM-assisted, cached)* — validates correct flag usage for high-risk tools (nmap, sqlmap, gobuster, hydra, nuclei, metasploit, etc.); first call per tool costs one LLM round-trip, all subsequent calls are free; 20-second timeout
+  - *Tier 1 (static, zero cost)* — enforces the mandatory non-destructive policy, blocks unsafe shell patterns, and performs deterministic syntax/path checks
+  - *Tier 2 (LLM-assisted, cached)* — validates tool syntax; every corrected command is treated as untrusted and revalidated through Tier 1 before execution
 
 ### Attack Chain Reasoning
 
-- When a vulnerability is confirmed, the executor identifies whether it enables or simplifies testing another vulnerability and notes chain opportunities in the finding's proof
-- Confirmed artifacts (RCE, SQLi, auth bypass, LFI, SSRF) are fed forward as context — subsequent vulnerabilities know what access has already been achieved
-- After all loops complete, if ≥2 findings are confirmed, a **post-execution chain reasoning pass** fires — identifying how confirmed findings combine into higher-impact multi-step attack paths, added as `AttackChain` findings
+- Analysis may identify how confirmed findings could combine into a higher-impact path.
+- Paths requiring shells, credentials, privilege escalation, persistence, tunneling, pivoting, or lateral movement are documented for human review and are not executed.
+- Secret-bearing evidence and raw proof commands are not fed into later model prompts.
 
 ### Post-Exploitation Enumeration
 
-When a confirmed finding grants high-value access (RCE, command injection, authentication bypass, default credentials), a **Post-Exploitation Enumeration** sequence is automatically queued — enumerating users, groups, network interfaces, running services, readable credential files, and privilege escalation paths, documenting the full blast radius of the access achieved.
+Post-exploitation is disabled by mandatory policy. LLMtary stops after minimum sufficient safe proof and records a human-handoff recommendation when deeper impact validation is required.
 
 ### Session-Wide Credential Bank
 
-- Discovered credentials are collected into a session-wide bank and automatically included as context when testing subsequent vulnerabilities on the same target — enabling real-world credential reuse and chained attack paths
-- Deduplicates by service/host/username fingerprint
-- Verified credentials (confirmed in command output) are persisted to SQLite; inferred credentials are labeled unverified in prompts
-- When verified credentials are discovered, an **authenticated re-analysis pass** automatically runs for the affected target to surface additional findings that require credentials
+The execution path does not collect, persist, reuse, or inject discovered credentials. Operator-provided authenticated state remains at the appliance/session boundary and is represented to the model only by placeholders.
 
 ### Multi-Scope Target Classification
 
@@ -137,9 +136,11 @@ When a confirmed finding grants high-value access (RCE, command injection, authe
 
 ### Command Approval Mode
 
-- Optional mode that pauses before every command execution and shows it to the user for review
-- Options: **Allow Once**, **Always Allow** (adds to whitelist), or **Deny** (LLM is notified to try a different approach)
-- The toggle takes effect immediately — enabling or disabling mid-execution applies to the very next command
+- Proof/Exploit pauses before every target command and shows the exact redacted command to the operator.
+- Options are **Allow Once** and **No**. Persistent approval and whitelist bypasses are not permitted.
+- A missing approval callback fails closed, and approval-gated execution is serialized so one decision maps to exactly one command.
+
+The quality target and release gate are defined in [OSCP-Aligned Non-Destructive Assessment Standard](docs/oscp-aligned-non-destructive-standard.md). This is not a claim of full OSCP functional equivalence.
 
 ### Targeted Retests and Spot Tests
 
@@ -178,9 +179,9 @@ LLMtary does not claim coverage for browser-only flows, authenticated roles, API
 ### Project Management & Reporting
 
 - Multiple named projects, each with multiple targets
-- All findings, command logs, and credentials persisted in SQLite per project/target
+- Findings and redacted command logs are persisted in SQLite per project/target; raw credentials and authenticated-session values are not collected by the assessment execution path
 - Export and import projects as encrypted `.penex` bundles (AES encryption, password-protected)
-- **HTML report** — professional formatted report with cover page, executive summary, severity breakdown, full findings with CVSS metadata, credential table, and inline visual evidence
+- **HTML report** — professional formatted report with cover page, executive summary, severity breakdown, full findings with CVSS metadata, and inline visual evidence
 - **Markdown report** — same content in portable format, including inline visual evidence
 - Attach PNG, JPEG, or WebP evidence to a saved finding from its camera action, either by importing an image or using the delayed full-desktop capture.
 - Every capture/import is previewed and requires confirmation that passwords, tokens, cookies, private keys, and unrelated personal data are not visible before it is stored.
