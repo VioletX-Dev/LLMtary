@@ -35,4 +35,23 @@ void main() {
     expect(source, contains('[model_loop_no_progress]'));
     expect(source, contains('[inconclusive_evidence]'));
   });
+
+  test('executor injects controlled equivalents for prohibited domains', () {
+    expect(
+      source,
+      contains("import 'safe_capability_mapper.dart';"),
+    );
+    expect(
+      source,
+      contains('SafeCapabilityMapper.guidanceFor('),
+    );
+    expect(
+      source,
+      contains('safeCapabilityGuidance: safeCapabilityGuidance'),
+    );
+    expect(
+      source,
+      contains(r'$safeCapabilityGuidance'),
+    );
+  });
 }

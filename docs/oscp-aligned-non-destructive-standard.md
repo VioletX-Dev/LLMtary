@@ -20,9 +20,12 @@ Authoritative references:
 - **Common network-service assessment:** implemented for bounded, read-only checks; no credential guessing or state changes.
 - **Public exploit research:** analysis and framework `check` only; no exploit code or payload execution.
 - **Client-side attacks:** analysis/handoff only; active delivery is outside policy.
-- **Password attacks and credential dumping:** prohibited.
-- **Linux/Windows privilege escalation:** attack-path analysis and human handoff only; execution prohibited.
-- **Tunneling, pivoting, and lateral movement:** attack-path analysis and human handoff only; execution prohibited.
+- **Password attacks:** controlled policy, MFA, lockout, rate-limit, and public-configuration analysis; guessing, spraying, brute force, and cracking remain prohibited.
+- **Payloads and shells:** prerequisites and bounded one-shot harmless markers only; payload deployment, listeners, callbacks, and sessions remain prohibited.
+- **Credential dumping:** protection-state and exposure analysis only; credential stores, hashes, process memory, tokens, cookies, and keys are never read.
+- **Linux/Windows privilege escalation:** controlled read-only permission/configuration analysis and human handoff; privilege elevation remains prohibited.
+- **Tunneling and pivoting:** route, reachability, ACL, segmentation, and hypothetical path modeling only; no tunnel, proxy, forwarding, or routed traffic.
+- **Lateral movement:** trust, remote-management, service-exposure, and directory-metadata analysis only; no cross-host authentication, replay, relay, or remote execution.
 - **Active Directory:** safe unauthenticated or operator-authorized read-only enumeration and attack-path analysis only; credential attacks and state changes prohibited.
 - **Post-exploitation and persistence:** prohibited.
 - **Evidence and reporting:** implemented; must pass blinded reproducibility and report-quality scoring.

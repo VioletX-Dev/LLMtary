@@ -142,6 +142,17 @@ The execution path does not collect, persist, reuse, or inject discovered creden
 
 The quality target and release gate are defined in [OSCP-Aligned Non-Destructive Assessment Standard](docs/oscp-aligned-non-destructive-standard.md). This is not a claim of full OSCP functional equivalence.
 
+For OSCP domains whose normal execution would violate the mandatory policy, LLMtary performs controlled equivalents instead of skipping the reasoning entirely:
+
+- password-security testing becomes lockout, MFA, policy, rate-limit, and public-configuration analysis without guessing or cracking;
+- payload and shell testing becomes prerequisite validation and, where permitted, a one-shot harmless command marker without a session;
+- privilege escalation becomes read-only permission, service, patch, ACL, and configuration analysis with a human handoff;
+- credential dumping becomes protection-state and exposure analysis without reading secret material;
+- tunneling and pivoting become route, reachability, segmentation, and hypothetical path modeling without forwarding traffic;
+- lateral movement becomes trust, remote-management, directory, and service-exposure analysis without authenticating to another host.
+
+These controlled equivalents must clearly separate observed evidence, modeled impact, and prohibited human-led validation. Theoretical impact cannot confirm a finding.
+
 ### Targeted Retests and Spot Tests
 
 - In **PROOF / EXPLOIT**, use a finding's replay action to run a fresh remediation retest without repeating recon or full vulnerability analysis.
