@@ -6,6 +6,7 @@ import '../models/command_log.dart';
 import '../models/llm_settings.dart';
 import '../models/report_evidence.dart';
 import '../utils/cvss_calculator.dart';
+import 'assessment_narrative_service.dart';
 
 /// Generates professional penetration test reports from collected findings.
 ///
@@ -27,6 +28,8 @@ class ReportGenerator {
     DateTime? startDate,
     DateTime? endDate,
     String? attackNarrative,
+    String? assessmentNarrative,
+    List<AssessmentTimelineEntry> assessmentTimeline = const [],
     bool confirmedOnly = true,
     List<ReportEvidence> visualEvidence = const [],
   }) {
@@ -220,6 +223,24 @@ ${attackNarrative != null && attackNarrative.isNotEmpty ? '''
 </section>
 ''' : ''}
 
+${(assessmentNarrative != null && assessmentNarrative.isNotEmpty) || assessmentTimeline.isNotEmpty ? '''
+<!-- TESTING TIMELINE AND ASSESSMENT NARRATIVE -->
+<section id="assessment-narrative">
+  <h2>Testing Timeline and Assessment Narrative</h2>
+  <p style="font-size:12px;color:#718096;margin-bottom:16px;">The prose summary is grounded in the deterministic evidence ledger below. The ledger remains authoritative if any wording differs.</p>
+  ${assessmentNarrative != null && assessmentNarrative.isNotEmpty ? _renderNarrative(assessmentNarrative) : ''}
+  ${assessmentTimeline.isNotEmpty ? '''
+  <h3>Chronological Evidence Ledger</h3>
+  <table>
+    <thead><tr><th>Time (UTC)</th><th>Phase</th><th>Target / Finding</th><th>Action and Rationale</th><th>Observation / Verification</th><th>Result</th></tr></thead>
+    <tbody>
+      ${assessmentTimeline.map((entry) => '<tr><td>${_esc(entry.timestamp.toUtc().toIso8601String())}</td><td>${_esc(entry.phase)}</td><td>${_esc(entry.target)}<br>${_esc(entry.finding)}</td><td>${_esc(entry.action)}${entry.rationale.isNotEmpty ? '<br><em>${_esc(entry.rationale)}</em>' : ''}</td><td>${_esc(entry.observation)}${entry.verification.isNotEmpty ? '<br><strong>Verification:</strong> ${_esc(entry.verification)}' : ''}</td><td>${_esc([entry.result, entry.disposition].where((value) => value.isNotEmpty).join(' — '))}</td></tr>').join('\n      ')}
+    </tbody>
+  </table>
+  ''' : ''}
+</section>
+''' : ''}
+
 <!-- FINDINGS SUMMARY TABLE -->
 <section id="findings-table">
   <h2>Findings Summary</h2>
@@ -272,6 +293,8 @@ ${project.conclusion?.isNotEmpty == true ? '''
     DateTime? startDate,
     DateTime? endDate,
     String? attackNarrative,
+    String? assessmentNarrative,
+    List<AssessmentTimelineEntry> assessmentTimeline = const [],
     bool confirmedOnly = true,
     List<ReportEvidence> visualEvidence = const [],
   }) {
@@ -359,6 +382,31 @@ ${project.conclusion?.isNotEmpty == true ? '''
       buf.writeln();
       buf.writeln(attackNarrative);
       buf.writeln();
+    }
+
+    if ((assessmentNarrative != null && assessmentNarrative.isNotEmpty) || assessmentTimeline.isNotEmpty) {
+      buf.writeln('## Testing Timeline and Assessment Narrative');
+      buf.writeln();
+      buf.writeln('_The prose summary is grounded in the deterministic evidence ledger below. The ledger remains authoritative if any wording differs._');
+      buf.writeln();
+      if (assessmentNarrative != null && assessmentNarrative.isNotEmpty) {
+        buf.writeln(assessmentNarrative);
+        buf.writeln();
+      }
+      if (assessmentTimeline.isNotEmpty) {
+        buf.writeln('### Chronological Evidence Ledger');
+        buf.writeln();
+        buf.writeln('| Time (UTC) | Phase | Target / Finding | Action and Rationale | Observation / Verification | Result |');
+        buf.writeln('|---|---|---|---|---|---|');
+        for (final entry in assessmentTimeline) {
+          final targetFinding = [entry.target, entry.finding].where((value) => value.isNotEmpty).join(' — ');
+          final action = [entry.action, entry.rationale].where((value) => value.isNotEmpty).join(' — ');
+          final observation = [entry.observation, entry.verification].where((value) => value.isNotEmpty).join(' — Verification: ');
+          final result = [entry.result, entry.disposition].where((value) => value.isNotEmpty).join(' — ');
+          buf.writeln('| ${_markdownCell(entry.timestamp.toUtc().toIso8601String())} | ${_markdownCell(entry.phase)} | ${_markdownCell(targetFinding)} | ${_markdownCell(action)} | ${_markdownCell(observation)} | ${_markdownCell(result)} |');
+        }
+        buf.writeln();
+      }
     }
 
     buf.writeln('## Findings Summary');
@@ -581,6 +629,11 @@ ${project.conclusion?.isNotEmpty == true ? '''
       .replaceAll(']', r'\]')
       .replaceAll('(', r'\(')
       .replaceAll(')', r'\)');
+
+  static String _markdownCell(String s) => _esc(s)
+      .replaceAll('|', r'\|')
+      .replaceAll('\r', ' ')
+      .replaceAll('\n', '<br>');
 
   static String _csvEsc(String s) {
     final escaped = s.replaceAll('"', '""').replaceAll('\n', ' ');

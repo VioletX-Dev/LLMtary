@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../services/persistent_tool_approval.dart';
+
 class CommandApprovalWidget extends StatelessWidget {
   final String command;
   final VoidCallback onAllowOnce;
   final VoidCallback onAlwaysAllow;
+  final VoidCallback onAlwaysAllowTool;
   final VoidCallback onDeny;
 
   const CommandApprovalWidget({
@@ -11,10 +14,14 @@ class CommandApprovalWidget extends StatelessWidget {
     required this.command,
     required this.onAllowOnce,
     required this.onAlwaysAllow,
+    required this.onAlwaysAllowTool,
     required this.onDeny,
   });
 
-  String get _baseCommand => command.trim().split(' ').first.toUpperCase();
+  String get _baseCommand =>
+      (PersistentToolApproval.extractTool(command) ??
+              command.trim().split(' ').first)
+          .toUpperCase();
 
   @override
   Widget build(BuildContext context) {
@@ -116,25 +123,42 @@ class CommandApprovalWidget extends StatelessWidget {
             ],
           ),
           const SizedBox(width: 24),
-          _buildButton(
-            'ALLOW ONCE',
-            Icons.check_circle_outline,
-            const Color(0xFF00FF88),
-            onAllowOnce,
-          ),
-          const SizedBox(width: 12),
-          Tooltip(
-            message:
-                'Skip future prompts only for this exact command during the current assessment session.',
-            child: _buildButton(
-              'ALWAYS ALLOW EXACT COMMAND',
-              Icons.playlist_add_check_circle_outlined,
-              const Color(0xFF00F5FF),
-              onAlwaysAllow,
+          Flexible(
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              alignment: WrapAlignment.end,
+              children: [
+                _buildButton(
+                  'ALLOW ONCE',
+                  Icons.check_circle_outline,
+                  const Color(0xFF00FF88),
+                  onAllowOnce,
+                ),
+                Tooltip(
+                  message:
+                      'Skip future prompts only for this exact command during the current assessment session.',
+                  child: _buildButton(
+                    'ALWAYS ALLOW EXACT COMMAND',
+                    Icons.playlist_add_check_circle_outlined,
+                    const Color(0xFF00F5FF),
+                    onAlwaysAllow,
+                  ),
+                ),
+                Tooltip(
+                  message:
+                      'Skip future prompts for this executable across assessment sessions. Every command is still checked by mandatory safety policy.',
+                  child: _buildButton(
+                    'ALWAYS ALLOW TOOL',
+                    Icons.verified_user_outlined,
+                    const Color(0xFFFFD166),
+                    onAlwaysAllowTool,
+                  ),
+                ),
+                _buildButton('NO', Icons.block, Colors.white, onDeny),
+              ],
             ),
           ),
-          const SizedBox(width: 12),
-          _buildButton('NO', Icons.block, Colors.white, onDeny),
         ],
       ),
     );

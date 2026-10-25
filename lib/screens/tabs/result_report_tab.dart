@@ -13,6 +13,7 @@ import '../../models/report_evidence.dart';
 import '../../models/cloud_assist.dart';
 import '../../services/report_generator.dart';
 import '../../services/report_content_service.dart';
+import '../../services/assessment_narrative_service.dart';
 import '../../services/cloud_assist_service.dart';
 import '../../services/evidence_package_builder.dart';
 import '../../services/evidence_storage_service.dart';
@@ -300,6 +301,16 @@ class _InlineReportFormState extends State<_InlineReportForm> {
       final commandLogs = updatedProject.id != null
           ? await DatabaseHelper.getCommandLogs(updatedProject.id!)
           : <CommandLog>[];
+      final sessionEvents = updatedProject.id != null
+          ? await DatabaseHelper.getSessionEvents(updatedProject.id!)
+          : <Map<String, dynamic>>[];
+      final assessmentData = AssessmentNarrativeService.build(
+        targets: widget.appState.targets,
+        vulnerabilities: widget.appState.vulnerabilities,
+        commandLogs: commandLogs,
+        sessionEvents: sessionEvents,
+        sensitiveValues: widget.appState.credentials.map((item) => item.secret),
+      );
       final evidenceArtifacts = updatedProject.id != null
           ? await DatabaseHelper.getProjectEvidence(updatedProject.id!)
           : const <EvidenceArtifact>[];
@@ -311,16 +322,28 @@ class _InlineReportFormState extends State<_InlineReportForm> {
             );
 
       String? attackNarrative;
+      String? assessmentNarrative;
       if (format != 'csv') {
         final narrativePrompt = ReportContentService.buildAttackNarrativePrompt(widget.appState);
         if (narrativePrompt != null) {
           try { attackNarrative = await ReportContentService.generateSection(prompt: narrativePrompt, settings: widget.appState.llmSettings, onTokensUsed: (s, r) => widget.appState.recordTokenUsage('report', s, r)); } catch (_) {}
         }
+        if (assessmentData.entries.isNotEmpty) {
+          try {
+            assessmentNarrative = await ReportContentService.generateSection(
+              prompt: assessmentData.prompt,
+              settings: widget.appState.llmSettings,
+              onTokensUsed: (sent, received) => widget.appState.recordTokenUsage('report', sent, received),
+            );
+          } catch (_) {
+            // The deterministic timeline is still exported when prose generation fails.
+          }
+        }
       }
 
       final content = switch (format) {
-        'html' => ReportGenerator.generateHtml(project: updatedProject, targets: widget.appState.targets, vulnerabilities: widget.appState.vulnerabilities, credentials: widget.appState.credentials.toList(), commandLogs: commandLogs, scope: widget.appState.projectScope, llmSettings: widget.appState.llmSettings, startDate: _startDate, endDate: _endDate, attackNarrative: attackNarrative, confirmedOnly: confirmedOnly, visualEvidence: visualEvidence),
-        'md'   => ReportGenerator.generateMarkdown(project: updatedProject, targets: widget.appState.targets, vulnerabilities: widget.appState.vulnerabilities, credentials: widget.appState.credentials.toList(), commandLogs: commandLogs, scope: widget.appState.projectScope, llmSettings: widget.appState.llmSettings, startDate: _startDate, endDate: _endDate, attackNarrative: attackNarrative, confirmedOnly: confirmedOnly, visualEvidence: visualEvidence),
+        'html' => ReportGenerator.generateHtml(project: updatedProject, targets: widget.appState.targets, vulnerabilities: widget.appState.vulnerabilities, credentials: widget.appState.credentials.toList(), commandLogs: commandLogs, scope: widget.appState.projectScope, llmSettings: widget.appState.llmSettings, startDate: _startDate, endDate: _endDate, attackNarrative: attackNarrative, assessmentNarrative: assessmentNarrative, assessmentTimeline: assessmentData.entries, confirmedOnly: confirmedOnly, visualEvidence: visualEvidence),
+        'md'   => ReportGenerator.generateMarkdown(project: updatedProject, targets: widget.appState.targets, vulnerabilities: widget.appState.vulnerabilities, credentials: widget.appState.credentials.toList(), commandLogs: commandLogs, scope: widget.appState.projectScope, llmSettings: widget.appState.llmSettings, startDate: _startDate, endDate: _endDate, attackNarrative: attackNarrative, assessmentNarrative: assessmentNarrative, assessmentTimeline: assessmentData.entries, confirmedOnly: confirmedOnly, visualEvidence: visualEvidence),
         'csv'  => ReportGenerator.generateCsv(vulnerabilities: widget.appState.vulnerabilities, commandLogs: commandLogs, confirmedOnly: false),
         _      => '',
       };

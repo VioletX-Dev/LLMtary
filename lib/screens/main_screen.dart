@@ -35,6 +35,7 @@ import '../services/cloud_assist_service.dart';
 import '../services/assessment_session_checkpoint.dart';
 import '../services/assessment_execution_policy.dart';
 import '../services/session_command_approval.dart';
+import '../services/persistent_tool_approval.dart';
 import '../widgets/test_budget_dialog.dart';
 import '../widgets/cloud_assist_dialog.dart';
 import 'tabs/scope_recon_tab.dart';
@@ -57,6 +58,8 @@ class _MainScreenState extends State<MainScreen> {
   Completer<String?>? _approvalCompleter;
   final SessionCommandApproval _sessionCommandApprovals =
       SessionCommandApproval();
+  final PersistentToolApproval _persistentToolApprovals =
+      PersistentToolApproval();
   int? _approvalSessionProjectId;
   final Set<String> _analyzingAddresses = {};
   final Set<String> _executingAddresses = {};
@@ -688,6 +691,25 @@ class _MainScreenState extends State<MainScreen> {
                 },
                 onAlwaysAllow: () {
                   _sessionCommandApprovals.approve(state.pendingCommand!);
+                  _approvalCompleter?.complete('once');
+                  _approvalCompleter = null;
+                  state.setPendingCommand(null);
+                },
+                onAlwaysAllowTool: () async {
+                  final command = state.pendingCommand!;
+                  final messenger = ScaffoldMessenger.of(context);
+                  final approved =
+                      await _persistentToolApprovals.approveCommand(command);
+                  if (!approved) {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'This broad interpreter or wrapper cannot be persistently approved.',
+                        ),
+                      ),
+                    );
+                    return;
+                  }
                   _approvalCompleter?.complete('once');
                   _approvalCompleter = null;
                   state.setPendingCommand(null);
@@ -1509,7 +1531,8 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
         ),
         adminPassword: appState.adminPassword,
         onApprovalNeeded: (command) async {
-          if (_hasSessionApproval(command, appState.currentProject?.id)) {
+          if (_hasSessionApproval(command, appState.currentProject?.id) ||
+              await _persistentToolApprovals.isApproved(command)) {
             return 'once';
           }
           _approvalCompleter = Completer<String?>();
@@ -1880,7 +1903,8 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
                   if (_hasSessionApproval(
                     command,
                     appState.currentProject?.id,
-                  )) {
+                  ) ||
+                      await _persistentToolApprovals.isApproved(command)) {
                     return 'once';
                   }
                   _approvalCompleter = Completer<String?>();
