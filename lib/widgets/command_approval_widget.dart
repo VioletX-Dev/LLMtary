@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 class CommandApprovalWidget extends StatelessWidget {
   final String command;
   final VoidCallback onAllowOnce;
+  final VoidCallback onAlwaysAllow;
   final VoidCallback onDeny;
 
   const CommandApprovalWidget({
     super.key,
     required this.command,
     required this.onAllowOnce,
+    required this.onAlwaysAllow,
     required this.onDeny,
   });
 
@@ -29,10 +31,7 @@ class CommandApprovalWidget extends StatelessWidget {
           ],
         ),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0xFFFF0080),
-          width: 2,
-        ),
+        border: Border.all(color: const Color(0xFFFF0080), width: 2),
         boxShadow: [
           BoxShadow(
             color: const Color(0xFFFF0080).withOpacity(0.5),
@@ -76,10 +75,7 @@ class CommandApprovalWidget extends StatelessWidget {
                 children: [
                   const Text(
                     'LLMtary wants to run ',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(color: Colors.white, fontSize: 14),
                   ),
                   Tooltip(
                     message: command,
@@ -95,7 +91,10 @@ class CommandApprovalWidget extends StatelessWidget {
                       fontSize: 12,
                     ),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(4),
@@ -124,18 +123,29 @@ class CommandApprovalWidget extends StatelessWidget {
             onAllowOnce,
           ),
           const SizedBox(width: 12),
-          _buildButton(
-            'NO',
-            Icons.block,
-            Colors.white,
-            onDeny,
+          Tooltip(
+            message:
+                'Skip future prompts only for this exact command during the current assessment session.',
+            child: _buildButton(
+              'ALWAYS ALLOW EXACT COMMAND',
+              Icons.playlist_add_check_circle_outlined,
+              const Color(0xFF00F5FF),
+              onAlwaysAllow,
+            ),
           ),
+          const SizedBox(width: 12),
+          _buildButton('NO', Icons.block, Colors.white, onDeny),
         ],
       ),
     );
   }
 
-  Widget _buildButton(String label, IconData icon, Color color, VoidCallback onPressed) {
+  Widget _buildButton(
+    String label,
+    IconData icon,
+    Color color,
+    VoidCallback onPressed,
+  ) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.15),

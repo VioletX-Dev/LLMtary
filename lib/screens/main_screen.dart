@@ -34,6 +34,7 @@ import '../services/test_budget.dart';
 import '../services/cloud_assist_service.dart';
 import '../services/assessment_session_checkpoint.dart';
 import '../services/assessment_execution_policy.dart';
+import '../services/session_command_approval.dart';
 import '../widgets/test_budget_dialog.dart';
 import '../widgets/cloud_assist_dialog.dart';
 import 'tabs/scope_recon_tab.dart';
@@ -54,6 +55,9 @@ class _MainScreenState extends State<MainScreen> {
   bool _isExecuting = false;
   final _logScrollController = ScrollController();
   Completer<String?>? _approvalCompleter;
+  final SessionCommandApproval _sessionCommandApprovals =
+      SessionCommandApproval();
+  int? _approvalSessionProjectId;
   final Set<String> _analyzingAddresses = {};
   final Set<String> _executingAddresses = {};
   final AssessmentPauseGate _pauseGate = AssessmentPauseGate();
@@ -163,7 +167,21 @@ class _MainScreenState extends State<MainScreen> {
       );
     }
     _pauseGate.reset();
+    _sessionCommandApprovals.clear();
+    _approvalSessionProjectId = null;
     if (mounted) setState(() => _sessionCheckpoint = null);
+  }
+
+  void _startApprovalSession(int? projectId) {
+    _sessionCommandApprovals.clear();
+    _approvalSessionProjectId = projectId;
+  }
+
+  bool _hasSessionApproval(String command, int? projectId) {
+    if (_approvalSessionProjectId != projectId) {
+      _startApprovalSession(projectId);
+    }
+    return _sessionCommandApprovals.isApproved(command);
   }
 
   List<int> _pendingExecutionIds(AppState appState, Iterable<int> runIds) {
@@ -255,6 +273,8 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
+    _sessionCommandApprovals.clear();
+    _approvalSessionProjectId = null;
     _logScrollController.dispose();
     super.dispose();
   }
@@ -662,6 +682,12 @@ class _MainScreenState extends State<MainScreen> {
               child: CommandApprovalWidget(
                 command: state.pendingCommand!,
                 onAllowOnce: () {
+                  _approvalCompleter?.complete('once');
+                  _approvalCompleter = null;
+                  state.setPendingCommand(null);
+                },
+                onAlwaysAllow: () {
+                  _sessionCommandApprovals.approve(state.pendingCommand!);
                   _approvalCompleter?.complete('once');
                   _approvalCompleter = null;
                   state.setPendingCommand(null);
@@ -1434,6 +1460,7 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
     required String executionDirective,
   }) async {
     final appState = context.read<AppState>();
+    _startApprovalSession(appState.currentProject?.id);
     setState(() {
       _isExecuting = true;
       _executingAddresses.add(target.address);
@@ -1482,6 +1509,9 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
         ),
         adminPassword: appState.adminPassword,
         onApprovalNeeded: (command) async {
+          if (_hasSessionApproval(command, appState.currentProject?.id)) {
+            return 'once';
+          }
           _approvalCompleter = Completer<String?>();
           appState.setPendingCommand(command);
           return _approvalCompleter!.future;
@@ -1512,6 +1542,8 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
       await appState.loadCommandLogs();
       return status;
     } finally {
+      _sessionCommandApprovals.clear();
+      _approvalSessionProjectId = null;
       appState.setExecutionStatus('');
       if (mounted) {
         setState(() {
@@ -1528,6 +1560,9 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
   }) async {
     if (!await _ensureSessionPassword()) return;
     final appState = context.read<AppState>();
+    if (!resuming) {
+      _startApprovalSession(appState.currentProject?.id);
+    }
     appState.addDebugLog('Execute Selected button clicked');
 
     final resumeIds = resumeVulnerabilityIds.toSet();
@@ -1842,6 +1877,12 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
                 },
                 adminPassword: appState.adminPassword,
                 onApprovalNeeded: (command) async {
+                  if (_hasSessionApproval(
+                    command,
+                    appState.currentProject?.id,
+                  )) {
+                    return 'once';
+                  }
                   _approvalCompleter = Completer<String?>();
                   appState.setPendingCommand(command);
                   return await _approvalCompleter!.future;
