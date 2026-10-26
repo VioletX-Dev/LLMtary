@@ -7,6 +7,7 @@ import '../models/llm_settings.dart';
 import '../models/report_evidence.dart';
 import '../utils/cvss_calculator.dart';
 import 'assessment_narrative_service.dart';
+import 'report_evidence_quality.dart';
 
 /// Generates professional penetration test reports from collected findings.
 ///
@@ -33,10 +34,32 @@ class ReportGenerator {
     bool confirmedOnly = true,
     List<ReportEvidence> visualEvidence = const [],
   }) {
-    final vulnsToReport = confirmedOnly
-        ? vulnerabilities.where((v) => v.status == VulnerabilityStatus.confirmed).toList()
-        : vulnerabilities;
-    final sorted = _sortedVulns(vulnsToReport);
+    final decisions = <Vulnerability, ReportEvidenceDecision>{
+      for (final vulnerability in vulnerabilities)
+        vulnerability: ReportEvidenceQuality.evaluate(
+          vulnerability,
+          commandLogs,
+          hasVisualEvidence: vulnerability.id != null &&
+              visualEvidence.any(
+                (item) => item.artifact.vulnerabilityId == vulnerability.id,
+              ),
+        ),
+    };
+    final qualified = _deduplicateQualified(
+      vulnerabilities.where((v) => decisions[v]!.reportable).toList(),
+      decisions,
+    );
+    final qualityExceptions = vulnerabilities
+        .where((v) =>
+            v.status == VulnerabilityStatus.confirmed &&
+            !decisions[v]!.reportable)
+        .toList();
+    final assessmentCandidates = confirmedOnly
+        ? const <Vulnerability>[]
+        : vulnerabilities
+            .where((v) => v.status != VulnerabilityStatus.confirmed)
+            .toList();
+    final sorted = _sortedVulns(qualified);
     final byTarget = _groupByTarget(sorted, targets);
     final stats = _computeStats(sorted);
     final date = _formatDate(DateTime.now());
@@ -46,7 +69,12 @@ class ReportGenerator {
     final preparedBy = project.pentesterName?.isNotEmpty == true
         ? project.pentesterName!
         : 'LLMtary';
-    final proofByCommand = _buildProofIndex(commandLogs, vulnsToReport);
+    final proofByCommand = <int, CommandLog>{
+      for (final vulnerability in sorted)
+        if (vulnerability.id != null &&
+            decisions[vulnerability]!.proofLog != null)
+          vulnerability.id!: decisions[vulnerability]!.proofLog!,
+    };
     final effectiveScope = scope.isNotEmpty
         ? scope
         : targets.map((t) => t.address).toSet().toList()..sort();
@@ -155,7 +183,7 @@ class ReportGenerator {
     <div class="meta-item"><label>Assessment Start</label><p>${startDate != null ? _formatDate(startDate) : '—'}</p></div>
     <div class="meta-item"><label>Assessment End</label><p>${endDate != null ? _formatDate(endDate) : '—'}</p></div>
     <div class="meta-item"><label>Targets Assessed</label><p>${targets.length}</p></div>
-    <div class="meta-item"><label>Total Findings</label><p>${sorted.length}${confirmedOnly ? ' (confirmed only)' : ''}</p></div>
+    <div class="meta-item"><label>Total Confirmed Findings</label><p>${sorted.length}</p></div>
   </div>
 </div>
 
@@ -196,7 +224,7 @@ ${llmSettings != null && llmSettings.provider.name != 'none' ? '''
     <div class="stat-card medium"><div class="count">${stats['MEDIUM']}</div><div class="label">Medium</div></div>
     <div class="stat-card low"><div class="count">${stats['LOW']}</div><div class="label">Low</div></div>
   </div>
-  ${project.executiveSummary?.isNotEmpty == true ? _paragraphs(project.executiveSummary!) : _executiveSummaryText(stats, targets.length)}
+  ${_executiveSummaryText(stats, targets.length)}
 </section>
 
 ${project.methodology?.isNotEmpty == true ? '''
@@ -256,9 +284,12 @@ ${(assessmentNarrative != null && assessmentNarrative.isNotEmpty) || assessmentT
 
 <!-- DETAILED FINDINGS -->
 <section id="findings-detail">
-  <h2>Detailed Findings</h2>
+  <h2>Detailed Confirmed Findings</h2>
   ${_detailedFindings(sorted, proofByCommand, visualEvidence)}
 </section>
+
+${qualityExceptions.isNotEmpty ? _qualityExceptionsSection(qualityExceptions, decisions) : ''}
+${assessmentCandidates.isNotEmpty ? _assessmentCandidatesSection(assessmentCandidates) : ''}
 
 ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
 
@@ -268,13 +299,11 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
   ${_targetsSection(byTarget)}
 </section>
 
-${project.conclusion?.isNotEmpty == true ? '''
 <!-- CONCLUSION -->
 <section id="conclusion">
   <h2>Conclusion</h2>
-  ${_paragraphs(project.conclusion!)}
+  ${_deterministicConclusion(sorted.length, qualityExceptions.length, assessmentCandidates.length)}
 </section>
-''' : ''}
 
 </div>
 </body>
@@ -298,10 +327,32 @@ ${project.conclusion?.isNotEmpty == true ? '''
     bool confirmedOnly = true,
     List<ReportEvidence> visualEvidence = const [],
   }) {
-    final vulnsToReport = confirmedOnly
-        ? vulnerabilities.where((v) => v.status == VulnerabilityStatus.confirmed).toList()
-        : vulnerabilities;
-    final sorted = _sortedVulns(vulnsToReport);
+    final decisions = <Vulnerability, ReportEvidenceDecision>{
+      for (final vulnerability in vulnerabilities)
+        vulnerability: ReportEvidenceQuality.evaluate(
+          vulnerability,
+          commandLogs,
+          hasVisualEvidence: vulnerability.id != null &&
+              visualEvidence.any(
+                (item) => item.artifact.vulnerabilityId == vulnerability.id,
+              ),
+        ),
+    };
+    final qualified = _deduplicateQualified(
+      vulnerabilities.where((v) => decisions[v]!.reportable).toList(),
+      decisions,
+    );
+    final qualityExceptions = vulnerabilities
+        .where((v) =>
+            v.status == VulnerabilityStatus.confirmed &&
+            !decisions[v]!.reportable)
+        .toList();
+    final assessmentCandidates = confirmedOnly
+        ? const <Vulnerability>[]
+        : vulnerabilities
+            .where((v) => v.status != VulnerabilityStatus.confirmed)
+            .toList();
+    final sorted = _sortedVulns(qualified);
     final stats = _computeStats(sorted);
     final date = _formatDate(DateTime.now());
     final reportTitle = project.reportTitle?.isNotEmpty == true
@@ -310,7 +361,12 @@ ${project.conclusion?.isNotEmpty == true ? '''
     final preparedBy = project.pentesterName?.isNotEmpty == true
         ? project.pentesterName!
         : 'LLMtary';
-    final proofByCommand = _buildProofIndex(commandLogs, vulnsToReport);
+    final proofByCommand = <int, CommandLog>{
+      for (final vulnerability in sorted)
+        if (vulnerability.id != null &&
+            decisions[vulnerability]!.proofLog != null)
+          vulnerability.id!: decisions[vulnerability]!.proofLog!,
+    };
     final effectiveScope = scope.isNotEmpty
         ? scope
         : targets.map((t) => t.address).toSet().toList()..sort();
@@ -358,10 +414,8 @@ ${project.conclusion?.isNotEmpty == true ? '''
       buf.writeln('| $sev | ${stats[sev]} |');
     }
     buf.writeln();
-    if (project.executiveSummary?.isNotEmpty == true) {
-      buf.writeln(project.executiveSummary);
-      buf.writeln();
-    }
+    buf.writeln(_executiveSummaryMarkdown(stats, targets.length));
+    buf.writeln();
 
     if (project.methodology?.isNotEmpty == true) {
       buf.writeln('## Methodology and Scope');
@@ -419,7 +473,7 @@ ${project.conclusion?.isNotEmpty == true ? '''
     }
     buf.writeln();
 
-    buf.writeln('## Detailed Findings');
+    buf.writeln('## Detailed Confirmed Findings');
     buf.writeln();
     for (int i = 0; i < sorted.length; i++) {
       final v = sorted[i];
@@ -493,6 +547,37 @@ ${project.conclusion?.isNotEmpty == true ? '''
       buf.writeln();
     }
 
+    if (qualityExceptions.isNotEmpty) {
+      buf.writeln('## Evidence Quality Exceptions');
+      buf.writeln();
+      buf.writeln('_These records were marked confirmed during testing but are excluded from client risk totals and confirmed findings because their evidence did not pass the deterministic report-quality gate._');
+      buf.writeln();
+      buf.writeln('| Record | Target | Quality decision |');
+      buf.writeln('|---|---|---|');
+      for (final vulnerability in qualityExceptions) {
+        buf.writeln('| ${_markdownCell(vulnerability.problem)} | ${_markdownCell(vulnerability.targetAddress)} | ${_markdownCell(decisions[vulnerability]!.reason)} |');
+      }
+      buf.writeln();
+    }
+
+    if (assessmentCandidates.isNotEmpty) {
+      buf.writeln('## Assessment Candidates and Negative Results');
+      buf.writeln();
+      buf.writeln('_Items in this appendix are not verified vulnerabilities, are excluded from risk totals, and carry no client-facing CVSS conclusion._');
+      buf.writeln();
+      buf.writeln('| Candidate | Target | Final status | Interpretation |');
+      buf.writeln('|---|---|---|---|');
+      for (final vulnerability in assessmentCandidates) {
+        final interpretation = vulnerability.status == VulnerabilityStatus.undetermined
+            ? 'Inconclusive — not a verified vulnerability.'
+            : vulnerability.status == VulnerabilityStatus.notVulnerable
+                ? 'Negative result — the tested condition was not verified.'
+                : 'Pending — no final assessment conclusion.';
+        buf.writeln('| ${_markdownCell(vulnerability.problem)} | ${_markdownCell(vulnerability.targetAddress)} | ${_statusLabel(vulnerability.status)} | ${_markdownCell(interpretation)} |');
+      }
+      buf.writeln();
+    }
+
     if (credentials.isNotEmpty) {
       buf.writeln('## Discovered Credentials');
       buf.writeln();
@@ -504,12 +589,14 @@ ${project.conclusion?.isNotEmpty == true ? '''
       buf.writeln();
     }
 
-    if (project.conclusion?.isNotEmpty == true) {
-      buf.writeln('## Conclusion');
-      buf.writeln();
-      buf.writeln(project.conclusion);
-      buf.writeln();
-    }
+    buf.writeln('## Conclusion');
+    buf.writeln();
+    buf.writeln(_deterministicConclusionMarkdown(
+      sorted.length,
+      qualityExceptions.length,
+      assessmentCandidates.length,
+    ));
+    buf.writeln();
 
     return buf.toString();
   }
@@ -522,33 +609,57 @@ ${project.conclusion?.isNotEmpty == true ? '''
     List<CommandLog> commandLogs = const [],
     bool confirmedOnly = false,
   }) {
-    final vulnsToReport = confirmedOnly
-        ? vulnerabilities.where((v) => v.status == VulnerabilityStatus.confirmed).toList()
+    final decisions = <Vulnerability, ReportEvidenceDecision>{
+      for (final vulnerability in vulnerabilities)
+        vulnerability: ReportEvidenceQuality.evaluate(
+          vulnerability,
+          commandLogs,
+        ),
+    };
+    final qualified = _deduplicateQualified(
+      vulnerabilities.where((v) => decisions[v]!.reportable).toList(),
+      decisions,
+    );
+    final selected = confirmedOnly
+        ? <Vulnerability>[
+            ...qualified,
+            ...vulnerabilities.where((v) =>
+                v.status == VulnerabilityStatus.confirmed &&
+                !decisions[v]!.reportable),
+          ]
         : vulnerabilities;
-    final sorted = _sortedVulns(vulnsToReport);
-    final proofByCommand = _buildProofIndex(commandLogs, vulnsToReport);
+    final sorted = _sortedVulns(selected);
     final buf = StringBuffer();
-    buf.writeln('ID,Title,Target,CVE,Severity,Status,Status Reason,Type,CVSS Vector,Recommendation,Proof Output');
+    buf.writeln('ID,Title,Target,CVE,Severity,Status,Report Classification,Evidence Quality Reason,Status Reason,Type,CVSS Vector,Recommendation,Verified Evidence Output');
     for (int i = 0; i < sorted.length; i++) {
       final v = sorted[i];
-      final proofLog = (v.proofCommand != 'Initial Evidence Analysis' &&
-              v.id != null)
-          ? proofByCommand[v.id]
-          : null;
+      final decision = decisions[v]!;
+      final proofLog = decision.reportable ? decision.proofLog : null;
       final rawOut = proofLog?.output ?? '';
       final proofOutput = rawOut.replaceAll('\n', ' | ')
           .substring(0, rawOut.length > 1000 ? 1000 : rawOut.length);
+      final classification = decision.reportable
+          ? 'VERIFIED FINDING'
+          : v.status == VulnerabilityStatus.confirmed
+              ? 'EVIDENCE QUALITY EXCEPTION'
+              : v.status == VulnerabilityStatus.notVulnerable
+                  ? 'NEGATIVE RESULT'
+                  : v.status == VulnerabilityStatus.undetermined
+                      ? 'INCONCLUSIVE CANDIDATE'
+                      : 'PENDING CANDIDATE';
       buf.writeln([
         i + 1,
         _csvEsc(v.problem),
         _csvEsc(v.targetAddress),
         _csvEsc(v.cve),
-        v.severity,
+        decision.reportable ? v.severity : '',
         _statusLabel(v.status),
+        classification,
+        _csvEsc(decision.reason),
         _csvEsc(v.statusReason),
         _csvEsc(v.vulnerabilityType),
-        _csvEsc(_cvssVector(v)),
-        _csvEsc(v.recommendation),
+        decision.reportable ? _csvEsc(_cvssVector(v)) : '',
+        decision.reportable ? _csvEsc(v.recommendation) : '',
         _csvEsc(proofOutput),
       ].join(','));
     }
@@ -665,11 +776,56 @@ ${project.conclusion?.isNotEmpty == true ? '''
     final critical = stats['CRITICAL']!;
     final high = stats['HIGH']!;
     final total = stats.values.fold(0, (a, b) => a + b);
-    if (total == 0) return '<p>No vulnerabilities were identified during this assessment.</p>';
+    if (total == 0) {
+      return '<p>No evidence-qualified vulnerabilities were identified during this assessment. Inconclusive candidates and negative results, when requested, are listed separately and are not included in risk totals.</p>';
+    }
     final urgentCount = critical + high;
-    return '''<p>This assessment of <strong>$targetCount target(s)</strong> identified <strong>$total vulnerabilities</strong>.
-${urgentCount > 0 ? '<strong>$urgentCount finding(s) are rated High or Critical severity</strong> and should be remediated immediately.' : 'No critical or high severity findings were identified.'}
-${critical > 0 ? ' $critical <strong>Critical</strong> severity finding(s) represent immediate risk of compromise and require priority attention.' : ''}</p>''';
+    return '''<p>This assessment of <strong>$targetCount target(s)</strong> identified <strong>$total evidence-qualified vulnerabilities</strong>.
+${urgentCount > 0 ? '<strong>$urgentCount verified finding(s) are rated High or Critical severity</strong> and should be prioritized for remediation.' : 'No evidence-qualified Critical or High severity findings were identified.'}
+${critical > 0 ? ' $critical verified <strong>Critical</strong> severity finding(s) require priority attention.' : ''}</p>''';
+  }
+
+  static String _executiveSummaryMarkdown(
+    Map<String, int> stats,
+    int targetCount,
+  ) {
+    final critical = stats['CRITICAL']!;
+    final high = stats['HIGH']!;
+    final total = stats.values.fold(0, (a, b) => a + b);
+    if (total == 0) {
+      return 'No evidence-qualified vulnerabilities were identified during this assessment. Inconclusive candidates and negative results, when requested, are listed separately and are not included in risk totals.';
+    }
+    final urgent = critical + high;
+    return 'This assessment of $targetCount target(s) identified $total evidence-qualified vulnerabilities. '
+        '${urgent > 0 ? '$urgent verified finding(s) are rated High or Critical and should be prioritized for remediation.' : 'No evidence-qualified Critical or High severity findings were identified.'}';
+  }
+
+  static String _deterministicConclusion(
+    int verified,
+    int qualityExceptions,
+    int candidates,
+  ) =>
+      '<p>${_esc(_deterministicConclusionMarkdown(verified, qualityExceptions, candidates))}</p>';
+
+  static String _deterministicConclusionMarkdown(
+    int verified,
+    int qualityExceptions,
+    int candidates,
+  ) {
+    final buffer = StringBuffer(
+      'The assessment produced $verified evidence-qualified confirmed finding(s).',
+    );
+    if (qualityExceptions > 0) {
+      buffer.write(
+        ' $qualityExceptions record(s) marked confirmed during testing were excluded by the deterministic evidence-quality gate and require human evidence review before client use.',
+      );
+    }
+    if (candidates > 0) {
+      buffer.write(
+        ' $candidates inconclusive, negative, or pending candidate(s) were excluded from risk totals.',
+      );
+    }
+    return buffer.toString();
   }
 
   static String _findingsTableRows(List<Vulnerability> vulns) {
@@ -706,7 +862,7 @@ ${critical > 0 ? ' $critical <strong>Critical</strong> severity finding(s) repre
       final proofBlock = proofLog != null
           ? '''          <dt>Proof Output</dt><dd>
             <details class="proof-block">
-              <summary>&#9658; Proof of Exploitation — click to expand</summary>
+              <summary>&#9658; Verified Finding-Specific Evidence — click to expand</summary>
               <div class="proof-meta">Executed: ${_formatDate(proofLog.timestamp)} &middot; Exit code: ${proofLog.exitCode}</div>
               <pre class="proof-output">${_esc(proofLog.output.length > 3000 ? '${proofLog.output.substring(0, 3000)}\n... [truncated]' : proofLog.output)}</pre>
             </details>
@@ -759,6 +915,81 @@ ${findingEvidence.map((item) {
     return buf.toString();
   }
 
+  static String _qualityExceptionsSection(
+    List<Vulnerability> vulnerabilities,
+    Map<Vulnerability, ReportEvidenceDecision> decisions,
+  ) {
+    final rows = vulnerabilities.map((v) => '''      <tr>
+        <td>${_esc(v.problem)}</td>
+        <td>${_esc(v.targetAddress)}</td>
+        <td>${_esc(decisions[v]!.reason)}</td>
+      </tr>''').join('\n');
+    return '''
+<section id="evidence-quality-exceptions">
+  <h2>Evidence Quality Exceptions</h2>
+  <p>These records were marked confirmed during testing but are excluded from client risk totals and confirmed findings because their evidence did not pass the deterministic report-quality gate.</p>
+  <table>
+    <thead><tr><th>Record</th><th>Target</th><th>Quality decision</th></tr></thead>
+    <tbody>
+$rows
+    </tbody>
+  </table>
+</section>''';
+  }
+
+  static String _assessmentCandidatesSection(
+    List<Vulnerability> vulnerabilities,
+  ) {
+    final rows = vulnerabilities.map((v) {
+      final interpretation = switch (v.status) {
+        VulnerabilityStatus.undetermined =>
+          'Inconclusive — not a verified vulnerability.',
+        VulnerabilityStatus.notVulnerable =>
+          'Negative result — the tested condition was not verified.',
+        VulnerabilityStatus.pending => 'Pending — no final assessment conclusion.',
+        VulnerabilityStatus.confirmed => 'Excluded by evidence-quality review.',
+      };
+      return '''      <tr>
+        <td>${_esc(v.problem)}</td>
+        <td>${_esc(v.targetAddress)}</td>
+        <td>${_statusBadge(v.status)}</td>
+        <td>${_esc(interpretation)}</td>
+      </tr>''';
+    }).join('\n');
+    return '''
+<section id="assessment-candidates">
+  <h2>Assessment Candidates and Negative Results</h2>
+  <p>Items in this appendix are not verified vulnerabilities, are excluded from risk totals, and carry no client-facing CVSS conclusion.</p>
+  <table>
+    <thead><tr><th>Candidate</th><th>Target</th><th>Final status</th><th>Interpretation</th></tr></thead>
+    <tbody>
+$rows
+    </tbody>
+  </table>
+</section>''';
+  }
+
+  static List<Vulnerability> _deduplicateQualified(
+    List<Vulnerability> vulnerabilities,
+    Map<Vulnerability, ReportEvidenceDecision> decisions,
+  ) {
+    final selected = <String, Vulnerability>{};
+    for (final vulnerability in vulnerabilities) {
+      final normalizedTitle = vulnerability.problem
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+          .trim();
+      final key = '${vulnerability.targetAddress.trim().toLowerCase()}|$normalizedTitle';
+      final existing = selected[key];
+      if (existing == null ||
+          (decisions[existing]!.proofLog == null &&
+              decisions[vulnerability]!.proofLog != null)) {
+        selected[key] = vulnerability;
+      }
+    }
+    return selected.values.toList();
+  }
+
   static String _credentialsSection(List<DiscoveredCredential> creds) => '''
 <section id="credentials">
   <h2>Discovered Credentials</h2>
@@ -798,42 +1029,6 @@ ${findingEvidence.map((item) {
     </div>''');
     }
     return buf.toString();
-  }
-
-  /// Build an index of command logs keyed by the vulnerability's database ID for O(1) lookup.
-  /// Prefers logs whose command starts with "PROOF:" for a given vulnerability;
-  /// falls back to the most recent log for that vulnerability.
-  ///
-  /// Newer logs (schema v21+) carry [CommandLog.vulnerabilityId] — a stable FK to the
-  /// vulnerability's DB id — and are matched directly. Older logs only have the
-  /// positional [CommandLog.vulnerabilityIndex] and are matched via the [allVulns]
-  /// list for backward compatibility. Using the positional index on old data may still
-  /// produce mismatches if the report sort order differs from the execution order; that
-  /// is the legacy behaviour and cannot be corrected retroactively.
-  static Map<int, CommandLog> _buildProofIndex(
-      List<CommandLog> logs, List<Vulnerability> allVulns) {
-    // Backward-compat map: list-position → vulnerability DB id (for pre-v21 logs only).
-    final indexToId = <int, int>{};
-    for (int i = 0; i < allVulns.length; i++) {
-      final id = allVulns[i].id;
-      if (id != null) indexToId[i] = id;
-    }
-
-    final index = <int, CommandLog>{};
-    for (final log in logs) {
-      // v21+: use the stable FK directly; pre-v21: fall back to positional mapping.
-      final vulnId = log.vulnerabilityId ??
-          (log.vulnerabilityIndex != null ? indexToId[log.vulnerabilityIndex!] : null);
-      if (vulnId == null) continue;
-      final existing = index[vulnId];
-      final isProof = log.command.startsWith('PROOF:');
-      final existingIsProof = existing?.command.startsWith('PROOF:') ?? false;
-      if (existing == null || (isProof && !existingIsProof) ||
-          (!existingIsProof && log.timestamp.isAfter(existing.timestamp))) {
-        index[vulnId] = log;
-      }
-    }
-    return index;
   }
 
   /// Format a DateTime as "19 March 2026 at 14:30".
