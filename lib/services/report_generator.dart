@@ -5,6 +5,7 @@ import '../models/credential.dart';
 import '../models/command_log.dart';
 import '../models/llm_settings.dart';
 import '../models/report_evidence.dart';
+import '../models/candidate_closure.dart';
 import '../utils/cvss_calculator.dart';
 import 'assessment_narrative_service.dart';
 import 'report_evidence_quality.dart';
@@ -33,13 +34,15 @@ class ReportGenerator {
     List<AssessmentTimelineEntry> assessmentTimeline = const [],
     bool confirmedOnly = true,
     List<ReportEvidence> visualEvidence = const [],
+    List<CandidateClosure> closures = const [],
   }) {
     final decisions = <Vulnerability, ReportEvidenceDecision>{
       for (final vulnerability in vulnerabilities)
         vulnerability: ReportEvidenceQuality.evaluate(
           vulnerability,
           commandLogs,
-          hasVisualEvidence: vulnerability.id != null &&
+          hasVisualEvidence:
+              vulnerability.id != null &&
               visualEvidence.any(
                 (item) => item.artifact.vulnerabilityId == vulnerability.id,
               ),
@@ -57,8 +60,8 @@ class ReportGenerator {
     final assessmentCandidates = confirmedOnly
         ? const <Vulnerability>[]
         : vulnerabilities
-            .where((v) => v.status != VulnerabilityStatus.confirmed)
-            .toList();
+              .where((v) => v.status != VulnerabilityStatus.confirmed)
+              .toList();
     final sorted = _sortedVulns(qualified);
     final byTarget = _groupByTarget(sorted, targets);
     final stats = _computeStats(sorted);
@@ -75,9 +78,11 @@ class ReportGenerator {
             decisions[vulnerability]!.proofLog != null)
           vulnerability.id!: decisions[vulnerability]!.proofLog!,
     };
-    final effectiveScope = scope.isNotEmpty
-        ? scope
-        : targets.map((t) => t.address).toSet().toList()..sort();
+    final effectiveScope =
+        scope.isNotEmpty
+              ? scope
+              : targets.map((t) => t.address).toSet().toList()
+          ..sort();
 
     return '''<!DOCTYPE html>
 <html lang="en">
@@ -290,6 +295,7 @@ ${(assessmentNarrative != null && assessmentNarrative.isNotEmpty) || assessmentT
 
 ${qualityExceptions.isNotEmpty ? _qualityExceptionsSection(qualityExceptions, decisions) : ''}
 ${assessmentCandidates.isNotEmpty ? _assessmentCandidatesSection(assessmentCandidates) : ''}
+${_closureCoverageHtml(vulnerabilities, closures)}
 
 ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
 
@@ -326,13 +332,15 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     List<AssessmentTimelineEntry> assessmentTimeline = const [],
     bool confirmedOnly = true,
     List<ReportEvidence> visualEvidence = const [],
+    List<CandidateClosure> closures = const [],
   }) {
     final decisions = <Vulnerability, ReportEvidenceDecision>{
       for (final vulnerability in vulnerabilities)
         vulnerability: ReportEvidenceQuality.evaluate(
           vulnerability,
           commandLogs,
-          hasVisualEvidence: vulnerability.id != null &&
+          hasVisualEvidence:
+              vulnerability.id != null &&
               visualEvidence.any(
                 (item) => item.artifact.vulnerabilityId == vulnerability.id,
               ),
@@ -350,8 +358,8 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     final assessmentCandidates = confirmedOnly
         ? const <Vulnerability>[]
         : vulnerabilities
-            .where((v) => v.status != VulnerabilityStatus.confirmed)
-            .toList();
+              .where((v) => v.status != VulnerabilityStatus.confirmed)
+              .toList();
     final sorted = _sortedVulns(qualified);
     final stats = _computeStats(sorted);
     final date = _formatDate(DateTime.now());
@@ -367,9 +375,11 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
             decisions[vulnerability]!.proofLog != null)
           vulnerability.id!: decisions[vulnerability]!.proofLog!,
     };
-    final effectiveScope = scope.isNotEmpty
-        ? scope
-        : targets.map((t) => t.address).toSet().toList()..sort();
+    final effectiveScope =
+        scope.isNotEmpty
+              ? scope
+              : targets.map((t) => t.address).toSet().toList()
+          ..sort();
     final buf = StringBuffer();
 
     buf.writeln('# $reportTitle');
@@ -377,8 +387,10 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     buf.writeln('**Date:** $date  ');
     buf.writeln('**Prepared by:** $preparedBy  ');
     buf.writeln('**Targets:** ${targets.length}  ');
-    if (startDate != null) buf.writeln('**Assessment Start:** ${_formatDate(startDate)}  ');
-    if (endDate != null) buf.writeln('**Assessment End:** ${_formatDate(endDate)}  ');
+    if (startDate != null)
+      buf.writeln('**Assessment Start:** ${_formatDate(startDate)}  ');
+    if (endDate != null)
+      buf.writeln('**Assessment End:** ${_formatDate(endDate)}  ');
     buf.writeln();
 
     buf.writeln();
@@ -386,8 +398,12 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     buf.writeln();
     buf.writeln('| Field | Value |');
     buf.writeln('|-------|-------|');
-    buf.writeln('| Started | ${startDate != null ? _formatDateLong(startDate) : "—"} |');
-    buf.writeln('| Last Execution | ${endDate != null ? _formatDateLong(endDate) : "—"} |');
+    buf.writeln(
+      '| Started | ${startDate != null ? _formatDateLong(startDate) : "—"} |',
+    );
+    buf.writeln(
+      '| Last Execution | ${endDate != null ? _formatDateLong(endDate) : "—"} |',
+    );
     if (startDate != null && endDate != null) {
       buf.writeln('| Duration | ${_formatDuration(startDate, endDate)} |');
     }
@@ -438,10 +454,13 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
       buf.writeln();
     }
 
-    if ((assessmentNarrative != null && assessmentNarrative.isNotEmpty) || assessmentTimeline.isNotEmpty) {
+    if ((assessmentNarrative != null && assessmentNarrative.isNotEmpty) ||
+        assessmentTimeline.isNotEmpty) {
       buf.writeln('## Testing Timeline and Assessment Narrative');
       buf.writeln();
-      buf.writeln('_The prose summary is grounded in the deterministic evidence ledger below. The ledger remains authoritative if any wording differs._');
+      buf.writeln(
+        '_The prose summary is grounded in the deterministic evidence ledger below. The ledger remains authoritative if any wording differs._',
+      );
       buf.writeln();
       if (assessmentNarrative != null && assessmentNarrative.isNotEmpty) {
         buf.writeln(assessmentNarrative);
@@ -450,14 +469,30 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
       if (assessmentTimeline.isNotEmpty) {
         buf.writeln('### Chronological Evidence Ledger');
         buf.writeln();
-        buf.writeln('| Time (UTC) | Phase | Target / Finding | Action and Rationale | Observation / Verification | Result |');
+        buf.writeln(
+          '| Time (UTC) | Phase | Target / Finding | Action and Rationale | Observation / Verification | Result |',
+        );
         buf.writeln('|---|---|---|---|---|---|');
         for (final entry in assessmentTimeline) {
-          final targetFinding = [entry.target, entry.finding].where((value) => value.isNotEmpty).join(' — ');
-          final action = [entry.action, entry.rationale].where((value) => value.isNotEmpty).join(' — ');
-          final observation = [entry.observation, entry.verification].where((value) => value.isNotEmpty).join(' — Verification: ');
-          final result = [entry.result, entry.disposition].where((value) => value.isNotEmpty).join(' — ');
-          buf.writeln('| ${_markdownCell(entry.timestamp.toUtc().toIso8601String())} | ${_markdownCell(entry.phase)} | ${_markdownCell(targetFinding)} | ${_markdownCell(action)} | ${_markdownCell(observation)} | ${_markdownCell(result)} |');
+          final targetFinding = [
+            entry.target,
+            entry.finding,
+          ].where((value) => value.isNotEmpty).join(' — ');
+          final action = [
+            entry.action,
+            entry.rationale,
+          ].where((value) => value.isNotEmpty).join(' — ');
+          final observation = [
+            entry.observation,
+            entry.verification,
+          ].where((value) => value.isNotEmpty).join(' — Verification: ');
+          final result = [
+            entry.result,
+            entry.disposition,
+          ].where((value) => value.isNotEmpty).join(' — ');
+          buf.writeln(
+            '| ${_markdownCell(entry.timestamp.toUtc().toIso8601String())} | ${_markdownCell(entry.phase)} | ${_markdownCell(targetFinding)} | ${_markdownCell(action)} | ${_markdownCell(observation)} | ${_markdownCell(result)} |',
+          );
         }
         buf.writeln();
       }
@@ -469,7 +504,9 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     buf.writeln('|---|-------|--------|----------|--------|-----|');
     for (int i = 0; i < sorted.length; i++) {
       final v = sorted[i];
-      buf.writeln('| ${i + 1} | ${v.problem} | ${v.targetAddress} | ${v.severity} | ${_statusLabel(v.status)} | ${v.cve.isEmpty ? '—' : v.cve} |');
+      buf.writeln(
+        '| ${i + 1} | ${v.problem} | ${v.targetAddress} | ${v.severity} | ${_statusLabel(v.status)} | ${v.cve.isEmpty ? '—' : v.cve} |',
+      );
     }
     buf.writeln();
 
@@ -480,8 +517,8 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
       final findingEvidence = v.id == null
           ? const <ReportEvidence>[]
           : visualEvidence
-              .where((item) => item.artifact.vulnerabilityId == v.id)
-              .toList();
+                .where((item) => item.artifact.vulnerabilityId == v.id)
+                .toList();
       final isInitialEvidence = v.proofCommand == 'Initial Evidence Analysis';
       buf.writeln('### ${i + 1}. ${v.problem}');
       buf.writeln();
@@ -527,14 +564,14 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
         buf.writeln(v.proofCommand);
         buf.writeln('```');
         buf.writeln();
-        final proofLog = v.id != null
-            ? proofByCommand[v.id]
-            : null;
+        final proofLog = v.id != null ? proofByCommand[v.id] : null;
         if (proofLog != null) {
           final output = proofLog.output.length > 3000
               ? '${proofLog.output.substring(0, 3000)}\n... [truncated]'
               : proofLog.output;
-          buf.writeln('**Proof Output** (executed ${_formatDate(proofLog.timestamp)}, exit ${proofLog.exitCode}):');
+          buf.writeln(
+            '**Proof Output** (executed ${_formatDate(proofLog.timestamp)}, exit ${proofLog.exitCode}):',
+          );
           buf.writeln('```');
           buf.writeln(output);
           buf.writeln('```');
@@ -550,12 +587,16 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     if (qualityExceptions.isNotEmpty) {
       buf.writeln('## Evidence Quality Exceptions');
       buf.writeln();
-      buf.writeln('_These records were marked confirmed during testing but are excluded from client risk totals and confirmed findings because their evidence did not pass the deterministic report-quality gate._');
+      buf.writeln(
+        '_These records were marked confirmed during testing but are excluded from client risk totals and confirmed findings because their evidence did not pass the deterministic report-quality gate._',
+      );
       buf.writeln();
       buf.writeln('| Record | Target | Quality decision |');
       buf.writeln('|---|---|---|');
       for (final vulnerability in qualityExceptions) {
-        buf.writeln('| ${_markdownCell(vulnerability.problem)} | ${_markdownCell(vulnerability.targetAddress)} | ${_markdownCell(decisions[vulnerability]!.reason)} |');
+        buf.writeln(
+          '| ${_markdownCell(vulnerability.problem)} | ${_markdownCell(vulnerability.targetAddress)} | ${_markdownCell(decisions[vulnerability]!.reason)} |',
+        );
       }
       buf.writeln();
     }
@@ -563,17 +604,22 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     if (assessmentCandidates.isNotEmpty) {
       buf.writeln('## Assessment Candidates and Negative Results');
       buf.writeln();
-      buf.writeln('_Items in this appendix are not verified vulnerabilities, are excluded from risk totals, and carry no client-facing CVSS conclusion._');
+      buf.writeln(
+        '_Items in this appendix are not verified vulnerabilities, are excluded from risk totals, and carry no client-facing CVSS conclusion._',
+      );
       buf.writeln();
       buf.writeln('| Candidate | Target | Final status | Interpretation |');
       buf.writeln('|---|---|---|---|');
       for (final vulnerability in assessmentCandidates) {
-        final interpretation = vulnerability.status == VulnerabilityStatus.undetermined
+        final interpretation =
+            vulnerability.status == VulnerabilityStatus.undetermined
             ? 'Inconclusive — not a verified vulnerability.'
             : vulnerability.status == VulnerabilityStatus.notVulnerable
-                ? 'Negative result — the tested condition was not verified.'
-                : 'Pending — no final assessment conclusion.';
-        buf.writeln('| ${_markdownCell(vulnerability.problem)} | ${_markdownCell(vulnerability.targetAddress)} | ${_statusLabel(vulnerability.status)} | ${_markdownCell(interpretation)} |');
+            ? 'Negative result — the tested condition was not verified.'
+            : 'Pending — no final assessment conclusion.';
+        buf.writeln(
+          '| ${_markdownCell(vulnerability.problem)} | ${_markdownCell(vulnerability.targetAddress)} | ${_statusLabel(vulnerability.status)} | ${_markdownCell(interpretation)} |',
+        );
       }
       buf.writeln();
     }
@@ -584,18 +630,24 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
       buf.writeln('| Service | Host | Username | Type | Source |');
       buf.writeln('|---------|------|----------|------|--------|');
       for (final c in credentials) {
-        buf.writeln('| ${c.service} | ${c.host} | ${c.username} | ${c.secretType} | ${c.sourceVuln} |');
+        buf.writeln(
+          '| ${c.service} | ${c.host} | ${c.username} | ${c.secretType} | ${c.sourceVuln} |',
+        );
       }
       buf.writeln();
     }
 
+    buf.write(_closureCoverageMarkdown(vulnerabilities, closures));
+
     buf.writeln('## Conclusion');
     buf.writeln();
-    buf.writeln(_deterministicConclusionMarkdown(
-      sorted.length,
-      qualityExceptions.length,
-      assessmentCandidates.length,
-    ));
+    buf.writeln(
+      _deterministicConclusionMarkdown(
+        sorted.length,
+        qualityExceptions.length,
+        assessmentCandidates.length,
+      ),
+    );
     buf.writeln();
 
     return buf.toString();
@@ -608,6 +660,7 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     required List<Vulnerability> vulnerabilities,
     List<CommandLog> commandLogs = const [],
     bool confirmedOnly = false,
+    List<CandidateClosure> closures = const [],
   }) {
     final decisions = <Vulnerability, ReportEvidenceDecision>{
       for (final vulnerability in vulnerabilities)
@@ -624,14 +677,33 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     final selected = confirmedOnly
         ? <Vulnerability>[
             ...qualified,
-            ...vulnerabilities.where((v) =>
-                v.status == VulnerabilityStatus.confirmed &&
-                !decisions[v]!.reportable),
+            ...vulnerabilities.where(
+              (v) =>
+                  v.status == VulnerabilityStatus.confirmed &&
+                  !decisions[v]!.reportable,
+            ),
           ]
         : vulnerabilities;
     final sorted = _sortedVulns(selected);
     final buf = StringBuffer();
-    buf.writeln('ID,Title,Target,CVE,Severity,Status,Report Classification,Evidence Quality Reason,Status Reason,Type,CVSS Vector,Recommendation,Verified Evidence Output');
+    final closureById = <int, CandidateClosure>{
+      for (final closure in closures) closure.vulnerabilityId: closure,
+    };
+    final closureCoverage = vulnerabilities.isEmpty
+        ? 100
+        : ((vulnerabilities
+                          .where(
+                            (item) =>
+                                item.id != null &&
+                                closureById[item.id!]?.isTerminal == true,
+                          )
+                          .length /
+                      vulnerabilities.length) *
+                  100)
+              .round();
+    buf.writeln(
+      'ID,Title,Target,CVE,Severity,Status,Report Classification,Evidence Quality Reason,Status Reason,Type,CVSS Vector,Recommendation,Verified Evidence Output,Terminal Disposition,Closure Reason,Closure Explanation,Attempted Methods,Remaining Prerequisites,Next Action,Owner,Closure Coverage',
+    );
     for (int i = 0; i < sorted.length; i++) {
       final v = sorted[i];
       final decision = decisions[v]!;
@@ -639,35 +711,47 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
       final isDuplicate = decision.reportable && !isVerified;
       final proofLog = isVerified ? decision.proofLog : null;
       final rawOut = proofLog?.output ?? '';
-      final proofOutput = rawOut.replaceAll('\n', ' | ')
+      final proofOutput = rawOut
+          .replaceAll('\n', ' | ')
           .substring(0, rawOut.length > 1000 ? 1000 : rawOut.length);
       final classification = isVerified
           ? 'VERIFIED FINDING'
           : v.status == VulnerabilityStatus.confirmed
-              ? 'EVIDENCE QUALITY EXCEPTION'
-              : v.status == VulnerabilityStatus.notVulnerable
-                  ? 'NEGATIVE RESULT'
-                  : v.status == VulnerabilityStatus.undetermined
-                      ? 'INCONCLUSIVE CANDIDATE'
-                      : 'PENDING CANDIDATE';
+          ? 'EVIDENCE QUALITY EXCEPTION'
+          : v.status == VulnerabilityStatus.notVulnerable
+          ? 'NEGATIVE RESULT'
+          : v.status == VulnerabilityStatus.undetermined
+          ? 'INCONCLUSIVE CANDIDATE'
+          : 'PENDING CANDIDATE';
       final evidenceReason = isDuplicate
           ? 'Duplicate of another evidence-qualified record.'
           : decision.reason;
-      buf.writeln([
-        i + 1,
-        _csvEsc(v.problem),
-        _csvEsc(v.targetAddress),
-        _csvEsc(v.cve),
-        isVerified ? v.severity : '',
-        _statusLabel(v.status),
-        classification,
-        _csvEsc(evidenceReason),
-        _csvEsc(v.statusReason),
-        _csvEsc(v.vulnerabilityType),
-        isVerified ? _csvEsc(_cvssVector(v)) : '',
-        isVerified ? _csvEsc(v.recommendation) : '',
-        _csvEsc(proofOutput),
-      ].join(','));
+      final closure = v.id == null ? null : closureById[v.id!];
+      buf.writeln(
+        [
+          i + 1,
+          _csvEsc(v.problem),
+          _csvEsc(v.targetAddress),
+          _csvEsc(v.cve),
+          isVerified ? v.severity : '',
+          _statusLabel(v.status),
+          classification,
+          _csvEsc(evidenceReason),
+          _csvEsc(v.statusReason),
+          _csvEsc(v.vulnerabilityType),
+          isVerified ? _csvEsc(_cvssVector(v)) : '',
+          isVerified ? _csvEsc(v.recommendation) : '',
+          _csvEsc(proofOutput),
+          closure?.disposition.name ?? '',
+          closure?.reasonCode.name ?? '',
+          _csvEsc(closure?.explanation ?? ''),
+          _csvEsc(closure?.attemptedMethods.join(' | ') ?? ''),
+          _csvEsc(closure?.remainingPrerequisites.join(' | ') ?? ''),
+          _csvEsc(closure?.nextAction ?? ''),
+          closure?.owner.name ?? '',
+          '$closureCoverage%',
+        ].join(','),
+      );
     }
     return buf.toString();
   }
@@ -676,6 +760,70 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
   // Private helpers
   // ---------------------------------------------------------------------------
 
+  static String _closureCoverageHtml(
+    List<Vulnerability> vulnerabilities,
+    List<CandidateClosure> closures,
+  ) {
+    if (closures.isEmpty) return '';
+    final byId = <int, CandidateClosure>{
+      for (final closure in closures) closure.vulnerabilityId: closure,
+    };
+    final closed = vulnerabilities
+        .where((item) => item.id != null && byId[item.id!]?.isTerminal == true)
+        .length;
+    final coverage = vulnerabilities.isEmpty
+        ? 100
+        : ((closed / vulnerabilities.length) * 100).round();
+    final rows = vulnerabilities.map((vulnerability) {
+      final closure = vulnerability.id == null ? null : byId[vulnerability.id!];
+      if (closure == null) {
+        return '<tr><td>${_esc(vulnerability.problem)}</td><td>${_esc(vulnerability.targetAddress)}</td><td>UNRESOLVED</td><td>missingClosure</td><td>Closure review required</td><td>joint</td></tr>';
+      }
+      return '<tr><td>${_esc(vulnerability.problem)}</td><td>${_esc(vulnerability.targetAddress)}</td><td>${_esc(closure.disposition.name)}</td><td>${_esc(closure.reasonCode.name)}</td><td>${_esc(closure.nextAction)}</td><td>${_esc(closure.owner.name)}</td></tr>';
+    }).join();
+    return '''<section id="candidate-closure">
+  <h2>Candidate Closure and Coverage</h2>
+  <p><strong>Closure coverage:</strong> $closed/${vulnerabilities.length} ($coverage%)</p>
+  <p>Blocked and deferred states are terminal only when they identify the prerequisite, owner, and next action; they are not verified vulnerabilities.</p>
+  <table><thead><tr><th>Candidate</th><th>Target</th><th>Terminal disposition</th><th>Reason</th><th>Next action</th><th>Owner</th></tr></thead><tbody>$rows</tbody></table>
+</section>''';
+  }
+
+  static String _closureCoverageMarkdown(
+    List<Vulnerability> vulnerabilities,
+    List<CandidateClosure> closures,
+  ) {
+    if (closures.isEmpty) return '';
+    final byId = <int, CandidateClosure>{
+      for (final closure in closures) closure.vulnerabilityId: closure,
+    };
+    final closed = vulnerabilities
+        .where((item) => item.id != null && byId[item.id!]?.isTerminal == true)
+        .length;
+    final coverage = vulnerabilities.isEmpty
+        ? 100
+        : ((closed / vulnerabilities.length) * 100).round();
+    final buffer = StringBuffer()
+      ..writeln('## Candidate Closure and Coverage')
+      ..writeln()
+      ..writeln(
+        '**Closure coverage:** $closed/${vulnerabilities.length} ($coverage%)',
+      )
+      ..writeln()
+      ..writeln(
+        '| Candidate | Target | Terminal disposition | Reason | Attempts | Prerequisites | Next action | Owner |',
+      )
+      ..writeln('|---|---|---|---|---|---|---|---|');
+    for (final vulnerability in vulnerabilities) {
+      final closure = vulnerability.id == null ? null : byId[vulnerability.id!];
+      buffer.writeln(
+        '| ${_markdownCell(vulnerability.problem)} | ${_markdownCell(vulnerability.targetAddress)} | ${closure?.disposition.name ?? 'UNRESOLVED'} | ${closure?.reasonCode.name ?? 'missingClosure'} | ${_markdownCell(closure?.attemptedMethods.join('; ') ?? '')} | ${_markdownCell(closure?.remainingPrerequisites.join('; ') ?? '')} | ${_markdownCell(closure?.nextAction ?? 'Closure review required')} | ${closure?.owner.name ?? 'joint'} |',
+      );
+    }
+    buffer.writeln();
+    return buffer.toString();
+  }
+
   static List<Vulnerability> _sortedVulns(List<Vulnerability> vulns) {
     final order = {'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3};
     final copy = List<Vulnerability>.from(vulns);
@@ -683,8 +831,12 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
       final sevCmp = (order[a.severity] ?? 4).compareTo(order[b.severity] ?? 4);
       if (sevCmp != 0) return sevCmp;
       // Confirmed before others at same severity
-      if (a.status == VulnerabilityStatus.confirmed && b.status != VulnerabilityStatus.confirmed) return -1;
-      if (b.status == VulnerabilityStatus.confirmed && a.status != VulnerabilityStatus.confirmed) return 1;
+      if (a.status == VulnerabilityStatus.confirmed &&
+          b.status != VulnerabilityStatus.confirmed)
+        return -1;
+      if (b.status == VulnerabilityStatus.confirmed &&
+          a.status != VulnerabilityStatus.confirmed)
+        return 1;
       return a.problem.compareTo(b.problem);
     });
     return copy;
@@ -700,7 +852,9 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
   }
 
   static Map<String, List<Vulnerability>> _groupByTarget(
-      List<Vulnerability> vulns, List<Target> targets) {
+    List<Vulnerability> vulns,
+    List<Target> targets,
+  ) {
     final map = <String, List<Vulnerability>>{};
     for (final v in vulns) {
       map.putIfAbsent(v.targetAddress, () => []).add(v);
@@ -747,10 +901,9 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
       .replaceAll('(', r'\(')
       .replaceAll(')', r'\)');
 
-  static String _markdownCell(String s) => _esc(s)
-      .replaceAll('|', r'\|')
-      .replaceAll('\r', ' ')
-      .replaceAll('\n', '<br>');
+  static String _markdownCell(String s) => _esc(
+    s,
+  ).replaceAll('|', r'\|').replaceAll('\r', ' ').replaceAll('\n', '<br>');
 
   static String _csvEsc(String s) {
     final escaped = s.replaceAll('"', '""').replaceAll('\n', ' ');
@@ -758,11 +911,11 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
   }
 
   static String _statusLabel(VulnerabilityStatus s) => switch (s) {
-        VulnerabilityStatus.confirmed => 'CONFIRMED',
-        VulnerabilityStatus.notVulnerable => 'NOT_VULNERABLE',
-        VulnerabilityStatus.undetermined => 'UNDETERMINED',
-        VulnerabilityStatus.pending => 'PENDING',
-      };
+    VulnerabilityStatus.confirmed => 'CONFIRMED',
+    VulnerabilityStatus.notVulnerable => 'NOT_VULNERABLE',
+    VulnerabilityStatus.undetermined => 'UNDETERMINED',
+    VulnerabilityStatus.pending => 'PENDING',
+  };
 
   static String _statusBadge(VulnerabilityStatus s) {
     final label = _statusLabel(s);
@@ -853,9 +1006,10 @@ ${critical > 0 ? ' $critical verified <strong>Critical</strong> severity finding
   }
 
   static String _detailedFindings(
-      List<Vulnerability> vulns,
-      Map<int, CommandLog> proofByCommand,
-      List<ReportEvidence> visualEvidence) {
+    List<Vulnerability> vulns,
+    Map<int, CommandLog> proofByCommand,
+    List<ReportEvidence> visualEvidence,
+  ) {
     final buf = StringBuffer();
     for (int i = 0; i < vulns.length; i++) {
       final v = vulns[i];
@@ -874,20 +1028,18 @@ ${critical > 0 ? ' $critical verified <strong>Critical</strong> severity finding
             </details>
           </dd>'''
           : isInitialEvidence && v.evidence.isNotEmpty
-              ? '''          <dt>Proof (Initial Evidence)</dt><dd><pre>${_esc(v.evidence.length > 3000 ? '${v.evidence.substring(0, 3000)}\n... [truncated]' : v.evidence)}</pre></dd>'''
-              : '';
+          ? '''          <dt>Proof (Initial Evidence)</dt><dd><pre>${_esc(v.evidence.length > 3000 ? '${v.evidence.substring(0, 3000)}\n... [truncated]' : v.evidence)}</pre></dd>'''
+          : '';
       final findingEvidence = v.id == null
           ? const <ReportEvidence>[]
           : visualEvidence
-              .where((item) => item.artifact.vulnerabilityId == v.id)
-              .toList();
+                .where((item) => item.artifact.vulnerabilityId == v.id)
+                .toList();
       final visualBlock = findingEvidence.isEmpty
           ? ''
           : '''          <dt>Visual Evidence</dt><dd><div class="visual-evidence">
 ${findingEvidence.map((item) {
-              final caption = item.artifact.caption.isEmpty
-                  ? item.artifact.fileName
-                  : item.artifact.caption;
+              final caption = item.artifact.caption.isEmpty ? item.artifact.fileName : item.artifact.caption;
               return '''            <figure>
               <img src="${_esc(item.dataUri)}" alt="${_esc(caption)}">
               <figcaption>${_esc(caption)} · ${_esc(item.artifact.capturedAt.toUtc().toIso8601String())}</figcaption>
@@ -925,11 +1077,16 @@ ${findingEvidence.map((item) {
     List<Vulnerability> vulnerabilities,
     Map<Vulnerability, ReportEvidenceDecision> decisions,
   ) {
-    final rows = vulnerabilities.map((v) => '''      <tr>
+    final rows = vulnerabilities
+        .map(
+          (v) =>
+              '''      <tr>
         <td>${_esc(v.problem)}</td>
         <td>${_esc(v.targetAddress)}</td>
         <td>${_esc(decisions[v]!.reason)}</td>
-      </tr>''').join('\n');
+      </tr>''',
+        )
+        .join('\n');
     return '''
 <section id="evidence-quality-exceptions">
   <h2>Evidence Quality Exceptions</h2>
@@ -946,22 +1103,26 @@ $rows
   static String _assessmentCandidatesSection(
     List<Vulnerability> vulnerabilities,
   ) {
-    final rows = vulnerabilities.map((v) {
-      final interpretation = switch (v.status) {
-        VulnerabilityStatus.undetermined =>
-          'Inconclusive — not a verified vulnerability.',
-        VulnerabilityStatus.notVulnerable =>
-          'Negative result — the tested condition was not verified.',
-        VulnerabilityStatus.pending => 'Pending — no final assessment conclusion.',
-        VulnerabilityStatus.confirmed => 'Excluded by evidence-quality review.',
-      };
-      return '''      <tr>
+    final rows = vulnerabilities
+        .map((v) {
+          final interpretation = switch (v.status) {
+            VulnerabilityStatus.undetermined =>
+              'Inconclusive — not a verified vulnerability.',
+            VulnerabilityStatus.notVulnerable =>
+              'Negative result — the tested condition was not verified.',
+            VulnerabilityStatus.pending =>
+              'Pending — no final assessment conclusion.',
+            VulnerabilityStatus.confirmed =>
+              'Excluded by evidence-quality review.',
+          };
+          return '''      <tr>
         <td>${_esc(v.problem)}</td>
         <td>${_esc(v.targetAddress)}</td>
         <td>${_statusBadge(v.status)}</td>
         <td>${_esc(interpretation)}</td>
       </tr>''';
-    }).join('\n');
+        })
+        .join('\n');
     return '''
 <section id="assessment-candidates">
   <h2>Assessment Candidates and Negative Results</h2>
@@ -992,9 +1153,11 @@ $rows
       }
     }
     return vulnerabilities
-        .where((vulnerability) =>
-            vulnerability.status == VulnerabilityStatus.confirmed &&
-            !decisions[vulnerability]!.reportable)
+        .where(
+          (vulnerability) =>
+              vulnerability.status == VulnerabilityStatus.confirmed &&
+              !decisions[vulnerability]!.reportable,
+        )
         .toList();
   }
 
@@ -1008,7 +1171,8 @@ $rows
           .toLowerCase()
           .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
           .trim();
-      final key = '${vulnerability.targetAddress.trim().toLowerCase()}|$normalizedTitle';
+      final key =
+          '${vulnerability.targetAddress.trim().toLowerCase()}|$normalizedTitle';
       final existing = selected[key];
       if (existing == null ||
           (decisions[existing]!.proofLog == null &&
@@ -1019,7 +1183,8 @@ $rows
     return selected.values.toList();
   }
 
-  static String _credentialsSection(List<DiscoveredCredential> creds) => '''
+  static String _credentialsSection(List<DiscoveredCredential> creds) =>
+      '''
 <section id="credentials">
   <h2>Discovered Credentials</h2>
   <p style="color:#c53030;font-weight:600;margin-bottom:16px;">&#9888; Handle this section with care — contains sensitive authentication material.</p>
@@ -1046,7 +1211,8 @@ $rows
       final addr = entry.key;
       final vulns = entry.value;
       final stats = _computeStats(vulns);
-      buf.writeln('''    <div style="margin-bottom:24px;padding:16px;border:1px solid #e2e8f0;border-radius:8px;">
+      buf.writeln(
+        '''    <div style="margin-bottom:24px;padding:16px;border:1px solid #e2e8f0;border-radius:8px;">
       <h3>${_esc(addr)}</h3>
       <p style="margin:8px 0;color:#4a5568;">
         ${vulns.length} finding(s):
@@ -1055,7 +1221,8 @@ $rows
         ${stats['MEDIUM']! > 0 ? '<span class="badge badge-MEDIUM">${stats['MEDIUM']} Medium</span> ' : ''}
         ${stats['LOW']! > 0 ? '<span class="badge badge-LOW">${stats['LOW']} Low</span>' : ''}
       </p>
-    </div>''');
+    </div>''',
+      );
     }
     return buf.toString();
   }
@@ -1063,8 +1230,19 @@ $rows
   /// Format a DateTime as "19 March 2026 at 14:30".
   static String _formatDateLong(DateTime dt) {
     const months = [
-      '', 'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
+      '',
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
     ];
     final h = dt.hour.toString().padLeft(2, '0');
     final m = dt.minute.toString().padLeft(2, '0');
@@ -1080,7 +1258,8 @@ $rows
     final parts = <String>[];
     if (days > 0) parts.add('$days day${days == 1 ? '' : 's'}');
     if (hours > 0) parts.add('$hours hour${hours == 1 ? '' : 's'}');
-    if (minutes > 0 || parts.isEmpty) parts.add('$minutes minute${minutes == 1 ? '' : 's'}');
+    if (minutes > 0 || parts.isEmpty)
+      parts.add('$minutes minute${minutes == 1 ? '' : 's'}');
     return parts.join(', ');
   }
 }

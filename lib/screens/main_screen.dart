@@ -34,6 +34,7 @@ import '../services/test_budget.dart';
 import '../services/cloud_assist_service.dart';
 import '../services/assessment_session_checkpoint.dart';
 import '../services/assessment_execution_policy.dart';
+import '../services/candidate_closeout_service.dart';
 import '../services/session_command_approval.dart';
 import '../services/persistent_tool_approval.dart';
 import '../widgets/test_budget_dialog.dart';
@@ -698,8 +699,9 @@ class _MainScreenState extends State<MainScreen> {
                 onAlwaysAllowTool: () async {
                   final command = state.pendingCommand!;
                   final messenger = ScaffoldMessenger.of(context);
-                  final approved =
-                      await _persistentToolApprovals.approveCommand(command);
+                  // dart format off
+                  final approved = await _persistentToolApprovals.approveCommand(command);
+                  // dart format on
                   if (!approved) {
                     messenger.showSnackBar(
                       const SnackBar(
@@ -1901,9 +1903,9 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
                 adminPassword: appState.adminPassword,
                 onApprovalNeeded: (command) async {
                   if (_hasSessionApproval(
-                    command,
-                    appState.currentProject?.id,
-                  ) ||
+                        command,
+                        appState.currentProject?.id,
+                      ) ||
                       await _persistentToolApprovals.isApproved(command)) {
                     return 'once';
                   }
@@ -2169,7 +2171,35 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
     }
 
     appState.setExecutionStatus('');
-    await _clearSessionCheckpoint();
+    final projectId = appState.currentProject?.id;
+    final closures = projectId == null
+        ? const []
+        : await DatabaseHelper.getCandidateClosures(projectId);
+    final closeout = CandidateCloseoutService.validate(
+      vulnerabilities: appState.vulnerabilities,
+      closuresByVulnerabilityId: {
+        for (final closure in closures) closure.vulnerabilityId: closure,
+      },
+    );
+    if (closeout.ready) {
+      await _clearSessionCheckpoint();
+    } else if (projectId != null) {
+      await _saveSessionCheckpoint(
+        AssessmentSessionPhase.execution,
+        AssessmentSessionStatus.paused,
+        pendingVulnerabilityIds: closeout.unresolvedVulnerabilityIds,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Technical execution finished; closeout remains open for '
+              '${closeout.unresolvedVulnerabilityIds.length} candidate(s).',
+            ),
+          ),
+        );
+      }
+    }
     setState(() {
       _isExecuting = false;
       _executingAddresses.clear();

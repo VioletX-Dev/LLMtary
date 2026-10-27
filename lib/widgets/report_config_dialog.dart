@@ -4,6 +4,7 @@ import '../database/database_helper.dart';
 import '../models/command_log.dart';
 import '../models/evidence_artifact.dart';
 import '../models/report_evidence.dart';
+import '../models/candidate_closure.dart';
 import '../services/evidence_storage_service.dart';
 import '../services/report_content_service.dart';
 import '../services/report_generator.dart';
@@ -83,11 +84,17 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
   void initState() {
     super.initState();
     final project = widget.appState.currentProject;
-    _titleCtrl = TextEditingController(text: project?.reportTitle ?? project?.name ?? '');
+    _titleCtrl = TextEditingController(
+      text: project?.reportTitle ?? project?.name ?? '',
+    );
     _pentesterCtrl = TextEditingController(text: project?.pentesterName ?? '');
-    _execSummaryCtrl = TextEditingController(text: project?.executiveSummary ?? '');
+    _execSummaryCtrl = TextEditingController(
+      text: project?.executiveSummary ?? '',
+    );
     _methodologyCtrl = TextEditingController(text: project?.methodology ?? '');
-    _riskRatingCtrl = TextEditingController(text: project?.riskRatingModel ?? '');
+    _riskRatingCtrl = TextEditingController(
+      text: project?.riskRatingModel ?? '',
+    );
     _conclusionCtrl = TextEditingController(text: project?.conclusion ?? '');
     _startDate = project?.firstAnalysisAt;
     _endDate = project?.lastExecutionAt;
@@ -108,7 +115,11 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
   // LLM generation helpers
   // ---------------------------------------------------------------------------
 
-  Future<void> _generate(String key, String prompt, TextEditingController ctrl) async {
+  Future<void> _generate(
+    String key,
+    String prompt,
+    TextEditingController ctrl,
+  ) async {
     setState(() => _generating[key] = true);
     try {
       final text = await ReportContentService.generateSection(
@@ -172,9 +183,13 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
   Future<void> _onGenerate() async {
     if (!_formKey.currentState!.validate()) return;
     _endDate ??= DateTime.now();
-    if (_startDate != null && _endDate != null && _endDate!.isBefore(_startDate!)) {
+    if (_startDate != null &&
+        _endDate != null &&
+        _endDate!.isBefore(_startDate!)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Assessment end date must be on or after start date')),
+        const SnackBar(
+          content: Text('Assessment end date must be on or after start date'),
+        ),
       );
       return;
     }
@@ -204,14 +219,15 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
 
     // Phase 11: Pick save path before showing progress (so user can cancel before generation starts)
     final format = _format;
-    final slug = _titleCtrl.text.trim()
+    final slug = _titleCtrl.text
+        .trim()
         .replaceAll(RegExp(r'[^a-zA-Z0-9]+'), '_')
         .replaceAll(RegExp(r'^_+|_+$'), '');
     final fileName = switch (format) {
       'html' => '${slug}_Report.html',
-      'md'   => '${slug}_Report.md',
-      'csv'  => '${slug}_Findings.csv',
-      _      => '${slug}_Report.html',
+      'md' => '${slug}_Report.md',
+      'csv' => '${slug}_Findings.csv',
+      _ => '${slug}_Report.html',
     };
     final path = await FileDialog.saveFile(
       dialogTitle: 'Save Report',
@@ -222,18 +238,22 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
     // Phase 11: Show progress indicator, keep dialog open
     setState(() => _savingReport = true);
     try {
-      final updatedProject = (project ?? widget.appState.currentProject!).copyWith(
-        reportTitle: _titleCtrl.text.trim(),
-        pentesterName: _pentesterCtrl.text.trim(),
-        executiveSummary: _execSummaryCtrl.text.trim(),
-        methodology: _methodologyCtrl.text.trim(),
-        riskRatingModel: _riskRatingCtrl.text.trim(),
-        conclusion: _conclusionCtrl.text.trim(),
-      );
+      final updatedProject = (project ?? widget.appState.currentProject!)
+          .copyWith(
+            reportTitle: _titleCtrl.text.trim(),
+            pentesterName: _pentesterCtrl.text.trim(),
+            executiveSummary: _execSummaryCtrl.text.trim(),
+            methodology: _methodologyCtrl.text.trim(),
+            riskRatingModel: _riskRatingCtrl.text.trim(),
+            conclusion: _conclusionCtrl.text.trim(),
+          );
 
       final commandLogs = updatedProject.id != null
           ? await DatabaseHelper.getCommandLogs(updatedProject.id!)
           : <CommandLog>[];
+      final closures = updatedProject.id != null
+          ? await DatabaseHelper.getCandidateClosures(updatedProject.id!)
+          : const <CandidateClosure>[];
       final evidenceArtifacts = updatedProject.id != null
           ? await DatabaseHelper.getProjectEvidence(updatedProject.id!)
           : const <EvidenceArtifact>[];
@@ -246,7 +266,9 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
 
       String? attackNarrative;
       if (format != 'csv') {
-        final narrativePrompt = ReportContentService.buildAttackNarrativePrompt(widget.appState);
+        final narrativePrompt = ReportContentService.buildAttackNarrativePrompt(
+          widget.appState,
+        );
         if (narrativePrompt != null) {
           try {
             attackNarrative = await ReportContentService.generateSection(
@@ -260,38 +282,41 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
       final confirmedOnly = _confirmedOnly;
       final content = switch (format) {
         'html' => ReportGenerator.generateHtml(
-            project: updatedProject,
-            targets: widget.appState.targets,
-            vulnerabilities: widget.appState.vulnerabilities,
-            credentials: widget.appState.credentials.toList(),
-            commandLogs: commandLogs,
-            scope: widget.appState.projectScope,
-            llmSettings: widget.appState.llmSettings,
-            startDate: _startDate,
-            endDate: _endDate,
-            attackNarrative: attackNarrative,
-            confirmedOnly: confirmedOnly,
-            visualEvidence: visualEvidence,
-          ),
+          project: updatedProject,
+          targets: widget.appState.targets,
+          vulnerabilities: widget.appState.vulnerabilities,
+          credentials: widget.appState.credentials.toList(),
+          commandLogs: commandLogs,
+          scope: widget.appState.projectScope,
+          llmSettings: widget.appState.llmSettings,
+          startDate: _startDate,
+          endDate: _endDate,
+          attackNarrative: attackNarrative,
+          confirmedOnly: confirmedOnly,
+          visualEvidence: visualEvidence,
+          closures: closures,
+        ),
         'md' => ReportGenerator.generateMarkdown(
-            project: updatedProject,
-            targets: widget.appState.targets,
-            vulnerabilities: widget.appState.vulnerabilities,
-            credentials: widget.appState.credentials.toList(),
-            commandLogs: commandLogs,
-            scope: widget.appState.projectScope,
-            llmSettings: widget.appState.llmSettings,
-            startDate: _startDate,
-            endDate: _endDate,
-            attackNarrative: attackNarrative,
-            confirmedOnly: confirmedOnly,
-            visualEvidence: visualEvidence,
-          ),
+          project: updatedProject,
+          targets: widget.appState.targets,
+          vulnerabilities: widget.appState.vulnerabilities,
+          credentials: widget.appState.credentials.toList(),
+          commandLogs: commandLogs,
+          scope: widget.appState.projectScope,
+          llmSettings: widget.appState.llmSettings,
+          startDate: _startDate,
+          endDate: _endDate,
+          attackNarrative: attackNarrative,
+          confirmedOnly: confirmedOnly,
+          visualEvidence: visualEvidence,
+          closures: closures,
+        ),
         'csv' => ReportGenerator.generateCsv(
-            vulnerabilities: widget.appState.vulnerabilities,
-            commandLogs: commandLogs,
-            confirmedOnly: false,
-          ),
+          vulnerabilities: widget.appState.vulnerabilities,
+          commandLogs: commandLogs,
+          confirmedOnly: false,
+          closures: closures,
+        ),
         _ => '',
       };
 
@@ -301,7 +326,10 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
       if (mounted) {
         setState(() => _savingReport = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Report generation failed: $e'), backgroundColor: Colors.red[800]),
+          SnackBar(
+            content: Text('Report generation failed: $e'),
+            backgroundColor: Colors.red[800],
+          ),
         );
       }
     }
@@ -336,9 +364,7 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
                 minHeight: 2,
               ),
             Expanded(
-              child: isNarrow
-                  ? _buildNarrowLayout()
-                  : _buildWideLayout(),
+              child: isNarrow ? _buildNarrowLayout() : _buildWideLayout(),
             ),
             _buildActionBar(),
           ],
@@ -382,15 +408,9 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          flex: 60,
-          child: _buildForm(),
-        ),
+        Expanded(flex: 60, child: _buildForm()),
         const VerticalDivider(width: 1, color: Color(0xFF2A2A3E)),
-        Expanded(
-          flex: 40,
-          child: _buildPreviewPanel(),
-        ),
+        Expanded(flex: 40, child: _buildPreviewPanel()),
       ],
     );
   }
@@ -416,7 +436,8 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
                 label: 'Report Title',
                 hint: 'e.g. Acme Corp External Pentest Q1 2026',
                 maxLength: 120,
-                validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Required' : null,
               ),
               const SizedBox(height: 12),
               _field(
@@ -424,7 +445,8 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
                 label: "Pentester's Name",
                 hint: 'Full name of the lead tester',
                 maxLength: 80,
-                validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Required' : null,
               ),
             ],
           ),
@@ -436,9 +458,21 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
             children: [
               Row(
                 children: [
-                  Expanded(child: _datePicker(label: 'Start Date', date: _startDate, isStart: true)),
+                  Expanded(
+                    child: _datePicker(
+                      label: 'Start Date',
+                      date: _startDate,
+                      isStart: true,
+                    ),
+                  ),
                   const SizedBox(width: 12),
-                  Expanded(child: _datePicker(label: 'End Date', date: _endDate, isStart: false)),
+                  Expanded(
+                    child: _datePicker(
+                      label: 'End Date',
+                      date: _endDate,
+                      isStart: false,
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -450,28 +484,34 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
             key: 'executiveSummary',
             label: 'Executive Summary',
             controller: _execSummaryCtrl,
-            promptBuilder: () => ReportContentService.buildExecutiveSummaryPrompt(widget.appState),
+            promptBuilder: () =>
+                ReportContentService.buildExecutiveSummaryPrompt(
+                  widget.appState,
+                ),
           ),
           const SizedBox(height: 12),
           _narrativeCard(
             key: 'methodology',
             label: 'Methodology and Scope',
             controller: _methodologyCtrl,
-            promptBuilder: () => ReportContentService.buildMethodologyPrompt(widget.appState),
+            promptBuilder: () =>
+                ReportContentService.buildMethodologyPrompt(widget.appState),
           ),
           const SizedBox(height: 12),
           _narrativeCard(
             key: 'riskRating',
             label: 'Risk Rating Model',
             controller: _riskRatingCtrl,
-            promptBuilder: () => ReportContentService.buildRiskRatingPrompt(widget.appState),
+            promptBuilder: () =>
+                ReportContentService.buildRiskRatingPrompt(widget.appState),
           ),
           const SizedBox(height: 12),
           _narrativeCard(
             key: 'conclusion',
             label: 'Conclusion',
             controller: _conclusionCtrl,
-            promptBuilder: () => ReportContentService.buildConclusionPrompt(widget.appState),
+            promptBuilder: () =>
+                ReportContentService.buildConclusionPrompt(widget.appState),
           ),
           const SizedBox(height: 8),
         ],
@@ -554,7 +594,11 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
     );
   }
 
-  Widget _datePicker({required String label, DateTime? date, required bool isStart}) {
+  Widget _datePicker({
+    required String label,
+    DateTime? date,
+    required bool isStart,
+  }) {
     final display = date != null
         ? '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}'
         : 'Not set';
@@ -576,7 +620,11 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
                 children: [
                   Text(
                     label.toUpperCase(),
-                    style: const TextStyle(color: Colors.white38, fontSize: 10, letterSpacing: 0.8),
+                    style: const TextStyle(
+                      color: Colors.white38,
+                      fontSize: 10,
+                      letterSpacing: 0.8,
+                    ),
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -632,11 +680,16 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
                           ),
                         )
                       : const Icon(Icons.auto_awesome, size: 14),
-                  label: Text(isGenerating ? 'Generating…' : 'Generate with AI'),
+                  label: Text(
+                    isGenerating ? 'Generating…' : 'Generate with AI',
+                  ),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: _accent,
                     side: const BorderSide(color: _accent),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     textStyle: const TextStyle(fontSize: 12),
                   ),
                 ),
@@ -647,7 +700,11 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
           TextFormField(
             controller: controller,
             enabled: !isCsv,
-            style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.5),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              height: 1.5,
+            ),
             minLines: 5,
             maxLines: 20,
             decoration: InputDecoration(
@@ -696,8 +753,14 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
             ),
           ),
           const SizedBox(height: 16),
-          _previewRow('Report Title', _titleCtrl.text.isEmpty ? '—' : _titleCtrl.text),
-          _previewRow('Pentester', _pentesterCtrl.text.isEmpty ? '—' : _pentesterCtrl.text),
+          _previewRow(
+            'Report Title',
+            _titleCtrl.text.isEmpty ? '—' : _titleCtrl.text,
+          ),
+          _previewRow(
+            'Pentester',
+            _pentesterCtrl.text.isEmpty ? '—' : _pentesterCtrl.text,
+          ),
           _previewRow(
             'Start Date',
             _startDate != null
@@ -728,10 +791,16 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
         children: [
           SizedBox(
             width: 90,
-            child: Text(label, style: const TextStyle(color: Colors.white38, fontSize: 12)),
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.white38, fontSize: 12),
+            ),
           ),
           Expanded(
-            child: Text(value, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+            child: Text(
+              value,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
           ),
         ],
       ),
@@ -751,13 +820,19 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
               Expanded(
                 child: Text(
                   label,
-                  style: const TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                    color: Colors.white54,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
               Text(
                 isEmpty ? 'empty' : '$charCount chars',
                 style: TextStyle(
-                  color: isEmpty ? Colors.white24 : _accent.withValues(alpha: 0.7),
+                  color: isEmpty
+                      ? Colors.white24
+                      : _accent.withValues(alpha: 0.7),
                   fontSize: 11,
                 ),
               ),
@@ -767,10 +842,17 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
           if (!isEmpty)
             Text(
               text.length > 120 ? '${text.substring(0, 120)}…' : text,
-              style: const TextStyle(color: Colors.white38, fontSize: 11, height: 1.4),
+              style: const TextStyle(
+                color: Colors.white38,
+                fontSize: 11,
+                height: 1.4,
+              ),
             )
           else
-            const Text('—', style: TextStyle(color: Colors.white24, fontSize: 11)),
+            const Text(
+              '—',
+              style: TextStyle(color: Colors.white24, fontSize: 11),
+            ),
         ],
       ),
     );
@@ -802,7 +884,10 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
                 activeColor: _accent,
                 side: const BorderSide(color: Colors.white38),
               ),
-              const Text('Confirmed only', style: TextStyle(color: Colors.white54, fontSize: 12)),
+              const Text(
+                'Confirmed only',
+                style: TextStyle(color: Colors.white54, fontSize: 12),
+              ),
             ],
           ),
           const Spacer(),
@@ -816,35 +901,47 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
           if (_savingReport)
             const Row(
               children: [
-                SizedBox(width: 16, height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: _accent)),
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: _accent,
+                  ),
+                ),
                 SizedBox(width: 12),
-                Text('Generating report…',
-                  style: TextStyle(color: Colors.white54, fontSize: 13)),
+                Text(
+                  'Generating report…',
+                  style: TextStyle(color: Colors.white54, fontSize: 13),
+                ),
               ],
             )
           else
-          // Rebuild when text changes so the button enables/disables live
-          AnimatedBuilder(
-            animation: Listenable.merge([_titleCtrl, _pentesterCtrl]),
-            builder: (_, _) {
-              final enabled = !_anyGenerating &&
-                  _titleCtrl.text.trim().isNotEmpty &&
-                  _pentesterCtrl.text.trim().isNotEmpty;
-              return FilledButton.icon(
-                onPressed: enabled ? _onGenerate : null,
-                icon: const Icon(Icons.download, size: 16),
-                label: const Text('Generate Report'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _accent,
-                  foregroundColor: Colors.black,
-                  disabledBackgroundColor: _accent.withValues(alpha: 0.25),
-                  disabledForegroundColor: Colors.black45,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                ),
-              );
-            },
-          ),
+            // Rebuild when text changes so the button enables/disables live
+            AnimatedBuilder(
+              animation: Listenable.merge([_titleCtrl, _pentesterCtrl]),
+              builder: (_, _) {
+                final enabled =
+                    !_anyGenerating &&
+                    _titleCtrl.text.trim().isNotEmpty &&
+                    _pentesterCtrl.text.trim().isNotEmpty;
+                return FilledButton.icon(
+                  onPressed: enabled ? _onGenerate : null,
+                  icon: const Icon(Icons.download, size: 16),
+                  label: const Text('Generate Report'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _accent,
+                    foregroundColor: Colors.black,
+                    disabledBackgroundColor: _accent.withValues(alpha: 0.25),
+                    disabledForegroundColor: Colors.black45,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                  ),
+                );
+              },
+            ),
         ],
       ),
     );
@@ -853,7 +950,10 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
   Widget _buildFormatSelector() {
     return Row(
       children: [
-        const Text('Format:', style: TextStyle(color: Colors.white54, fontSize: 13)),
+        const Text(
+          'Format:',
+          style: TextStyle(color: Colors.white54, fontSize: 13),
+        ),
         const SizedBox(width: 8),
         _formatChip('html', 'HTML'),
         const SizedBox(width: 6),
@@ -875,7 +975,9 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
         decoration: BoxDecoration(
           color: selected ? _accent : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: selected ? _accent : const Color(0xFF3A3A5E)),
+          border: Border.all(
+            color: selected ? _accent : const Color(0xFF3A3A5E),
+          ),
         ),
         child: Text(
           label,

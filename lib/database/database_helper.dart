@@ -12,8 +12,11 @@ import '../models/credential.dart';
 import '../models/evidence_artifact.dart';
 import '../models/validation_run.dart';
 import '../models/cloud_assist.dart';
+import '../models/candidate_closure.dart';
+import '../models/human_validation_work_item.dart';
 import '../services/evidence_repository.dart';
 import '../services/validation_run_repository.dart';
+import '../services/candidate_closure_repository.dart';
 
 class DatabaseHelper {
   static Future<Database>? _initFuture;
@@ -34,7 +37,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 27,
+      version: 28,
       singleInstance: true,
       onConfigure: (db) async {
         await db.execute('PRAGMA busy_timeout=5000');
@@ -208,7 +211,7 @@ class DatabaseHelper {
         ''');
 
         await db.execute(
-          'CREATE INDEX IF NOT EXISTS idx_exec_cmds ON executed_commands(projectId, targetId)'
+          'CREATE INDEX IF NOT EXISTS idx_exec_cmds ON executed_commands(projectId, targetId)',
         );
 
         await db.execute('''
@@ -251,23 +254,32 @@ class DatabaseHelper {
           )
         ''');
         await db.execute(
-          'CREATE INDEX IF NOT EXISTS idx_session_events ON session_events(projectId, targetId, phase)'
+          'CREATE INDEX IF NOT EXISTS idx_session_events ON session_events(projectId, targetId, phase)',
         );
         await EvidenceRepository.createTable(db);
         await ValidationRunRepository.createTable(db);
         await migrateCloudAssist(db);
+        await CandidateClosureRepository.migrate(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         debugPrint('[DB] onUpgrade: $oldVersion → $newVersion');
         if (oldVersion < 2) {
-          await db.execute('ALTER TABLE vulnerabilities ADD COLUMN vulnerabilityType TEXT');
+          await db.execute(
+            'ALTER TABLE vulnerabilities ADD COLUMN vulnerabilityType TEXT',
+          );
         }
         if (oldVersion < 3) {
-          await db.execute('ALTER TABLE vulnerabilities ADD COLUMN statusReason TEXT');
-          await db.execute('ALTER TABLE vulnerabilities ADD COLUMN proofCommand TEXT');
+          await db.execute(
+            'ALTER TABLE vulnerabilities ADD COLUMN statusReason TEXT',
+          );
+          await db.execute(
+            'ALTER TABLE vulnerabilities ADD COLUMN proofCommand TEXT',
+          );
         }
         if (oldVersion < 4) {
-          await db.execute('ALTER TABLE command_logs ADD COLUMN vulnerabilityIndex INTEGER');
+          await db.execute(
+            'ALTER TABLE command_logs ADD COLUMN vulnerabilityIndex INTEGER',
+          );
         }
         if (oldVersion < 5) {
           await db.execute('''
@@ -292,11 +304,21 @@ class DatabaseHelper {
           ''');
         }
         if (oldVersion < 8) {
-          await db.execute('ALTER TABLE vulnerabilities ADD COLUMN targetAddress TEXT DEFAULT \'\'');
-          await db.execute('ALTER TABLE vulnerabilities ADD COLUMN targetId INTEGER DEFAULT 0');
-          await db.execute('ALTER TABLE vulnerabilities ADD COLUMN projectId INTEGER DEFAULT 0');
-          await db.execute('ALTER TABLE command_logs ADD COLUMN projectId INTEGER DEFAULT 0');
-          await db.execute('ALTER TABLE command_logs ADD COLUMN targetId INTEGER DEFAULT 0');
+          await db.execute(
+            'ALTER TABLE vulnerabilities ADD COLUMN targetAddress TEXT DEFAULT \'\'',
+          );
+          await db.execute(
+            'ALTER TABLE vulnerabilities ADD COLUMN targetId INTEGER DEFAULT 0',
+          );
+          await db.execute(
+            'ALTER TABLE vulnerabilities ADD COLUMN projectId INTEGER DEFAULT 0',
+          );
+          await db.execute(
+            'ALTER TABLE command_logs ADD COLUMN projectId INTEGER DEFAULT 0',
+          );
+          await db.execute(
+            'ALTER TABLE command_logs ADD COLUMN targetId INTEGER DEFAULT 0',
+          );
           await db.execute('''
             CREATE TABLE IF NOT EXISTS projects (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -340,8 +362,12 @@ class DatabaseHelper {
           ''');
         }
         if (oldVersion < 9) {
-          await db.execute('ALTER TABLE targets ADD COLUMN analysisComplete INTEGER NOT NULL DEFAULT 0');
-          await db.execute('ALTER TABLE targets ADD COLUMN executionComplete INTEGER NOT NULL DEFAULT 0');
+          await db.execute(
+            'ALTER TABLE targets ADD COLUMN analysisComplete INTEGER NOT NULL DEFAULT 0',
+          );
+          await db.execute(
+            'ALTER TABLE targets ADD COLUMN executionComplete INTEGER NOT NULL DEFAULT 0',
+          );
         }
         if (oldVersion < 10) {
           await db.execute('''
@@ -355,17 +381,29 @@ class DatabaseHelper {
             )
           ''');
           await db.execute(
-            'CREATE INDEX IF NOT EXISTS idx_exec_cmds ON executed_commands(projectId, targetId)'
+            'CREATE INDEX IF NOT EXISTS idx_exec_cmds ON executed_commands(projectId, targetId)',
           );
         }
         if (oldVersion < 11) {
           // Add output caching columns — ignore errors if columns already exist
-          try { await db.execute('ALTER TABLE executed_commands ADD COLUMN output TEXT NOT NULL DEFAULT \'\''); } catch (_) {}
-          try { await db.execute('ALTER TABLE executed_commands ADD COLUMN exit_code INTEGER NOT NULL DEFAULT -1'); } catch (_) {}
+          try {
+            await db.execute(
+              'ALTER TABLE executed_commands ADD COLUMN output TEXT NOT NULL DEFAULT \'\'',
+            );
+          } catch (_) {}
+          try {
+            await db.execute(
+              'ALTER TABLE executed_commands ADD COLUMN exit_code INTEGER NOT NULL DEFAULT -1',
+            );
+          } catch (_) {}
         }
         if (oldVersion < 12) {
-          await db.execute('ALTER TABLE projects ADD COLUMN first_analysis_at TEXT');
-          await db.execute('ALTER TABLE projects ADD COLUMN last_execution_at TEXT');
+          await db.execute(
+            'ALTER TABLE projects ADD COLUMN first_analysis_at TEXT',
+          );
+          await db.execute(
+            'ALTER TABLE projects ADD COLUMN last_execution_at TEXT',
+          );
           await db.execute('''
             CREATE TABLE IF NOT EXISTS discovered_credentials (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -384,32 +422,74 @@ class DatabaseHelper {
         }
         if (oldVersion < 13) {
           await db.execute('ALTER TABLE projects ADD COLUMN report_title TEXT');
-          await db.execute('ALTER TABLE projects ADD COLUMN pentester_name TEXT');
-          await db.execute('ALTER TABLE projects ADD COLUMN executive_summary TEXT');
+          await db.execute(
+            'ALTER TABLE projects ADD COLUMN pentester_name TEXT',
+          );
+          await db.execute(
+            'ALTER TABLE projects ADD COLUMN executive_summary TEXT',
+          );
           await db.execute('ALTER TABLE projects ADD COLUMN methodology TEXT');
-          await db.execute('ALTER TABLE projects ADD COLUMN risk_rating_model TEXT');
+          await db.execute(
+            'ALTER TABLE projects ADD COLUMN risk_rating_model TEXT',
+          );
           await db.execute('ALTER TABLE projects ADD COLUMN conclusion TEXT');
         }
         if (oldVersion < 14) {
-          await db.execute("ALTER TABLE vulnerabilities ADD COLUMN businessRisk TEXT DEFAULT ''");
+          await db.execute(
+            "ALTER TABLE vulnerabilities ADD COLUMN businessRisk TEXT DEFAULT ''",
+          );
         }
         if (oldVersion < 15) {
           // Vulnerabilities: PoC artifact fields
-          try { await db.execute('ALTER TABLE vulnerabilities ADD COLUMN proofOutput TEXT'); } catch (_) {}
-          try { await db.execute('ALTER TABLE vulnerabilities ADD COLUMN reproductionSteps TEXT'); } catch (_) {}
-          try { await db.execute('ALTER TABLE vulnerabilities ADD COLUMN confirmedAt TEXT'); } catch (_) {}
+          try {
+            await db.execute(
+              'ALTER TABLE vulnerabilities ADD COLUMN proofOutput TEXT',
+            );
+          } catch (_) {}
+          try {
+            await db.execute(
+              'ALTER TABLE vulnerabilities ADD COLUMN reproductionSteps TEXT',
+            );
+          } catch (_) {}
+          try {
+            await db.execute(
+              'ALTER TABLE vulnerabilities ADD COLUMN confirmedAt TEXT',
+            );
+          } catch (_) {}
           // Credentials: source tracking
-          try { await db.execute("ALTER TABLE discovered_credentials ADD COLUMN credential_source TEXT NOT NULL DEFAULT 'extractedFromOutput'"); } catch (_) {}
+          try {
+            await db.execute(
+              "ALTER TABLE discovered_credentials ADD COLUMN credential_source TEXT NOT NULL DEFAULT 'extractedFromOutput'",
+            );
+          } catch (_) {}
           // Projects: scope/engagement fields
-          try { await db.execute('ALTER TABLE projects ADD COLUMN scope TEXT'); } catch (_) {}
-          try { await db.execute('ALTER TABLE projects ADD COLUMN scope_exclusions TEXT'); } catch (_) {}
-          try { await db.execute('ALTER TABLE projects ADD COLUMN scope_notes TEXT'); } catch (_) {}
+          try {
+            await db.execute('ALTER TABLE projects ADD COLUMN scope TEXT');
+          } catch (_) {}
+          try {
+            await db.execute(
+              'ALTER TABLE projects ADD COLUMN scope_exclusions TEXT',
+            );
+          } catch (_) {}
+          try {
+            await db.execute(
+              'ALTER TABLE projects ADD COLUMN scope_notes TEXT',
+            );
+          } catch (_) {}
         }
         if (oldVersion < 16) {
-          try { await db.execute('ALTER TABLE vulnerabilities ADD COLUMN proofCommandExpectedOutput TEXT'); } catch (_) {}
+          try {
+            await db.execute(
+              'ALTER TABLE vulnerabilities ADD COLUMN proofCommandExpectedOutput TEXT',
+            );
+          } catch (_) {}
         }
         if (oldVersion < 17) {
-          try { await db.execute("ALTER TABLE vulnerabilities ADD COLUMN remediationClass TEXT NOT NULL DEFAULT 'unclassified'"); } catch (_) {}
+          try {
+            await db.execute(
+              "ALTER TABLE vulnerabilities ADD COLUMN remediationClass TEXT NOT NULL DEFAULT 'unclassified'",
+            );
+          } catch (_) {}
         }
         if (oldVersion < 18) {
           await db.execute('''
@@ -441,20 +521,36 @@ class DatabaseHelper {
             )
           ''');
           await db.execute(
-            'CREATE INDEX IF NOT EXISTS idx_session_events ON session_events(projectId, targetId, phase)'
+            'CREATE INDEX IF NOT EXISTS idx_session_events ON session_events(projectId, targetId, phase)',
           );
         }
         if (oldVersion < 20) {
-          try { await db.execute('ALTER TABLE vulnerabilities ADD COLUMN reportReady INTEGER NOT NULL DEFAULT 1'); } catch (_) {}
-          try { await db.execute('ALTER TABLE targets ADD COLUMN classifiedAs TEXT'); } catch (_) {}
+          try {
+            await db.execute(
+              'ALTER TABLE vulnerabilities ADD COLUMN reportReady INTEGER NOT NULL DEFAULT 1',
+            );
+          } catch (_) {}
+          try {
+            await db.execute(
+              'ALTER TABLE targets ADD COLUMN classifiedAs TEXT',
+            );
+          } catch (_) {}
         }
         if (oldVersion < 21) {
           // Add stable FK link from command_logs → vulnerabilities to fix proof-output
           // mismatch caused by positional vulnerabilityIndex changing across sort orders.
-          try { await db.execute('ALTER TABLE command_logs ADD COLUMN vulnerabilityId INTEGER'); } catch (_) {}
+          try {
+            await db.execute(
+              'ALTER TABLE command_logs ADD COLUMN vulnerabilityId INTEGER',
+            );
+          } catch (_) {}
         }
         if (oldVersion < 22) {
-          try { await db.execute('ALTER TABLE projects ADD COLUMN customer_testing_requests TEXT'); } catch (_) {}
+          try {
+            await db.execute(
+              'ALTER TABLE projects ADD COLUMN customer_testing_requests TEXT',
+            );
+          } catch (_) {}
         }
         if (oldVersion < 23) {
           await EvidenceRepository.createTable(db);
@@ -463,9 +559,21 @@ class DatabaseHelper {
           await ValidationRunRepository.createTable(db);
         }
         if (oldVersion < 25) {
-          try { await db.execute("ALTER TABLE validation_runs ADD COLUMN baselineStatusReason TEXT NOT NULL DEFAULT ''"); } catch (_) {}
-          try { await db.execute("ALTER TABLE validation_runs ADD COLUMN baselineProofCommand TEXT NOT NULL DEFAULT ''"); } catch (_) {}
-          try { await db.execute("ALTER TABLE validation_runs ADD COLUMN baselineProofOutput TEXT NOT NULL DEFAULT ''"); } catch (_) {}
+          try {
+            await db.execute(
+              "ALTER TABLE validation_runs ADD COLUMN baselineStatusReason TEXT NOT NULL DEFAULT ''",
+            );
+          } catch (_) {}
+          try {
+            await db.execute(
+              "ALTER TABLE validation_runs ADD COLUMN baselineProofCommand TEXT NOT NULL DEFAULT ''",
+            );
+          } catch (_) {}
+          try {
+            await db.execute(
+              "ALTER TABLE validation_runs ADD COLUMN baselineProofOutput TEXT NOT NULL DEFAULT ''",
+            );
+          } catch (_) {}
         }
         if (oldVersion < 26) {
           await migrateProjectBudgets(db);
@@ -473,27 +581,68 @@ class DatabaseHelper {
         if (oldVersion < 27) {
           await migrateCloudAssist(db);
         }
+        if (oldVersion < 28) {
+          await CandidateClosureRepository.migrate(db);
+        }
       },
     );
     final version = await db.getVersion();
-    debugPrint('[DB] openDatabase() returned successfully, schema version=$version');
+    debugPrint(
+      '[DB] openDatabase() returned successfully, schema version=$version',
+    );
     return db;
   }
 
   static Future<void> migrateProjectBudgets(Database db) async {
-    try { await db.execute('ALTER TABLE projects ADD COLUMN budget_mode TEXT'); } catch (_) {}
-    try { await db.execute('ALTER TABLE projects ADD COLUMN budget_limit REAL'); } catch (_) {}
-    try { await db.execute('ALTER TABLE projects ADD COLUMN budget_spent_usd REAL NOT NULL DEFAULT 0'); } catch (_) {}
-    try { await db.execute('ALTER TABLE projects ADD COLUMN budget_started_at TEXT'); } catch (_) {}
+    try {
+      await db.execute('ALTER TABLE projects ADD COLUMN budget_mode TEXT');
+    } catch (_) {}
+    try {
+      await db.execute('ALTER TABLE projects ADD COLUMN budget_limit REAL');
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE projects ADD COLUMN budget_spent_usd REAL NOT NULL DEFAULT 0',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE projects ADD COLUMN budget_started_at TEXT',
+      );
+    } catch (_) {}
   }
 
   static Future<void> migrateCloudAssist(Database db) async {
-    try { await db.execute('ALTER TABLE projects ADD COLUMN cloud_assist_enabled INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
-    try { await db.execute('ALTER TABLE projects ADD COLUMN cloud_assist_provider TEXT'); } catch (_) {}
-    try { await db.execute('ALTER TABLE projects ADD COLUMN cloud_assist_finding_review INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
-    try { await db.execute('ALTER TABLE projects ADD COLUMN cloud_assist_report_review INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
-    try { await db.execute('ALTER TABLE projects ADD COLUMN cloud_assist_budget_usd REAL NOT NULL DEFAULT 0'); } catch (_) {}
-    try { await db.execute('ALTER TABLE projects ADD COLUMN cloud_assist_spent_usd REAL NOT NULL DEFAULT 0'); } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE projects ADD COLUMN cloud_assist_enabled INTEGER NOT NULL DEFAULT 0',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE projects ADD COLUMN cloud_assist_provider TEXT',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE projects ADD COLUMN cloud_assist_finding_review INTEGER NOT NULL DEFAULT 0',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE projects ADD COLUMN cloud_assist_report_review INTEGER NOT NULL DEFAULT 0',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE projects ADD COLUMN cloud_assist_budget_usd REAL NOT NULL DEFAULT 0',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE projects ADD COLUMN cloud_assist_spent_usd REAL NOT NULL DEFAULT 0',
+      );
+    } catch (_) {}
     await db.execute('''
       CREATE TABLE IF NOT EXISTS cloud_assist_reviews (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -517,18 +666,61 @@ class DatabaseHelper {
 
   static Future<List<Vulnerability>> getVulnerabilities(int projectId) async {
     final db = await database;
-    final maps = await db.query('vulnerabilities', where: 'projectId = ?', whereArgs: [projectId]);
+    final maps = await db.query(
+      'vulnerabilities',
+      where: 'projectId = ?',
+      whereArgs: [projectId],
+    );
     return maps.map((map) => Vulnerability.fromMap(map)).toList();
   }
 
   static Future<void> updateVulnerability(Vulnerability vuln) async {
     final db = await database;
-    await db.update('vulnerabilities', vuln.toMap(), where: 'id = ?', whereArgs: [vuln.id]);
+    await db.update(
+      'vulnerabilities',
+      vuln.toMap(),
+      where: 'id = ?',
+      whereArgs: [vuln.id],
+    );
   }
 
-  static Future<void> updateVulnerabilityStatus(int id, VulnerabilityStatus status) async {
+  static Future<void> updateVulnerabilityStatus(
+    int id,
+    VulnerabilityStatus status,
+  ) async {
     final db = await database;
-    await db.update('vulnerabilities', {'status': status.name}, where: 'id = ?', whereArgs: [id]);
+    await db.update(
+      'vulnerabilities',
+      {'status': status.name},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  static Future<void> upsertCandidateClosure(CandidateClosure closure) async {
+    final db = await database;
+    await CandidateClosureRepository(db).upsertClosure(closure);
+  }
+
+  static Future<List<CandidateClosure>> getCandidateClosures(
+    int projectId,
+  ) async {
+    final db = await database;
+    return CandidateClosureRepository(db).getClosures(projectId);
+  }
+
+  static Future<void> upsertHumanValidationWorkItem(
+    HumanValidationWorkItem item,
+  ) async {
+    final db = await database;
+    await CandidateClosureRepository(db).upsertWorkItem(item);
+  }
+
+  static Future<List<HumanValidationWorkItem>> getHumanValidationWorkItems(
+    int projectId,
+  ) async {
+    final db = await database;
+    return CandidateClosureRepository(db).getWorkItems(projectId);
   }
 
   static Future<int> insertValidationRun(ValidationRun run) async {
@@ -558,7 +750,9 @@ class DatabaseHelper {
     return EvidenceRepository(db).insert(artifact);
   }
 
-  static Future<List<EvidenceArtifact>> getProjectEvidence(int projectId) async {
+  static Future<List<EvidenceArtifact>> getProjectEvidence(
+    int projectId,
+  ) async {
     final db = await database;
     return EvidenceRepository(db).forProject(projectId);
   }
@@ -603,13 +797,22 @@ class DatabaseHelper {
 
   static Future<List<CommandLog>> getCommandLogs(int projectId) async {
     final db = await database;
-    final maps = await db.query('command_logs', where: 'projectId = ?', whereArgs: [projectId], orderBy: 'timestamp DESC');
+    final maps = await db.query(
+      'command_logs',
+      where: 'projectId = ?',
+      whereArgs: [projectId],
+      orderBy: 'timestamp DESC',
+    );
     return maps.map((map) => CommandLog.fromMap(map)).toList();
   }
 
   static Future<void> deleteCommandLogsByVulnId(int vulnId) async {
     final db = await database;
-    await db.delete('command_logs', where: 'vulnerabilityId = ?', whereArgs: [vulnId]);
+    await db.delete(
+      'command_logs',
+      where: 'vulnerabilityId = ?',
+      whereArgs: [vulnId],
+    );
   }
 
   static Future<void> clearCommandLogs() async {
@@ -619,7 +822,10 @@ class DatabaseHelper {
 
   static Future<void> saveSetting(String key, String value) async {
     final db = await database;
-    await db.insert('settings', {'key': key, 'value': value}, conflictAlgorithm: ConflictAlgorithm.replace);
+    await db.insert('settings', {
+      'key': key,
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   static Future<String?> getSetting(String key) async {
@@ -647,7 +853,11 @@ class DatabaseHelper {
       baseCommand = baseCommand.substring(3).trim();
     }
     baseCommand = baseCommand.split(' ').first.toLowerCase();
-    final maps = await db.query('command_whitelist', where: 'LOWER(command) = ?', whereArgs: [baseCommand]);
+    final maps = await db.query(
+      'command_whitelist',
+      where: 'LOWER(command) = ?',
+      whereArgs: [baseCommand],
+    );
     return maps.isNotEmpty;
   }
 
@@ -671,7 +881,10 @@ class DatabaseHelper {
     }, conflictAlgorithm: ConflictAlgorithm.ignore);
   }
 
-  static Future<void> saveProviderSettings(String provider, Map<String, dynamic> settings) async {
+  static Future<void> saveProviderSettings(
+    String provider,
+    Map<String, dynamic> settings,
+  ) async {
     final db = await database;
     await db.insert('provider_settings', {
       'provider': provider,
@@ -679,9 +892,15 @@ class DatabaseHelper {
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  static Future<Map<String, dynamic>?> getProviderSettings(String provider) async {
+  static Future<Map<String, dynamic>?> getProviderSettings(
+    String provider,
+  ) async {
     final db = await database;
-    final maps = await db.query('provider_settings', where: 'provider = ?', whereArgs: [provider]);
+    final maps = await db.query(
+      'provider_settings',
+      where: 'provider = ?',
+      whereArgs: [provider],
+    );
     return maps.isNotEmpty ? maps.first : null;
   }
 
@@ -696,34 +915,63 @@ class DatabaseHelper {
   static Future<List<Project>> getProjects() async {
     debugPrint('[DB] getProjects() called');
     final db = await database;
-    debugPrint('[DB] getProjects() got database handle, querying projects table...');
+    debugPrint(
+      '[DB] getProjects() got database handle, querying projects table...',
+    );
     final maps = await db.query('projects', orderBy: 'lastOpenedAt DESC');
-    debugPrint('[DB] getProjects() found ${maps.length} row(s): ${maps.map((m) => m['name']).toList()}');
+    debugPrint(
+      '[DB] getProjects() found ${maps.length} row(s): ${maps.map((m) => m['name']).toList()}',
+    );
     return maps.map((m) => Project.fromMap(m)).toList();
   }
 
   static Future<Project?> getProject(int id) async {
     final db = await database;
-    final maps = await db.query('projects', where: 'id = ?', whereArgs: [id], limit: 1);
+    final maps = await db.query(
+      'projects',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
     return maps.isEmpty ? null : Project.fromMap(maps.first);
   }
 
-  static Future<void> updateProjectBudget(int id, {required String mode, required double limit}) async {
-    if (limit <= 0) throw ArgumentError.value(limit, 'limit', 'must be positive');
+  static Future<void> updateProjectBudget(
+    int id, {
+    required String mode,
+    required double limit,
+  }) async {
+    if (limit <= 0)
+      throw ArgumentError.value(limit, 'limit', 'must be positive');
     final db = await database;
-    await db.update('projects', {'budget_mode': mode, 'budget_limit': limit}, where: 'id = ?', whereArgs: [id]);
+    await db.update(
+      'projects',
+      {'budget_mode': mode, 'budget_limit': limit},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
-  static Future<DateTime> startProjectBudgetIfNeeded(int id, DateTime now) async {
+  static Future<DateTime> startProjectBudgetIfNeeded(
+    int id,
+    DateTime now,
+  ) async {
     final db = await database;
-    await db.rawUpdate('UPDATE projects SET budget_started_at = COALESCE(budget_started_at, ?) WHERE id = ?', [now.toIso8601String(), id]);
+    await db.rawUpdate(
+      'UPDATE projects SET budget_started_at = COALESCE(budget_started_at, ?) WHERE id = ?',
+      [now.toIso8601String(), id],
+    );
     return (await getProject(id))!.budgetStartedAt!;
   }
 
   static Future<double> addProjectBudgetSpend(int id, double amountUsd) async {
-    if (amountUsd < 0) throw ArgumentError.value(amountUsd, 'amountUsd', 'cannot be negative');
+    if (amountUsd < 0)
+      throw ArgumentError.value(amountUsd, 'amountUsd', 'cannot be negative');
     final db = await database;
-    await db.rawUpdate('UPDATE projects SET budget_spent_usd = budget_spent_usd + ? WHERE id = ?', [amountUsd, id]);
+    await db.rawUpdate(
+      'UPDATE projects SET budget_spent_usd = budget_spent_usd + ? WHERE id = ?',
+      [amountUsd, id],
+    );
     return (await getProject(id))!.budgetSpentUsd;
   }
 
@@ -739,19 +987,28 @@ class DatabaseHelper {
       throw ArgumentError.value(budgetUsd, 'budgetUsd', 'must be positive');
     }
     final db = await database;
-    await db.update('projects', {
-      'cloud_assist_enabled': enabled ? 1 : 0,
-      'cloud_assist_provider': provider,
-      'cloud_assist_finding_review': findingReview ? 1 : 0,
-      'cloud_assist_report_review': reportReview ? 1 : 0,
-      'cloud_assist_budget_usd': enabled ? budgetUsd : 0,
-    }, where: 'id = ?', whereArgs: [id]);
+    await db.update(
+      'projects',
+      {
+        'cloud_assist_enabled': enabled ? 1 : 0,
+        'cloud_assist_provider': provider,
+        'cloud_assist_finding_review': findingReview ? 1 : 0,
+        'cloud_assist_report_review': reportReview ? 1 : 0,
+        'cloud_assist_budget_usd': enabled ? budgetUsd : 0,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   static Future<double> addCloudAssistSpend(int id, double amountUsd) async {
-    if (amountUsd < 0) throw ArgumentError.value(amountUsd, 'amountUsd', 'cannot be negative');
+    if (amountUsd < 0)
+      throw ArgumentError.value(amountUsd, 'amountUsd', 'cannot be negative');
     final db = await database;
-    await db.rawUpdate('UPDATE projects SET cloud_assist_spent_usd = cloud_assist_spent_usd + ? WHERE id = ?', [amountUsd, id]);
+    await db.rawUpdate(
+      'UPDATE projects SET cloud_assist_spent_usd = cloud_assist_spent_usd + ? WHERE id = ?',
+      [amountUsd, id],
+    );
     return (await getProject(id))!.cloudAssistSpentUsd;
   }
 
@@ -761,40 +1018,72 @@ class DatabaseHelper {
     return db.insert('cloud_assist_reviews', map);
   }
 
-  static Future<List<CloudAssistReview>> getCloudAssistReviews(int projectId) async {
+  static Future<List<CloudAssistReview>> getCloudAssistReviews(
+    int projectId,
+  ) async {
     final db = await database;
-    final rows = await db.query('cloud_assist_reviews', where: 'project_id = ?', whereArgs: [projectId], orderBy: 'created_at DESC');
+    final rows = await db.query(
+      'cloud_assist_reviews',
+      where: 'project_id = ?',
+      whereArgs: [projectId],
+      orderBy: 'created_at DESC',
+    );
     return rows.map(CloudAssistReview.fromMap).toList();
   }
 
   static Future<void> updateProjectLastOpened(int id) async {
     final db = await database;
-    await db.update('projects', {'lastOpenedAt': DateTime.now().toIso8601String()}, where: 'id = ?', whereArgs: [id]);
+    await db.update(
+      'projects',
+      {'lastOpenedAt': DateTime.now().toIso8601String()},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
-  static Future<void> updateProjectFlags(int id, {bool? scanComplete, bool? analysisComplete, bool? hasResults}) async {
+  static Future<void> updateProjectFlags(
+    int id, {
+    bool? scanComplete,
+    bool? analysisComplete,
+    bool? hasResults,
+  }) async {
     final db = await database;
     final updates = <String, dynamic>{};
     if (scanComplete != null) updates['scanComplete'] = scanComplete ? 1 : 0;
-    if (analysisComplete != null) updates['analysisComplete'] = analysisComplete ? 1 : 0;
+    if (analysisComplete != null)
+      updates['analysisComplete'] = analysisComplete ? 1 : 0;
     if (hasResults != null) updates['hasResults'] = hasResults ? 1 : 0;
-    if (updates.isNotEmpty) await db.update('projects', updates, where: 'id = ?', whereArgs: [id]);
+    if (updates.isNotEmpty)
+      await db.update('projects', updates, where: 'id = ?', whereArgs: [id]);
   }
 
   static Future<void> deleteProject(int id) async {
     final db = await database;
-    await db.delete('evidence_artifacts', where: 'project_id = ?', whereArgs: [id]);
+    await db.delete(
+      'evidence_artifacts',
+      where: 'project_id = ?',
+      whereArgs: [id],
+    );
     await db.delete('vulnerabilities', where: 'projectId = ?', whereArgs: [id]);
     await db.delete('command_logs', where: 'projectId = ?', whereArgs: [id]);
     await db.delete('prompt_logs', where: 'projectId = ?', whereArgs: [id]);
     await db.delete('debug_logs', where: 'projectId = ?', whereArgs: [id]);
     await db.delete('targets', where: 'projectId = ?', whereArgs: [id]);
-    await db.delete('discovered_credentials', where: 'project_id = ?', whereArgs: [id]);
-    await db.delete('cloud_assist_reviews', where: 'project_id = ?', whereArgs: [id]);
+    await db.delete(
+      'discovered_credentials',
+      where: 'project_id = ?',
+      whereArgs: [id],
+    );
+    await db.delete(
+      'cloud_assist_reviews',
+      where: 'project_id = ?',
+      whereArgs: [id],
+    );
     await db.delete('projects', where: 'id = ?', whereArgs: [id]);
   }
 
-  static Future<void> updateProjectReportFields(int projectId, {
+  static Future<void> updateProjectReportFields(
+    int projectId, {
     String? reportTitle,
     String? pentesterName,
     String? executiveSummary,
@@ -806,16 +1095,23 @@ class DatabaseHelper {
     final updates = <String, dynamic>{};
     if (reportTitle != null) updates['report_title'] = reportTitle;
     if (pentesterName != null) updates['pentester_name'] = pentesterName;
-    if (executiveSummary != null) updates['executive_summary'] = executiveSummary;
+    if (executiveSummary != null)
+      updates['executive_summary'] = executiveSummary;
     if (methodology != null) updates['methodology'] = methodology;
     if (riskRatingModel != null) updates['risk_rating_model'] = riskRatingModel;
     if (conclusion != null) updates['conclusion'] = conclusion;
     if (updates.isNotEmpty) {
-      await db.update('projects', updates, where: 'id = ?', whereArgs: [projectId]);
+      await db.update(
+        'projects',
+        updates,
+        where: 'id = ?',
+        whereArgs: [projectId],
+      );
     }
   }
 
-  static Future<void> updateProjectScope(int projectId, {
+  static Future<void> updateProjectScope(
+    int projectId, {
     String? scope,
     String? scopeExclusions,
     String? scopeNotes,
@@ -829,51 +1125,79 @@ class DatabaseHelper {
       'scope_notes': scopeNotes,
       'customer_testing_requests': customerTestingRequests,
     };
-    await db.update('projects', updates, where: 'id = ?', whereArgs: [projectId]);
+    await db.update(
+      'projects',
+      updates,
+      where: 'id = ?',
+      whereArgs: [projectId],
+    );
   }
 
-  static Future<void> updateProjectFirstAnalysis(int projectId, DateTime at) async {
+  static Future<void> updateProjectFirstAnalysis(
+    int projectId,
+    DateTime at,
+  ) async {
     final db = await database;
-    await db.update('projects', {'first_analysis_at': at.toIso8601String()},
-        where: 'id = ?', whereArgs: [projectId]);
+    await db.update(
+      'projects',
+      {'first_analysis_at': at.toIso8601String()},
+      where: 'id = ?',
+      whereArgs: [projectId],
+    );
   }
 
-  static Future<void> updateProjectLastExecution(int projectId, DateTime at) async {
+  static Future<void> updateProjectLastExecution(
+    int projectId,
+    DateTime at,
+  ) async {
     final db = await database;
-    await db.update('projects', {'last_execution_at': at.toIso8601String()},
-        where: 'id = ?', whereArgs: [projectId]);
+    await db.update(
+      'projects',
+      {'last_execution_at': at.toIso8601String()},
+      where: 'id = ?',
+      whereArgs: [projectId],
+    );
   }
 
   // --- Discovered Credentials ---
 
-  static Future<int> insertCredential(DiscoveredCredential cred, int projectId) async {
+  static Future<int> insertCredential(
+    DiscoveredCredential cred,
+    int projectId,
+  ) async {
     final db = await database;
-    return await db.insert(
-      'discovered_credentials',
-      {
-        'project_id': projectId,
-        'service': cred.service,
-        'host': cred.host,
-        'username': cred.username,
-        'secret': cred.secret,
-        'secret_type': cred.secretType,
-        'source_vuln': cred.sourceVuln,
-        'discovered_at': cred.discoveredAt.toIso8601String(),
-      },
-      conflictAlgorithm: ConflictAlgorithm.ignore,
-    );
+    return await db.insert('discovered_credentials', {
+      'project_id': projectId,
+      'service': cred.service,
+      'host': cred.host,
+      'username': cred.username,
+      'secret': cred.secret,
+      'secret_type': cred.secretType,
+      'source_vuln': cred.sourceVuln,
+      'discovered_at': cred.discoveredAt.toIso8601String(),
+    }, conflictAlgorithm: ConflictAlgorithm.ignore);
   }
 
-  static Future<List<DiscoveredCredential>> getCredentialsByProject(int projectId) async {
+  static Future<List<DiscoveredCredential>> getCredentialsByProject(
+    int projectId,
+  ) async {
     final db = await database;
-    final maps = await db.query('discovered_credentials',
-        where: 'project_id = ?', whereArgs: [projectId], orderBy: 'discovered_at ASC');
+    final maps = await db.query(
+      'discovered_credentials',
+      where: 'project_id = ?',
+      whereArgs: [projectId],
+      orderBy: 'discovered_at ASC',
+    );
     return maps.map((m) => DiscoveredCredential.fromMap(m)).toList();
   }
 
   static Future<void> deleteCredentialsByProject(int projectId) async {
     final db = await database;
-    await db.delete('discovered_credentials', where: 'project_id = ?', whereArgs: [projectId]);
+    await db.delete(
+      'discovered_credentials',
+      where: 'project_id = ?',
+      whereArgs: [projectId],
+    );
   }
 
   // --- Targets ---
@@ -893,7 +1217,11 @@ class DatabaseHelper {
 
   static Future<List<Target>> getTargets(int projectId) async {
     final db = await database;
-    final maps = await db.query('targets', where: 'projectId = ?', whereArgs: [projectId]);
+    final maps = await db.query(
+      'targets',
+      where: 'projectId = ?',
+      whereArgs: [projectId],
+    );
     return maps.map((m) => Target.fromMap(m)).toList();
   }
 
@@ -904,7 +1232,12 @@ class DatabaseHelper {
 
   // --- Prompt logs ---
 
-  static Future<int> insertPromptLog(int projectId, int targetId, String prompt, String response) async {
+  static Future<int> insertPromptLog(
+    int projectId,
+    int targetId,
+    String prompt,
+    String response,
+  ) async {
     final db = await database;
     return await db.insert('prompt_logs', {
       'projectId': projectId,
@@ -915,26 +1248,51 @@ class DatabaseHelper {
     });
   }
 
-  static Future<List<Map<String, dynamic>>> getPromptLogs(int projectId, {int? targetId}) async {
+  static Future<List<Map<String, dynamic>>> getPromptLogs(
+    int projectId, {
+    int? targetId,
+  }) async {
     final db = await database;
     if (targetId != null) {
-      return await db.query('prompt_logs', where: 'projectId = ? AND targetId = ?', whereArgs: [projectId, targetId], orderBy: 'timestamp ASC');
+      return await db.query(
+        'prompt_logs',
+        where: 'projectId = ? AND targetId = ?',
+        whereArgs: [projectId, targetId],
+        orderBy: 'timestamp ASC',
+      );
     }
-    return await db.query('prompt_logs', where: 'projectId = ?', whereArgs: [projectId], orderBy: 'timestamp ASC');
+    return await db.query(
+      'prompt_logs',
+      where: 'projectId = ?',
+      whereArgs: [projectId],
+      orderBy: 'timestamp ASC',
+    );
   }
 
   static Future<void> clearPromptLogs(int projectId, {int? targetId}) async {
     final db = await database;
     if (targetId != null) {
-      await db.delete('prompt_logs', where: 'projectId = ? AND targetId = ?', whereArgs: [projectId, targetId]);
+      await db.delete(
+        'prompt_logs',
+        where: 'projectId = ? AND targetId = ?',
+        whereArgs: [projectId, targetId],
+      );
     } else {
-      await db.delete('prompt_logs', where: 'projectId = ?', whereArgs: [projectId]);
+      await db.delete(
+        'prompt_logs',
+        where: 'projectId = ?',
+        whereArgs: [projectId],
+      );
     }
   }
 
   // --- Debug logs ---
 
-  static Future<int> insertDebugLog(int projectId, int targetId, String message) async {
+  static Future<int> insertDebugLog(
+    int projectId,
+    int targetId,
+    String message,
+  ) async {
     final db = await database;
     return await db.insert('debug_logs', {
       'projectId': projectId,
@@ -944,20 +1302,41 @@ class DatabaseHelper {
     });
   }
 
-  static Future<List<Map<String, dynamic>>> getDebugLogs(int projectId, {int? targetId}) async {
+  static Future<List<Map<String, dynamic>>> getDebugLogs(
+    int projectId, {
+    int? targetId,
+  }) async {
     final db = await database;
     if (targetId != null) {
-      return await db.query('debug_logs', where: 'projectId = ? AND targetId = ?', whereArgs: [projectId, targetId], orderBy: 'timestamp ASC');
+      return await db.query(
+        'debug_logs',
+        where: 'projectId = ? AND targetId = ?',
+        whereArgs: [projectId, targetId],
+        orderBy: 'timestamp ASC',
+      );
     }
-    return await db.query('debug_logs', where: 'projectId = ?', whereArgs: [projectId], orderBy: 'timestamp ASC');
+    return await db.query(
+      'debug_logs',
+      where: 'projectId = ?',
+      whereArgs: [projectId],
+      orderBy: 'timestamp ASC',
+    );
   }
 
   static Future<void> clearDebugLogs(int projectId, {int? targetId}) async {
     final db = await database;
     if (targetId != null) {
-      await db.delete('debug_logs', where: 'projectId = ? AND targetId = ?', whereArgs: [projectId, targetId]);
+      await db.delete(
+        'debug_logs',
+        where: 'projectId = ? AND targetId = ?',
+        whereArgs: [projectId, targetId],
+      );
     } else {
-      await db.delete('debug_logs', where: 'projectId = ?', whereArgs: [projectId]);
+      await db.delete(
+        'debug_logs',
+        where: 'projectId = ?',
+        whereArgs: [projectId],
+      );
     }
   }
 
@@ -975,7 +1354,11 @@ class DatabaseHelper {
 
   /// Returns true if this exact (normalized) command has already been run
   /// for the given project+target combination.
-  static Future<bool> wasCommandExecuted(int projectId, int targetId, String command) async {
+  static Future<bool> wasCommandExecuted(
+    int projectId,
+    int targetId,
+    String command,
+  ) async {
     return (await getCachedCommandResult(projectId, targetId, command)) != null;
   }
 
@@ -991,18 +1374,14 @@ class DatabaseHelper {
     final db = await database;
     final normalized = _normalizeForStorage(command);
     // INSERT OR REPLACE so we always have the latest output stored
-    await db.insert(
-      'executed_commands',
-      {
-        'projectId': projectId,
-        'targetId': targetId,
-        'command_normalized': normalized,
-        'output': output,
-        'exit_code': exitCode,
-        'executed_at': DateTime.now().toIso8601String(),
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('executed_commands', {
+      'projectId': projectId,
+      'targetId': targetId,
+      'command_normalized': normalized,
+      'output': output,
+      'exit_code': exitCode,
+      'executed_at': DateTime.now().toIso8601String(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   /// Returns the cached output for a previously executed command, or null if
@@ -1030,7 +1409,10 @@ class DatabaseHelper {
 
   /// Load all previously executed command normalized strings for a project+target.
   /// Used to pre-populate the in-memory dedup set at the start of a run.
-  static Future<Set<String>> getExecutedCommands(int projectId, int targetId) async {
+  static Future<Set<String>> getExecutedCommands(
+    int projectId,
+    int targetId,
+  ) async {
     final db = await database;
     final rows = await db.query(
       'executed_commands',
@@ -1073,14 +1455,21 @@ class DatabaseHelper {
 
   static Future<List<Map<String, dynamic>>> getTokenUsage(int projectId) async {
     final db = await database;
-    return db.query('token_usage',
-        where: 'project_id = ?', whereArgs: [projectId], orderBy: 'recorded_at ASC');
+    return db.query(
+      'token_usage',
+      where: 'project_id = ?',
+      whereArgs: [projectId],
+      orderBy: 'recorded_at ASC',
+    );
   }
 
   static Future<Map<String, int>> getTokenTotals(int projectId) async {
     final db = await database;
-    final rows = await db.query('token_usage',
-        where: 'project_id = ?', whereArgs: [projectId]);
+    final rows = await db.query(
+      'token_usage',
+      where: 'project_id = ?',
+      whereArgs: [projectId],
+    );
     int totalSent = 0, totalReceived = 0;
     int reconSent = 0, reconReceived = 0;
     int analyzeSent = 0, analyzeReceived = 0;
@@ -1092,26 +1481,43 @@ class DatabaseHelper {
       totalSent += s;
       totalReceived += rv;
       switch (r['phase'] as String? ?? '') {
-        case 'recon':   reconSent += s;   reconReceived += rv;
-        case 'analyze': analyzeSent += s; analyzeReceived += rv;
-        case 'execute': executeSent += s; executeReceived += rv;
-        case 'report':  reportSent += s;  reportReceived += rv;
+        case 'recon':
+          reconSent += s;
+          reconReceived += rv;
+        case 'analyze':
+          analyzeSent += s;
+          analyzeReceived += rv;
+        case 'execute':
+          executeSent += s;
+          executeReceived += rv;
+        case 'report':
+          reportSent += s;
+          reportReceived += rv;
       }
     }
     return {
-      'totalSent': totalSent, 'totalReceived': totalReceived,
-      'reconSent': reconSent, 'reconReceived': reconReceived,
-      'analyzeSent': analyzeSent, 'analyzeReceived': analyzeReceived,
-      'executeSent': executeSent, 'executeReceived': executeReceived,
-      'reportSent': reportSent, 'reportReceived': reportReceived,
+      'totalSent': totalSent,
+      'totalReceived': totalReceived,
+      'reconSent': reconSent,
+      'reconReceived': reconReceived,
+      'analyzeSent': analyzeSent,
+      'analyzeReceived': analyzeReceived,
+      'executeSent': executeSent,
+      'executeReceived': executeReceived,
+      'reportSent': reportSent,
+      'reportReceived': reportReceived,
     };
   }
 
   static Future<Map<String, ({int sent, int received})>> getTokenTotalsByTarget(
-      int projectId) async {
+    int projectId,
+  ) async {
     final db = await database;
-    final rows = await db.query('token_usage',
-        where: 'project_id = ?', whereArgs: [projectId]);
+    final rows = await db.query(
+      'token_usage',
+      where: 'project_id = ?',
+      whereArgs: [projectId],
+    );
     final result = <String, ({int sent, int received})>{};
     for (final r in rows) {
       final tid = (r['target_id'] as int? ?? 0).toString();
@@ -1213,14 +1619,18 @@ class DatabaseHelper {
         totalInputChars += inputChars;
         totalOutputChars += outputChars;
         if (perPhase.containsKey(phase)) {
-          perPhase[phase]!['llmCalls'] = (perPhase[phase]!['llmCalls'] ?? 0) + 1;
-          perPhase[phase]!['inputChars'] = (perPhase[phase]!['inputChars'] ?? 0) + inputChars;
-          perPhase[phase]!['outputChars'] = (perPhase[phase]!['outputChars'] ?? 0) + outputChars;
+          perPhase[phase]!['llmCalls'] =
+              (perPhase[phase]!['llmCalls'] ?? 0) + 1;
+          perPhase[phase]!['inputChars'] =
+              (perPhase[phase]!['inputChars'] ?? 0) + inputChars;
+          perPhase[phase]!['outputChars'] =
+              (perPhase[phase]!['outputChars'] ?? 0) + outputChars;
         }
       } else if (eventType == 'command_run') {
         totalCommands++;
         if (perPhase.containsKey(phase)) {
-          perPhase[phase]!['commands'] = (perPhase[phase]!['commands'] ?? 0) + 1;
+          perPhase[phase]!['commands'] =
+              (perPhase[phase]!['commands'] ?? 0) + 1;
         }
       }
     }
@@ -1281,7 +1691,8 @@ class DatabaseHelper {
     // must be done in Dart because the port is extracted from free-text fields.
     final rows = await db.query(
       'vulnerabilities',
-      where: 'projectId = ? AND targetId = ? AND targetAddress = ? AND vulnerabilityType = ?',
+      where:
+          'projectId = ? AND targetId = ? AND targetAddress = ? AND vulnerabilityType = ?',
       whereArgs: [projectId, targetId, targetAddress, vulnerabilityType],
     );
     for (final row in rows) {
@@ -1296,10 +1707,14 @@ class DatabaseHelper {
   /// Higher rank = more valuable to keep.
   static int _statusRank(VulnerabilityStatus s) {
     switch (s) {
-      case VulnerabilityStatus.confirmed:    return 3;
-      case VulnerabilityStatus.undetermined: return 2;
-      case VulnerabilityStatus.notVulnerable: return 1;
-      case VulnerabilityStatus.pending:      return 0;
+      case VulnerabilityStatus.confirmed:
+        return 3;
+      case VulnerabilityStatus.undetermined:
+        return 2;
+      case VulnerabilityStatus.notVulnerable:
+        return 1;
+      case VulnerabilityStatus.pending:
+        return 0;
     }
   }
 
@@ -1334,7 +1749,9 @@ class DatabaseHelper {
 
       // Determine the best finding to keep.
       group.sort((a, b) {
-        final statusCmp = _statusRank(b.status).compareTo(_statusRank(a.status));
+        final statusCmp = _statusRank(
+          b.status,
+        ).compareTo(_statusRank(a.status));
         if (statusCmp != 0) return statusCmp;
         return b.evidence.length.compareTo(a.evidence.length);
       });
@@ -1379,8 +1796,25 @@ class DatabaseHelper {
   /// common stop-words and non-alphabetic characters.
   static Set<String> _tokenizeTitle(String title) {
     const stopWords = {
-      'a', 'an', 'the', 'and', 'or', 'in', 'on', 'at', 'to', 'for',
-      'of', 'with', 'via', 'by', 'is', 'are', 'was', 'be', 'this',
+      'a',
+      'an',
+      'the',
+      'and',
+      'or',
+      'in',
+      'on',
+      'at',
+      'to',
+      'for',
+      'of',
+      'with',
+      'via',
+      'by',
+      'is',
+      'are',
+      'was',
+      'be',
+      'this',
     };
     return title
         .toLowerCase()
@@ -1432,7 +1866,8 @@ class DatabaseHelper {
           final b = group[j];
 
           // Skip if either was already marked for removal.
-          if (replacements.containsKey(a.id) || replacements.containsKey(b.id)) continue;
+          if (replacements.containsKey(a.id) || replacements.containsKey(b.id))
+            continue;
 
           // Only consider findings on the same target.
           if (a.targetId != b.targetId) continue;
@@ -1447,7 +1882,8 @@ class DatabaseHelper {
             final rankB = _statusRank(b.status);
             final Vulnerability keep;
             final Vulnerability discard;
-            if (rankA > rankB || (rankA == rankB && a.evidence.length >= b.evidence.length)) {
+            if (rankA > rankB ||
+                (rankA == rankB && a.evidence.length >= b.evidence.length)) {
               keep = a;
               discard = b;
             } else {
@@ -1471,7 +1907,8 @@ class DatabaseHelper {
     for (final replacement in replacements.entries) {
       var destination = replacement.value;
       final visited = <int>{replacement.key};
-      while (replacements.containsKey(destination) && visited.add(destination)) {
+      while (replacements.containsKey(destination) &&
+          visited.add(destination)) {
         destination = replacements[destination]!;
       }
       resolvedReplacements[replacement.key] = destination;
@@ -1485,11 +1922,7 @@ class DatabaseHelper {
         );
       }
       for (final id in resolvedReplacements.keys) {
-        await txn.delete(
-          'vulnerabilities',
-          where: 'id = ?',
-          whereArgs: [id],
-        );
+        await txn.delete('vulnerabilities', where: 'id = ?', whereArgs: [id]);
       }
     });
     return resolvedReplacements.length;
@@ -1533,12 +1966,17 @@ class DatabaseHelper {
   }
 
   /// Resets all undetermined findings for a target back to pending so they can be re-executed.
-  static Future<int> resetUndeterminedToPending(int projectId, int targetId) async {
+  static Future<int> resetUndeterminedToPending(
+    int projectId,
+    int targetId,
+  ) async {
     final db = await database;
-    return await db.update('vulnerabilities',
-        {'status': 'pending', 'statusReason': null, 'proofOutput': null},
-        where: 'projectId = ? AND targetId = ? AND status = ?',
-        whereArgs: [projectId, targetId, 'undetermined']);
+    return await db.update(
+      'vulnerabilities',
+      {'status': 'pending', 'statusReason': null, 'proofOutput': null},
+      where: 'projectId = ? AND targetId = ? AND status = ?',
+      whereArgs: [projectId, targetId, 'undetermined'],
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -1547,12 +1985,15 @@ class DatabaseHelper {
 
   /// Returns only report-ready findings (reportReady = 1 or null) for export.
   static Future<List<Map<String, dynamic>>> getReportReadyVulnerabilities(
-      int projectId) async {
+    int projectId,
+  ) async {
     final db = await database;
-    return await db.query('vulnerabilities',
-        where: 'projectId = ? AND reportReady != 0',
-        whereArgs: [projectId],
-        orderBy: 'severity DESC, status DESC');
+    return await db.query(
+      'vulnerabilities',
+      where: 'projectId = ? AND reportReady != 0',
+      whereArgs: [projectId],
+      orderBy: 'severity DESC, status DESC',
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -1560,12 +2001,16 @@ class DatabaseHelper {
   // ---------------------------------------------------------------------------
 
   /// Returns all attack chain findings (vulnerabilityType = 'AttackChain') for a project.
-  static Future<List<Map<String, dynamic>>> getAttackChains(int projectId) async {
+  static Future<List<Map<String, dynamic>>> getAttackChains(
+    int projectId,
+  ) async {
     final db = await database;
-    return await db.query('vulnerabilities',
-        where: 'projectId = ? AND vulnerabilityType = ?',
-        whereArgs: [projectId, 'AttackChain'],
-        orderBy: 'severity DESC');
+    return await db.query(
+      'vulnerabilities',
+      where: 'projectId = ? AND vulnerabilityType = ?',
+      whereArgs: [projectId, 'AttackChain'],
+      orderBy: 'severity DESC',
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -1577,7 +2022,9 @@ class DatabaseHelper {
   ///   { 'compositeRemoved': N, 'similarityRemoved': M, 'total': N+M }
   ///
   /// The pass is idempotent — running it twice produces the same result.
-  static Future<Map<String, int>> runFullDeduplicationPass(int projectId) async {
+  static Future<Map<String, int>> runFullDeduplicationPass(
+    int projectId,
+  ) async {
     final compositeRemoved = await runDeduplicationPass(projectId);
     final similarityRemoved = await runTitleSimilarityDedup(projectId);
     debugPrint(

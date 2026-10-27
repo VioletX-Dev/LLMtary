@@ -90,7 +90,11 @@ class AssessmentNarrativeService {
       if (eventType != 'assessment_decision' &&
           eventType != 'assessment_started' &&
           eventType != 'assessment_completed' &&
-          eventType != 'assessment_failed') {
+          eventType != 'assessment_failed' &&
+          eventType != 'candidate_plan_created' &&
+          eventType != 'candidate_requeued' &&
+          eventType != 'candidate_prerequisite_satisfied' &&
+          eventType != 'candidate_closure_finalized') {
         continue;
       }
       final timestamp = DateTime.tryParse(row['timestamp']?.toString() ?? '');
@@ -120,6 +124,11 @@ class AssessmentNarrativeService {
       final evidenceGoal = clean(metadata['evidence_goal']);
       final expectedSuccess = clean(metadata['expected_success_output']);
       final expectedFailure = clean(metadata['expected_failure_output']);
+      final terminalDisposition = clean(
+        metadata['terminal_disposition'],
+        maxLength: 200,
+      );
+      final reasonCode = clean(metadata['reason_code'], maxLength: 200);
 
       entries.add(
         AssessmentTimelineEntry(
@@ -146,7 +155,13 @@ class AssessmentNarrativeService {
             expectedFailure,
           ].where((value) => value.isNotEmpty).join(' — '),
           result: eventType == 'assessment_failed' ? reason : '',
-          disposition: eventType == 'assessment_completed'
+          disposition: eventType == 'candidate_closure_finalized'
+              ? [
+                  terminalDisposition,
+                  reasonCode,
+                  reason,
+                ].where((value) => value.isNotEmpty).join(' — ')
+              : eventType == 'assessment_completed'
               ? [status, reason].where((value) => value.isNotEmpty).join(' — ')
               : '',
           sourceType: eventType,
