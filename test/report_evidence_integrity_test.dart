@@ -120,11 +120,33 @@ void main() {
     expect(decision.proofLog, same(proof));
   });
 
+  test('low confidence does not override direct finding-specific proof', () {
+    final confirmed = finding(
+      id: 21,
+      problem: 'Missing X-Frame-Options Header',
+      status: VulnerabilityStatus.confirmed,
+      confidence: 'LOW',
+      proofCommand: 'curl -sI http://192.0.2.10/',
+      evidence: 'The bounded HTTP response omitted X-Frame-Options.',
+    );
+    final proof = logFor(
+      21,
+      command: 'curl -sI http://192.0.2.10/',
+      output: 'HTTP/1.1 200 OK\nServer: example',
+    );
+
+    final decision = ReportEvidenceQuality.evaluate(confirmed, [proof]);
+
+    expect(decision.reportable, isTrue);
+    expect(decision.proofLog, same(proof));
+  });
+
   test('analysis conclusion cannot substitute for observed proof', () {
     final lockout = finding(
       id: 30,
       problem: 'Missing Account Lockout Protections',
       status: VulnerabilityStatus.confirmed,
+      confidence: 'LOW',
       proofCommand: 'Analysis Conclusion',
       evidence: 'No evidence of an account lockout threshold or duration.',
       type: 'Authentication:Missing Lockout/Rate Limiting',

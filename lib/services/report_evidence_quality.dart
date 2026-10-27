@@ -36,13 +36,6 @@ class ReportEvidenceQuality {
       );
     }
 
-    if (vulnerability.confidence.trim().toUpperCase() == 'LOW') {
-      return const ReportEvidenceDecision(
-        reportable: false,
-        reason: 'Confirmed status is not reportable with low-confidence evidence.',
-      );
-    }
-
     final command = vulnerability.proofCommand?.trim() ?? '';
     final normalizedCommand = _normalizeCommand(command);
     final isInitialEvidence = normalizedCommand == 'initial evidence analysis';
