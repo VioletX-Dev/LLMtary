@@ -49,11 +49,11 @@ class ReportGenerator {
       vulnerabilities.where((v) => decisions[v]!.reportable).toList(),
       decisions,
     );
-    final qualityExceptions = vulnerabilities
-        .where((v) =>
-            v.status == VulnerabilityStatus.confirmed &&
-            !decisions[v]!.reportable)
-        .toList();
+    final qualityExceptions = _markDuplicateQualifiedExceptions(
+      vulnerabilities,
+      qualified,
+      decisions,
+    );
     final assessmentCandidates = confirmedOnly
         ? const <Vulnerability>[]
         : vulnerabilities
@@ -342,11 +342,11 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
       vulnerabilities.where((v) => decisions[v]!.reportable).toList(),
       decisions,
     );
-    final qualityExceptions = vulnerabilities
-        .where((v) =>
-            v.status == VulnerabilityStatus.confirmed &&
-            !decisions[v]!.reportable)
-        .toList();
+    final qualityExceptions = _markDuplicateQualifiedExceptions(
+      vulnerabilities,
+      qualified,
+      decisions,
+    );
     final assessmentCandidates = confirmedOnly
         ? const <Vulnerability>[]
         : vulnerabilities
@@ -620,6 +620,7 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
       vulnerabilities.where((v) => decisions[v]!.reportable).toList(),
       decisions,
     );
+    _markDuplicateQualifiedExceptions(vulnerabilities, qualified, decisions);
     final selected = confirmedOnly
         ? <Vulnerability>[
             ...qualified,
@@ -972,6 +973,29 @@ $rows
     </tbody>
   </table>
 </section>''';
+  }
+
+  static List<Vulnerability> _markDuplicateQualifiedExceptions(
+    List<Vulnerability> vulnerabilities,
+    List<Vulnerability> qualified,
+    Map<Vulnerability, ReportEvidenceDecision> decisions,
+  ) {
+    final retained = qualified.toSet();
+    for (final vulnerability in vulnerabilities) {
+      if (vulnerability.status == VulnerabilityStatus.confirmed &&
+          decisions[vulnerability]!.reportable &&
+          !retained.contains(vulnerability)) {
+        decisions[vulnerability] = const ReportEvidenceDecision(
+          reportable: false,
+          reason: 'Duplicate of another evidence-qualified record.',
+        );
+      }
+    }
+    return vulnerabilities
+        .where((vulnerability) =>
+            vulnerability.status == VulnerabilityStatus.confirmed &&
+            !decisions[vulnerability]!.reportable)
+        .toList();
   }
 
   static List<Vulnerability> _deduplicateQualified(

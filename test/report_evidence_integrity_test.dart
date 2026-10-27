@@ -365,7 +365,7 @@ void main() {
     expect(csv, contains('Missing Account Lockout Protections'));
   });
 
-  test('CSV classifies duplicate qualified records consistently', () {
+  test('duplicate qualified records stay consistent across report formats', () {
     final first = finding(
       id: 80,
       problem: 'Missing X-Frame-Options Header',
@@ -399,9 +399,24 @@ void main() {
       vulnerabilities: [first, duplicate],
       commandLogs: logs,
     );
+    final html = ReportGenerator.generateHtml(
+      project: project,
+      targets: const [],
+      vulnerabilities: [first, duplicate],
+      commandLogs: logs,
+    );
+    final markdown = ReportGenerator.generateMarkdown(
+      project: project,
+      targets: const [],
+      vulnerabilities: [first, duplicate],
+      commandLogs: logs,
+    );
 
     expect(RegExp('VERIFIED FINDING').allMatches(csv).length, 1);
     expect(RegExp('EVIDENCE QUALITY EXCEPTION').allMatches(csv).length, 1);
     expect(csv, contains('Duplicate of another evidence-qualified record'));
+    expect(RegExp('class="finding-card"').allMatches(html).length, 1);
+    expect(html, contains('Duplicate of another evidence-qualified record'));
+    expect(markdown, contains('Duplicate of another evidence-qualified record'));
   });
 }
