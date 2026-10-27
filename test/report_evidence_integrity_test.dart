@@ -364,4 +364,44 @@ void main() {
     expect(csv, contains('EVIDENCE QUALITY EXCEPTION'));
     expect(csv, contains('Missing Account Lockout Protections'));
   });
+
+  test('CSV classifies duplicate qualified records consistently', () {
+    final first = finding(
+      id: 80,
+      problem: 'Missing X-Frame-Options Header',
+      status: VulnerabilityStatus.confirmed,
+      confidence: 'LOW',
+      proofCommand: 'curl -sI http://192.0.2.10/',
+      evidence: 'The bounded HTTP response omitted X-Frame-Options.',
+    );
+    final duplicate = finding(
+      id: 81,
+      problem: 'Missing X-Frame-Options Header',
+      status: VulnerabilityStatus.confirmed,
+      confidence: 'LOW',
+      proofCommand: 'curl -sI http://192.0.2.10/',
+      evidence: 'The bounded HTTP response omitted X-Frame-Options.',
+    );
+    final logs = [
+      logFor(
+        80,
+        command: 'curl -sI http://192.0.2.10/',
+        output: 'HTTP/1.1 200 OK\nServer: example',
+      ),
+      logFor(
+        81,
+        command: 'curl -sI http://192.0.2.10/',
+        output: 'HTTP/1.1 200 OK\nServer: example',
+      ),
+    ];
+
+    final csv = ReportGenerator.generateCsv(
+      vulnerabilities: [first, duplicate],
+      commandLogs: logs,
+    );
+
+    expect(RegExp('VERIFIED FINDING').allMatches(csv).length, 1);
+    expect(RegExp('EVIDENCE QUALITY EXCEPTION').allMatches(csv).length, 1);
+    expect(csv, contains('Duplicate of another evidence-qualified record'));
+  });
 }

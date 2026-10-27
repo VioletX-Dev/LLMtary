@@ -634,11 +634,13 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     for (int i = 0; i < sorted.length; i++) {
       final v = sorted[i];
       final decision = decisions[v]!;
-      final proofLog = decision.reportable ? decision.proofLog : null;
+      final isVerified = decision.reportable && qualified.contains(v);
+      final isDuplicate = decision.reportable && !isVerified;
+      final proofLog = isVerified ? decision.proofLog : null;
       final rawOut = proofLog?.output ?? '';
       final proofOutput = rawOut.replaceAll('\n', ' | ')
           .substring(0, rawOut.length > 1000 ? 1000 : rawOut.length);
-      final classification = decision.reportable
+      final classification = isVerified
           ? 'VERIFIED FINDING'
           : v.status == VulnerabilityStatus.confirmed
               ? 'EVIDENCE QUALITY EXCEPTION'
@@ -647,19 +649,22 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
                   : v.status == VulnerabilityStatus.undetermined
                       ? 'INCONCLUSIVE CANDIDATE'
                       : 'PENDING CANDIDATE';
+      final evidenceReason = isDuplicate
+          ? 'Duplicate of another evidence-qualified record.'
+          : decision.reason;
       buf.writeln([
         i + 1,
         _csvEsc(v.problem),
         _csvEsc(v.targetAddress),
         _csvEsc(v.cve),
-        decision.reportable ? v.severity : '',
+        isVerified ? v.severity : '',
         _statusLabel(v.status),
         classification,
-        _csvEsc(decision.reason),
+        _csvEsc(evidenceReason),
         _csvEsc(v.statusReason),
         _csvEsc(v.vulnerabilityType),
-        decision.reportable ? _csvEsc(_cvssVector(v)) : '',
-        decision.reportable ? _csvEsc(v.recommendation) : '',
+        isVerified ? _csvEsc(_cvssVector(v)) : '',
+        isVerified ? _csvEsc(v.recommendation) : '',
         _csvEsc(proofOutput),
       ].join(','));
     }
