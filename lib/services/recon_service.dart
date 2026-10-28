@@ -332,6 +332,19 @@ class ReconService {
     final trimmed = input.trim();
     if (trimmed.isEmpty) return [];
 
+    // Split lists before parsing individual entries so every CIDR in a
+    // multiline/comma-separated scope is expanded. Parsing the whole string
+    // first leaves literal CIDRs in the work queue; the host pre-sweep then
+    // returns individual IPs that have no matching Target checkpoint.
+    if (trimmed.contains(',') || trimmed.contains('\n')) {
+      return trimmed
+          .split(RegExp(r'[,\n]'))
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .expand(parseTargetInput)
+          .toList();
+    }
+
     final cidrMatch =
         RegExp(r'^(\d{1,3}\.\d{1,3}\.\d{1,3})\.(\d{1,3})/(\d+)$').firstMatch(trimmed);
     if (cidrMatch != null) {
@@ -344,14 +357,6 @@ class ReconService {
         return List.generate(size, (i) => '$prefix.${hostStart + i + 1}');
       }
       return [trimmed];
-    }
-
-    if (trimmed.contains(',') || trimmed.contains('\n')) {
-      return trimmed
-          .split(RegExp(r'[,\n]'))
-          .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
-          .toList();
     }
 
     return [trimmed];

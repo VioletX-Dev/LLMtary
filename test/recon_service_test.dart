@@ -244,6 +244,20 @@ _dmarc.example.com. TXT "v=DMARC1; p=reject; rua=mailto:dmarc@example.com"
       expect(targets.length, 3);
     });
 
+    test('parseTargetInput expands every CIDR in a multiline scope', () {
+      final targets = ReconService.parseTargetInput(
+        '172.17.2.0/24\n172.16.2.0/24',
+      );
+
+      expect(targets.length, 508);
+      expect(targets.first, '172.17.2.1');
+      expect(targets[253], '172.17.2.254');
+      expect(targets[254], '172.16.2.1');
+      expect(targets.last, '172.16.2.254');
+      expect(targets, isNot(contains('172.17.2.0/24')));
+      expect(targets, isNot(contains('172.16.2.0/24')));
+    });
+
     test('parseTargetInput handles single target', () {
       final targets = ReconService.parseTargetInput('example.com');
       expect(targets, ['example.com']);
