@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:llmtary/models/candidate_closure.dart';
+import 'package:llmtary/models/controlled_exploitation.dart';
 import 'package:llmtary/models/human_validation_work_item.dart';
 import 'package:llmtary/services/candidate_closure_repository.dart';
 
@@ -90,4 +91,32 @@ void main() {
       await db.close();
     },
   );
+
+  test('repository persists controlled proof and cleanup evidence', () async {
+    final db = await openDatabase(inMemoryDatabasePath, singleInstance: false);
+    await CandidateClosureRepository.migrate(db);
+    final repository = CandidateClosureRepository(db);
+    final record = ControlledExploitationRecord(
+      vulnerabilityId: 4,
+      projectId: 2,
+      eligibility: ExploitationEligibility.safeProofEligible,
+      proofStatus: ControlledProofStatus.proven,
+      proofType: ControlledProofType.protocolBehavior,
+      methodId: 'protocol-behavior-proof',
+      accessLevel: 'network protocol only',
+      evidenceReferences: const ['/evidence/proof.txt'],
+      cleanupStatus: CleanupStatus.verified,
+      cleanupActions: const ['verify no session remained'],
+      cleanupEvidenceReferences: const ['/evidence/cleanup.txt'],
+      startedAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2026),
+    );
+
+    await repository.upsertControlledExploitation(record);
+    final loaded = await repository.getControlledExploitations(2);
+
+    expect(loaded.single.vulnerabilityId, 4);
+    expect(loaded.single.isComplete, isTrue);
+    await db.close();
+  });
 }

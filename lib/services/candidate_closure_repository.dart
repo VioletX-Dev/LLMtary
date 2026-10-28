@@ -1,6 +1,7 @@
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../models/candidate_closure.dart';
+import '../models/controlled_exploitation.dart';
 import '../models/human_validation_work_item.dart';
 
 class CandidateClosureRepository {
@@ -57,6 +58,31 @@ class CandidateClosureRepository {
       CREATE INDEX IF NOT EXISTS idx_human_validation_project
       ON human_validation_work_items(project_id, status)
     ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS controlled_exploitations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        vulnerability_id INTEGER NOT NULL UNIQUE,
+        project_id INTEGER NOT NULL,
+        eligibility TEXT NOT NULL,
+        proof_status TEXT NOT NULL,
+        proof_type TEXT NOT NULL,
+        method_id TEXT NOT NULL DEFAULT '',
+        access_level TEXT NOT NULL DEFAULT '',
+        evidence_references TEXT NOT NULL DEFAULT '[]',
+        cleanup_status TEXT NOT NULL,
+        cleanup_actions TEXT NOT NULL DEFAULT '[]',
+        cleanup_evidence_references TEXT NOT NULL DEFAULT '[]',
+        state_changed INTEGER NOT NULL DEFAULT 0,
+        interactive_session_opened INTEGER NOT NULL DEFAULT 0,
+        persistence_created INTEGER NOT NULL DEFAULT 0,
+        started_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_controlled_exploitations_project
+      ON controlled_exploitations(project_id, proof_status, cleanup_status)
+    ''');
     // Deliberately no legacy backfill here. A migration cannot infer why an
     // old candidate remained unresolved without the bounded attempt ledger.
   }
@@ -106,5 +132,30 @@ class CandidateClosureRepository {
       orderBy: 'updated_at ASC, id ASC',
     );
     return rows.map(HumanValidationWorkItem.fromMap).toList(growable: false);
+  }
+
+  Future<void> upsertControlledExploitation(
+    ControlledExploitationRecord record,
+  ) async {
+    final map = Map<String, dynamic>.from(record.toMap())..remove('id');
+    await db.insert(
+      'controlled_exploitations',
+      map,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<ControlledExploitationRecord>> getControlledExploitations(
+    int projectId,
+  ) async {
+    final rows = await db.query(
+      'controlled_exploitations',
+      where: 'project_id = ?',
+      whereArgs: [projectId],
+      orderBy: 'vulnerability_id ASC',
+    );
+    return rows
+        .map(ControlledExploitationRecord.fromMap)
+        .toList(growable: false);
   }
 }

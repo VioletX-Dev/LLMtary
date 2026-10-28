@@ -17,6 +17,7 @@ enum ClaimFamily {
   ssrf,
   accountSecurity,
   icsObservation,
+  commandExecution,
   generic,
 }
 
@@ -113,6 +114,11 @@ class EvidenceContractRegistry {
         text.contains('enumeration') ||
         text.contains('password policy')) {
       return _account;
+    }
+    if (text.contains('command injection') ||
+        text.contains('remote code execution') ||
+        RegExp(r'\brce\b').hasMatch(text)) {
+      return _commandExecution;
     }
     if (text.contains('industrial control') ||
         text.contains('ics') ||
@@ -354,6 +360,28 @@ class EvidenceContractRegistry {
       'load or availability testing',
     ],
     evaluator: (_) => EvidenceOutcome.insufficient,
+  );
+  static final _commandExecution = EvidenceContract(
+    family: ClaimFamily.commandExecution,
+    prerequisites: const [
+      'exact in-scope input location',
+      'explicit active-testing authorization',
+      'exact-command operator approval',
+    ],
+    safeMethodIds: const ['one-shot-benign-marker'],
+    prohibitedMethods: const [
+      'interactive or reverse shell',
+      'payload deployment',
+      'listener or callback',
+      'persistence',
+      'privilege elevation',
+    ],
+    evaluator: (o) =>
+        o.methodId == 'one-shot-benign-marker' &&
+            o.exitCode == 0 &&
+            RegExp(r'LLMTARY_SAFE_MARKER_[A-Za-z0-9_-]+').hasMatch(o.output)
+        ? EvidenceOutcome.supportsClaim
+        : EvidenceOutcome.insufficient,
   );
   static final _generic = EvidenceContract(
     family: ClaimFamily.generic,

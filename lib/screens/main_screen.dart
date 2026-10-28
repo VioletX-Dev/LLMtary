@@ -2175,10 +2175,17 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
     final closures = projectId == null
         ? const []
         : await DatabaseHelper.getCandidateClosures(projectId);
+    final controlledExploitations = projectId == null
+        ? const []
+        : await DatabaseHelper.getControlledExploitations(projectId);
     final closeout = CandidateCloseoutService.validate(
       vulnerabilities: appState.vulnerabilities,
       closuresByVulnerabilityId: {
         for (final closure in closures) closure.vulnerabilityId: closure,
+      },
+      controlledExploitationsByVulnerabilityId: {
+        for (final exploitation in controlledExploitations)
+          exploitation.vulnerabilityId: exploitation,
       },
     );
     if (closeout.ready) {

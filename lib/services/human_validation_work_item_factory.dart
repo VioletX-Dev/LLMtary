@@ -1,4 +1,5 @@
 import '../models/candidate_closure.dart';
+import '../models/controlled_exploitation.dart';
 import '../models/human_validation_work_item.dart';
 import '../models/vulnerability.dart';
 
@@ -24,6 +25,34 @@ class HumanValidationWorkItemFactory {
       safetyNotes: _safetyNotes(closure.disposition),
       owner: closure.owner,
       status: _status(closure.disposition),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    );
+  }
+
+  static HumanValidationWorkItem? fromControlledExploitation(
+    Vulnerability candidate,
+    ControlledExploitationRecord record, {
+    DateTime? now,
+  }) {
+    if (record.eligibility != ExploitationEligibility.humanValidationRequired) {
+      return null;
+    }
+    final timestamp = (now ?? DateTime.now()).toUtc();
+    return HumanValidationWorkItem(
+      id: 'controlled-${record.vulnerabilityId}-human-validation',
+      projectId: record.projectId,
+      vulnerabilityId: record.vulnerabilityId,
+      title: 'Human-controlled exploitation review: ${candidate.problem}',
+      authorizationRequired: record.accessLevel,
+      evidenceRequested: const [
+        'written authorization for the exact human-led procedure',
+        'sanitized proof and cleanup evidence references',
+      ],
+      safetyNotes:
+          'No shells, persistence, privilege elevation, lateral movement, credential collection, destructive activity, or MFA bypass. Return only sanitized evidence references.',
+      owner: WorkOwner.operator,
+      status: HumanValidationStatus.waitingAuthorization,
       createdAt: timestamp,
       updatedAt: timestamp,
     );

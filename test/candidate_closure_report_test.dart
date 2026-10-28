@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llmtary/models/candidate_closure.dart';
+import 'package:llmtary/models/controlled_exploitation.dart';
 import 'package:llmtary/models/project.dart';
 import 'package:llmtary/models/vulnerability.dart';
 import 'package:llmtary/services/report_generator.dart';
@@ -38,12 +39,25 @@ void main() {
         startedAt: DateTime.utc(2026),
         updatedAt: DateTime.utc(2026),
       );
+      final controlled = ControlledExploitationRecord(
+        vulnerabilityId: 7,
+        projectId: 1,
+        eligibility: ExploitationEligibility.humanValidationRequired,
+        proofStatus: ControlledProofStatus.blocked,
+        proofType: ControlledProofType.none,
+        methodId: '',
+        accessLevel: 'Human validation required beyond the automated boundary.',
+        cleanupStatus: CleanupStatus.notRequired,
+        startedAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+      );
 
       final html = ReportGenerator.generateHtml(
         project: project,
         targets: const [],
         vulnerabilities: [vulnerability],
         closures: [closure],
+        controlledExploitations: [controlled],
         confirmedOnly: false,
       );
       final markdown = ReportGenerator.generateMarkdown(
@@ -51,17 +65,21 @@ void main() {
         targets: const [],
         vulnerabilities: [vulnerability],
         closures: [closure],
+        controlledExploitations: [controlled],
         confirmedOnly: false,
       );
       final csv = ReportGenerator.generateCsv(
         vulnerabilities: [vulnerability],
         closures: [closure],
+        controlledExploitations: [controlled],
       );
       for (final report in [html, markdown, csv]) {
         expect(report, contains('blockedMfaOperatorAction'));
         expect(report, contains('manualMfaRequired'));
         expect(report, contains('Complete MFA on the appliance'));
         expect(report, contains('100%'));
+        expect(report, contains('humanValidationRequired'));
+        expect(report, contains('blocked'));
       }
     },
   );

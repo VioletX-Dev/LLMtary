@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../database/database_helper.dart';
 import '../models/candidate_closure.dart';
+import '../models/controlled_exploitation.dart';
 import '../models/human_validation_work_item.dart';
 import '../services/assessment_session_checkpoint.dart';
 import 'candidate_closeout_panel.dart';
@@ -24,6 +25,7 @@ class CandidateCloseoutLoader extends StatefulWidget {
 
 class _CandidateCloseoutLoaderState extends State<CandidateCloseoutLoader> {
   List<CandidateClosure> _closures = const [];
+  List<ControlledExploitationRecord> _controlledExploitations = const [];
   List<HumanValidationWorkItem> _workItems = const [];
   bool _loading = true;
 
@@ -40,9 +42,12 @@ class _CandidateCloseoutLoaderState extends State<CandidateCloseoutLoader> {
     final workItems = await DatabaseHelper.getHumanValidationWorkItems(
       widget.projectId,
     );
+    final controlledExploitations =
+        await DatabaseHelper.getControlledExploitations(widget.projectId);
     if (!mounted) return;
     setState(() {
       _closures = closures;
+      _controlledExploitations = controlledExploitations;
       _workItems = workItems;
       _loading = false;
     });
@@ -150,6 +155,7 @@ class _CandidateCloseoutLoaderState extends State<CandidateCloseoutLoader> {
     return CandidateCloseoutPanel(
       totalCandidates: widget.totalCandidates,
       closures: _closures,
+      controlledExploitations: _controlledExploitations,
       workItems: _workItems,
       onRequeue: _requeue,
       onRecordManualMfa: _recordManualMfa,

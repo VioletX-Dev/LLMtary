@@ -13,6 +13,7 @@ import '../models/evidence_artifact.dart';
 import '../models/validation_run.dart';
 import '../models/cloud_assist.dart';
 import '../models/candidate_closure.dart';
+import '../models/controlled_exploitation.dart';
 import '../models/human_validation_work_item.dart';
 import '../services/evidence_repository.dart';
 import '../services/validation_run_repository.dart';
@@ -37,7 +38,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 28,
+      version: 29,
       singleInstance: true,
       onConfigure: (db) async {
         await db.execute('PRAGMA busy_timeout=5000');
@@ -581,7 +582,7 @@ class DatabaseHelper {
         if (oldVersion < 27) {
           await migrateCloudAssist(db);
         }
-        if (oldVersion < 28) {
+        if (oldVersion < 29) {
           await CandidateClosureRepository.migrate(db);
         }
       },
@@ -721,6 +722,20 @@ class DatabaseHelper {
   ) async {
     final db = await database;
     return CandidateClosureRepository(db).getWorkItems(projectId);
+  }
+
+  static Future<void> upsertControlledExploitation(
+    ControlledExploitationRecord record,
+  ) async {
+    final db = await database;
+    await CandidateClosureRepository(db).upsertControlledExploitation(record);
+  }
+
+  static Future<List<ControlledExploitationRecord>> getControlledExploitations(
+    int projectId,
+  ) async {
+    final db = await database;
+    return CandidateClosureRepository(db).getControlledExploitations(projectId);
   }
 
   static Future<int> insertValidationRun(ValidationRun run) async {

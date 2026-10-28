@@ -1,4 +1,5 @@
 import '../models/candidate_closure.dart';
+import '../models/controlled_exploitation.dart';
 import '../models/vulnerability.dart';
 
 class CandidateCloseoutResult {
@@ -26,6 +27,8 @@ class CandidateCloseoutService {
   static CandidateCloseoutResult validate({
     required List<Vulnerability> vulnerabilities,
     required Map<int, CandidateClosure> closuresByVulnerabilityId,
+    Map<int, ControlledExploitationRecord>?
+    controlledExploitationsByVulnerabilityId,
   }) {
     final unresolved = <int>[];
     final errors = <String>[];
@@ -54,6 +57,17 @@ class CandidateCloseoutService {
           'Candidate $id is blocked but has no prerequisite and next action.',
         );
         continue;
+      }
+      if (controlledExploitationsByVulnerabilityId != null &&
+          closure.disposition == CandidateDisposition.verifiedFinding) {
+        final exploitation = controlledExploitationsByVulnerabilityId[id];
+        if (exploitation == null || !exploitation.isComplete) {
+          unresolved.add(id);
+          errors.add(
+            'Candidate $id has no complete controlled-exploitation disposition and cleanup record.',
+          );
+          continue;
+        }
       }
       closed++;
     }

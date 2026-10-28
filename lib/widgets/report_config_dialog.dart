@@ -5,6 +5,7 @@ import '../models/command_log.dart';
 import '../models/evidence_artifact.dart';
 import '../models/report_evidence.dart';
 import '../models/candidate_closure.dart';
+import '../models/controlled_exploitation.dart';
 import '../services/evidence_storage_service.dart';
 import '../services/report_content_service.dart';
 import '../services/report_generator.dart';
@@ -254,6 +255,9 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
       final closures = updatedProject.id != null
           ? await DatabaseHelper.getCandidateClosures(updatedProject.id!)
           : const <CandidateClosure>[];
+      final controlledExploitations = updatedProject.id != null
+          ? await DatabaseHelper.getControlledExploitations(updatedProject.id!)
+          : const <ControlledExploitationRecord>[];
       final evidenceArtifacts = updatedProject.id != null
           ? await DatabaseHelper.getProjectEvidence(updatedProject.id!)
           : const <EvidenceArtifact>[];
@@ -295,6 +299,7 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
           confirmedOnly: confirmedOnly,
           visualEvidence: visualEvidence,
           closures: closures,
+          controlledExploitations: controlledExploitations,
         ),
         'md' => ReportGenerator.generateMarkdown(
           project: updatedProject,
@@ -310,12 +315,14 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
           confirmedOnly: confirmedOnly,
           visualEvidence: visualEvidence,
           closures: closures,
+          controlledExploitations: controlledExploitations,
         ),
         'csv' => ReportGenerator.generateCsv(
           vulnerabilities: widget.appState.vulnerabilities,
           commandLogs: commandLogs,
           confirmedOnly: false,
           closures: closures,
+          controlledExploitations: controlledExploitations,
         ),
         _ => '',
       };

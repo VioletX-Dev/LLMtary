@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llmtary/models/candidate_closure.dart';
+import 'package:llmtary/models/controlled_exploitation.dart';
 import 'package:llmtary/models/human_validation_work_item.dart';
 import 'package:llmtary/models/vulnerability.dart';
 import 'package:llmtary/services/candidate_admission_service.dart';
@@ -114,6 +115,33 @@ void main() {
         EvidenceOutcome.supportsClaim,
       );
     });
+
+    test('one-shot command marker supports execution without a shell', () {
+      final contract = EvidenceContractRegistry.forCandidate(
+        candidate('Remote Command Injection'),
+      );
+      expect(contract.family, ClaimFamily.commandExecution);
+      expect(
+        contract.evaluate(
+          const EvidenceObservation(
+            methodId: 'one-shot-benign-marker',
+            output: 'LLMTARY_SAFE_MARKER_7',
+            exitCode: 0,
+          ),
+        ),
+        EvidenceOutcome.supportsClaim,
+      );
+      expect(
+        contract.evaluate(
+          const EvidenceObservation(
+            methodId: 'nmap-service-discovery',
+            output: '80/tcp open',
+            exitCode: 0,
+          ),
+        ),
+        EvidenceOutcome.insufficient,
+      );
+    });
   });
 
   group('bounded adaptive planner', () {
@@ -185,6 +213,49 @@ void main() {
       expect(result.ready, isTrue);
       expect(result.coveragePercent, 100);
     });
+
+    test(
+      'verified finding requires an exploitation disposition in strict mode',
+      () {
+        final vuln = candidate('Missing X-Frame-Options Header')
+          ..status = VulnerabilityStatus.confirmed;
+        final closure = CandidateClosure(
+          vulnerabilityId: 7,
+          projectId: 1,
+          disposition: CandidateDisposition.verifiedFinding,
+          reasonCode: ClosureReasonCode.directEvidenceVerified,
+          explanation: 'Direct evidence verified the finding.',
+          startedAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        );
+
+        final missing = CandidateCloseoutService.validate(
+          vulnerabilities: [vuln],
+          closuresByVulnerabilityId: {7: closure},
+          controlledExploitationsByVulnerabilityId: const {},
+        );
+        expect(missing.ready, isFalse);
+
+        final notApplicable = ControlledExploitationRecord(
+          vulnerabilityId: 7,
+          projectId: 1,
+          eligibility: ExploitationEligibility.notApplicable,
+          proofStatus: ControlledProofStatus.blocked,
+          proofType: ControlledProofType.none,
+          methodId: '',
+          accessLevel: 'No safe foothold path for a response-header finding.',
+          cleanupStatus: CleanupStatus.notRequired,
+          startedAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        );
+        final complete = CandidateCloseoutService.validate(
+          vulnerabilities: [vuln],
+          closuresByVulnerabilityId: {7: closure},
+          controlledExploitationsByVulnerabilityId: {7: notApplicable},
+        );
+        expect(complete.ready, isTrue);
+      },
+    );
   });
 
   test('human validation cards persist references but redact secrets', () {

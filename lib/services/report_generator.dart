@@ -6,6 +6,7 @@ import '../models/command_log.dart';
 import '../models/llm_settings.dart';
 import '../models/report_evidence.dart';
 import '../models/candidate_closure.dart';
+import '../models/controlled_exploitation.dart';
 import '../utils/cvss_calculator.dart';
 import 'assessment_narrative_service.dart';
 import 'report_evidence_quality.dart';
@@ -35,6 +36,7 @@ class ReportGenerator {
     bool confirmedOnly = true,
     List<ReportEvidence> visualEvidence = const [],
     List<CandidateClosure> closures = const [],
+    List<ControlledExploitationRecord> controlledExploitations = const [],
   }) {
     final decisions = <Vulnerability, ReportEvidenceDecision>{
       for (final vulnerability in vulnerabilities)
@@ -296,6 +298,7 @@ ${(assessmentNarrative != null && assessmentNarrative.isNotEmpty) || assessmentT
 ${qualityExceptions.isNotEmpty ? _qualityExceptionsSection(qualityExceptions, decisions) : ''}
 ${assessmentCandidates.isNotEmpty ? _assessmentCandidatesSection(assessmentCandidates) : ''}
 ${_closureCoverageHtml(vulnerabilities, closures)}
+${_controlledExploitationHtml(vulnerabilities, controlledExploitations)}
 
 ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
 
@@ -333,6 +336,7 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     bool confirmedOnly = true,
     List<ReportEvidence> visualEvidence = const [],
     List<CandidateClosure> closures = const [],
+    List<ControlledExploitationRecord> controlledExploitations = const [],
   }) {
     final decisions = <Vulnerability, ReportEvidenceDecision>{
       for (final vulnerability in vulnerabilities)
@@ -638,6 +642,9 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     }
 
     buf.write(_closureCoverageMarkdown(vulnerabilities, closures));
+    buf.write(
+      _controlledExploitationMarkdown(vulnerabilities, controlledExploitations),
+    );
 
     buf.writeln('## Conclusion');
     buf.writeln();
@@ -661,6 +668,7 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     List<CommandLog> commandLogs = const [],
     bool confirmedOnly = false,
     List<CandidateClosure> closures = const [],
+    List<ControlledExploitationRecord> controlledExploitations = const [],
   }) {
     final decisions = <Vulnerability, ReportEvidenceDecision>{
       for (final vulnerability in vulnerabilities)
@@ -689,6 +697,10 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     final closureById = <int, CandidateClosure>{
       for (final closure in closures) closure.vulnerabilityId: closure,
     };
+    final controlledById = <int, ControlledExploitationRecord>{
+      for (final record in controlledExploitations)
+        record.vulnerabilityId: record,
+    };
     final closureCoverage = vulnerabilities.isEmpty
         ? 100
         : ((vulnerabilities
@@ -702,7 +714,7 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
                   100)
               .round();
     buf.writeln(
-      'ID,Title,Target,CVE,Severity,Status,Report Classification,Evidence Quality Reason,Status Reason,Type,CVSS Vector,Recommendation,Verified Evidence Output,Terminal Disposition,Closure Reason,Closure Explanation,Attempted Methods,Remaining Prerequisites,Next Action,Owner,Closure Coverage',
+      'ID,Title,Target,CVE,Severity,Status,Report Classification,Evidence Quality Reason,Status Reason,Type,CVSS Vector,Recommendation,Verified Evidence Output,Terminal Disposition,Closure Reason,Closure Explanation,Attempted Methods,Remaining Prerequisites,Next Action,Owner,Closure Coverage,Exploitation Eligibility,Proof Status,Proof Type,Proof Method,Access Level,Cleanup Status,Cleanup Actions,Cleanup Evidence',
     );
     for (int i = 0; i < sorted.length; i++) {
       final v = sorted[i];
@@ -727,6 +739,7 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
           ? 'Duplicate of another evidence-qualified record.'
           : decision.reason;
       final closure = v.id == null ? null : closureById[v.id!];
+      final controlled = v.id == null ? null : controlledById[v.id!];
       buf.writeln(
         [
           i + 1,
@@ -750,6 +763,14 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
           _csvEsc(closure?.nextAction ?? ''),
           closure?.owner.name ?? '',
           '$closureCoverage%',
+          controlled?.eligibility.name ?? '',
+          controlled?.proofStatus.name ?? '',
+          controlled?.proofType.name ?? '',
+          _csvEsc(controlled?.methodId ?? ''),
+          _csvEsc(controlled?.accessLevel ?? ''),
+          controlled?.cleanupStatus.name ?? '',
+          _csvEsc(controlled?.cleanupActions.join(' | ') ?? ''),
+          _csvEsc(controlled?.cleanupEvidenceReferences.join(' | ') ?? ''),
         ].join(','),
       );
     }
@@ -818,6 +839,57 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
       final closure = vulnerability.id == null ? null : byId[vulnerability.id!];
       buffer.writeln(
         '| ${_markdownCell(vulnerability.problem)} | ${_markdownCell(vulnerability.targetAddress)} | ${closure?.disposition.name ?? 'UNRESOLVED'} | ${closure?.reasonCode.name ?? 'missingClosure'} | ${_markdownCell(closure?.attemptedMethods.join('; ') ?? '')} | ${_markdownCell(closure?.remainingPrerequisites.join('; ') ?? '')} | ${_markdownCell(closure?.nextAction ?? 'Closure review required')} | ${closure?.owner.name ?? 'joint'} |',
+      );
+    }
+    buffer.writeln();
+    return buffer.toString();
+  }
+
+  static String _controlledExploitationHtml(
+    List<Vulnerability> vulnerabilities,
+    List<ControlledExploitationRecord> records,
+  ) {
+    if (records.isEmpty) return '';
+    final byId = <int, ControlledExploitationRecord>{
+      for (final record in records) record.vulnerabilityId: record,
+    };
+    final rows = vulnerabilities.map((vulnerability) {
+      final record = vulnerability.id == null ? null : byId[vulnerability.id!];
+      if (record == null) {
+        return '<tr><td>${_esc(vulnerability.problem)}</td><td>${_esc(vulnerability.targetAddress)}</td><td>notAssessed</td><td>notAttempted</td><td>none</td><td>notRequired</td><td>Exploitation disposition required</td></tr>';
+      }
+      return '<tr><td>${_esc(vulnerability.problem)}</td><td>${_esc(vulnerability.targetAddress)}</td><td>${_esc(record.eligibility.name)}</td><td>${_esc(record.proofStatus.name)}</td><td>${_esc(record.proofType.name)}</td><td>${_esc(record.cleanupStatus.name)}</td><td>${_esc(record.accessLevel)}</td></tr>';
+    }).join();
+    return '''<section id="controlled-exploitation">
+  <h2>Controlled Exploitation and Cleanup</h2>
+  <p>A verified weakness is not automatically a foothold. Proof is limited to bounded, non-interactive methods; shells, persistence, privilege elevation, lateral movement, credential collection, and destructive activity remain prohibited.</p>
+  <table><thead><tr><th>Candidate</th><th>Target</th><th>Eligibility</th><th>Proof status</th><th>Proof type</th><th>Cleanup</th><th>Access level / rationale</th></tr></thead><tbody>$rows</tbody></table>
+</section>''';
+  }
+
+  static String _controlledExploitationMarkdown(
+    List<Vulnerability> vulnerabilities,
+    List<ControlledExploitationRecord> records,
+  ) {
+    if (records.isEmpty) return '';
+    final byId = <int, ControlledExploitationRecord>{
+      for (final record in records) record.vulnerabilityId: record,
+    };
+    final buffer = StringBuffer()
+      ..writeln('## Controlled Exploitation and Cleanup')
+      ..writeln()
+      ..writeln(
+        'A verified weakness is not automatically a foothold. Proof is bounded and non-interactive; prohibited post-exploitation actions are never implied.',
+      )
+      ..writeln()
+      ..writeln(
+        '| Candidate | Target | Eligibility | Proof status | Proof type | Cleanup | Access level / rationale |',
+      )
+      ..writeln('|---|---|---|---|---|---|---|');
+    for (final vulnerability in vulnerabilities) {
+      final record = vulnerability.id == null ? null : byId[vulnerability.id!];
+      buffer.writeln(
+        '| ${_markdownCell(vulnerability.problem)} | ${_markdownCell(vulnerability.targetAddress)} | ${record?.eligibility.name ?? 'notAssessed'} | ${record?.proofStatus.name ?? 'notAttempted'} | ${record?.proofType.name ?? 'none'} | ${record?.cleanupStatus.name ?? 'notRequired'} | ${_markdownCell(record?.accessLevel ?? 'Exploitation disposition required')} |',
       );
     }
     buffer.writeln();

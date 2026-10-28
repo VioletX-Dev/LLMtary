@@ -264,6 +264,14 @@ class _SafeMethodClassifier {
       case ClaimFamily.ssrf:
       case ClaimFamily.accountSecurity:
       case ClaimFamily.icsObservation:
+        return null;
+      case ClaimFamily.commandExecution:
+        final isBoundedHttpRequest = RegExp(
+          r'^(?:timeout\s+\d+\s+)?curl\s',
+        ).hasMatch(value);
+        return isBoundedHttpRequest && value.contains('llmtary_safe_marker_')
+            ? 'one-shot-benign-marker'
+            : null;
       case ClaimFamily.generic:
         return null;
     }

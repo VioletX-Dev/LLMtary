@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llmtary/models/candidate_closure.dart';
+import 'package:llmtary/models/controlled_exploitation.dart';
 import 'package:llmtary/widgets/candidate_closeout_panel.dart';
 
 void main() {
@@ -19,6 +20,18 @@ void main() {
       startedAt: DateTime.utc(2026),
       updatedAt: DateTime.utc(2026),
     );
+    final controlled = ControlledExploitationRecord(
+      vulnerabilityId: 8,
+      projectId: 1,
+      eligibility: ExploitationEligibility.notApplicable,
+      proofStatus: ControlledProofStatus.blocked,
+      proofType: ControlledProofType.none,
+      methodId: '',
+      accessLevel: 'No safe foothold path.',
+      cleanupStatus: CleanupStatus.notRequired,
+      startedAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2026),
+    );
     var requeued = false;
     var mfaRecorded = false;
     await tester.pumpWidget(
@@ -27,6 +40,7 @@ void main() {
           body: CandidateCloseoutPanel(
             totalCandidates: 1,
             closures: [closure],
+            controlledExploitations: [controlled],
             workItems: const [],
             onRequeue: (_) async => requeued = true,
             onRecordManualMfa: (_) async => mfaRecorded = true,
@@ -37,6 +51,11 @@ void main() {
     );
     expect(find.textContaining('100%'), findsOneWidget);
     expect(find.textContaining('blockedMfaOperatorAction'), findsOneWidget);
+    expect(
+      find.textContaining('Controlled exploitation coverage'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('notApplicable'), findsOneWidget);
     await tester.tap(find.text('Record manual MFA'));
     await tester.pump();
     expect(mfaRecorded, isTrue);

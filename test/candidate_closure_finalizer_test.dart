@@ -102,6 +102,54 @@ void main() {
       expect(result.attemptedMethods, contains('http-response-headers'));
     });
 
+    test('visual evidence alone cannot verify remote command execution', () {
+      final result = CandidateClosureFinalizer.finalize(
+        candidate(
+          problem: 'Remote Command Injection',
+          evidence: 'Screenshot recorded by the operator.',
+          proofCommand: 'Initial Evidence Analysis',
+        ),
+        const [],
+        hasVisualEvidence: true,
+      );
+
+      expect(
+        result.disposition,
+        CandidateDisposition.pendingCustomerClarification,
+      );
+    });
+
+    test('mismatched remote marker output cannot verify command execution', () {
+      const command =
+          'curl "https://example.test/run?cmd=printf%20LLMTARY_SAFE_MARKER_7"';
+      final result = CandidateClosureFinalizer.finalize(
+        candidate(problem: 'Remote Command Injection', proofCommand: command),
+        [log(command, 'LLMTARY_SAFE_MARKER_8')],
+      );
+
+      expect(
+        result.disposition,
+        CandidateDisposition.pendingCustomerClarification,
+      );
+    });
+
+    test('local marker output cannot verify remote command execution', () {
+      const command = 'printf LLMTARY_SAFE_MARKER_7';
+      final result = CandidateClosureFinalizer.finalize(
+        candidate(problem: 'Remote Command Injection', proofCommand: command),
+        [log(command, 'LLMTARY_SAFE_MARKER_7')],
+      );
+
+      expect(
+        result.disposition,
+        CandidateDisposition.pendingCustomerClarification,
+      );
+      expect(
+        result.attemptedMethods,
+        isNot(contains('one-shot-benign-marker')),
+      );
+    });
+
     test(
       'keeps explicit prerequisite blockers from the conservative mapper',
       () {

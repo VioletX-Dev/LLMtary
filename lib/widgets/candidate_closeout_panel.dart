@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/candidate_closure.dart';
+import '../models/controlled_exploitation.dart';
 import '../models/human_validation_work_item.dart';
 
 typedef ClosureAction = Future<void> Function(CandidateClosure closure);
@@ -10,6 +11,7 @@ typedef EvidenceReferenceAction =
 class CandidateCloseoutPanel extends StatelessWidget {
   final int totalCandidates;
   final List<CandidateClosure> closures;
+  final List<ControlledExploitationRecord> controlledExploitations;
   final List<HumanValidationWorkItem> workItems;
   final ClosureAction onRequeue;
   final ClosureAction onRecordManualMfa;
@@ -19,6 +21,7 @@ class CandidateCloseoutPanel extends StatelessWidget {
     super.key,
     required this.totalCandidates,
     required this.closures,
+    this.controlledExploitations = const [],
     required this.workItems,
     required this.onRequeue,
     required this.onRecordManualMfa,
@@ -32,6 +35,9 @@ class CandidateCloseoutPanel extends StatelessWidget {
         ? 100
         : ((closed / totalCandidates) * 100).round();
     final unresolved = totalCandidates - closed;
+    final completedProofDispositions = controlledExploitations
+        .where((item) => item.isComplete)
+        .length;
     return Card(
       color: const Color(0xFF1A1F3A),
       child: Padding(
@@ -53,6 +59,14 @@ class CandidateCloseoutPanel extends StatelessWidget {
               '$unresolved without a durable terminal record',
               style: const TextStyle(color: Colors.white70),
             ),
+            if (controlledExploitations.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Controlled exploitation coverage: '
+                '$completedProofDispositions/${controlledExploitations.length}',
+                style: const TextStyle(color: Colors.white70),
+              ),
+            ],
             const SizedBox(height: 12),
             for (final closure in closures)
               _ClosureTile(
@@ -60,6 +74,28 @@ class CandidateCloseoutPanel extends StatelessWidget {
                 onRequeue: onRequeue,
                 onRecordManualMfa: onRecordManualMfa,
               ),
+            if (controlledExploitations.isNotEmpty) ...[
+              const Divider(color: Colors.white24),
+              const Text(
+                'Controlled exploitation and cleanup',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              for (final record in controlledExploitations)
+                ListTile(
+                  dense: true,
+                  title: Text(
+                    '${record.eligibility.name} · ${record.proofStatus.name}',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  subtitle: Text(
+                    '${record.proofType.name} · cleanup=${record.cleanupStatus.name}\n${record.accessLevel}',
+                    style: const TextStyle(color: Colors.white60),
+                  ),
+                ),
+            ],
             if (workItems.isNotEmpty) ...[
               const Divider(color: Colors.white24),
               const Text(

@@ -59,10 +59,19 @@ class ReportEvidenceQuality {
       }
     }
 
+    if (_isCommandExecutionClaim(vulnerability) && proofLog == null) {
+      return const ReportEvidenceDecision(
+        reportable: false,
+        reason:
+            'Command-execution claims require a linked, bounded one-shot marker request and the exact returned marker; visual or analysis evidence alone is insufficient.',
+      );
+    }
+
     if (hasVisualEvidence) {
       return const ReportEvidenceDecision(
         reportable: true,
-        reason: 'Verified by finding-specific visual evidence with recorded provenance.',
+        reason:
+            'Verified by finding-specific visual evidence with recorded provenance.',
       );
     }
 
@@ -70,10 +79,12 @@ class ReportEvidenceQuality {
       if (proofLog.exitCode != 0 || proofLog.output.trim().isEmpty) {
         return const ReportEvidenceDecision(
           reportable: false,
-          reason: 'The explicit verification command did not produce successful evidence.',
+          reason:
+              'The explicit verification command did not produce successful evidence.',
         );
       }
-      if (_isTlsClaim(vulnerability) && _isFailedTlsNegotiation(proofLog.output)) {
+      if (_isTlsClaim(vulnerability) &&
+          _isFailedTlsNegotiation(proofLog.output)) {
         return const ReportEvidenceDecision(
           reportable: false,
           reason:
@@ -122,8 +133,7 @@ class ReportEvidenceQuality {
         return false;
       }
       return _normalizeCommand(log.command) == normalizedProofCommand;
-    }).toList()
-      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    }).toList()..sort((a, b) => b.timestamp.compareTo(a.timestamp));
     return matches.isEmpty ? null : matches.first;
   }
 
@@ -136,23 +146,39 @@ class ReportEvidenceQuality {
   }
 
   static bool _isAccountLockoutClaim(Vulnerability vulnerability) {
-    final text = '${vulnerability.problem} ${vulnerability.vulnerabilityType}'.toLowerCase();
-    return text.contains('account lockout') || text.contains('lockout/rate limiting');
+    final text = '${vulnerability.problem} ${vulnerability.vulnerabilityType}'
+        .toLowerCase();
+    return text.contains('account lockout') ||
+        text.contains('lockout/rate limiting');
   }
 
   static bool _hasDirectAccountLockoutPolicyEvidence(String evidence) {
     if (_isAbsenceOnly(evidence)) return false;
-    final hasThreshold = RegExp(r'lockout threshold\s*[:=]\s*\d+').hasMatch(evidence);
-    final hasDuration = RegExp(r'lockout duration\s*[:=]\s*\d+').hasMatch(evidence);
-    final hasPolicySource = evidence.contains('net accounts') ||
+    final hasThreshold = RegExp(
+      r'lockout threshold\s*[:=]\s*\d+',
+    ).hasMatch(evidence);
+    final hasDuration = RegExp(
+      r'lockout duration\s*[:=]\s*\d+',
+    ).hasMatch(evidence);
+    final hasPolicySource =
+        evidence.contains('net accounts') ||
         evidence.contains('password policy') ||
         evidence.contains('domain policy') ||
         evidence.contains('account policy');
     return hasThreshold && hasDuration && hasPolicySource;
   }
 
+  static bool _isCommandExecutionClaim(Vulnerability vulnerability) {
+    final text = '${vulnerability.problem} ${vulnerability.vulnerabilityType}'
+        .toLowerCase();
+    return text.contains('command injection') ||
+        text.contains('remote code execution') ||
+        RegExp(r'\brce\b').hasMatch(text);
+  }
+
   static bool _isTlsClaim(Vulnerability vulnerability) {
-    final text = '${vulnerability.problem} ${vulnerability.vulnerabilityType}'.toLowerCase();
+    final text = '${vulnerability.problem} ${vulnerability.vulnerabilityType}'
+        .toLowerCase();
     return text.contains('tls') || text.contains('ssl');
   }
 
@@ -175,7 +201,8 @@ class ReportEvidenceQuality {
     final normalizedCommand = command.toLowerCase();
     final normalizedOutput = output.toLowerCase();
     final isNmap = RegExp(r'(^|\s|/)nmap(\s|$)').hasMatch(normalizedCommand);
-    final exploitClass = claim.contains('rce') ||
+    final exploitClass =
+        claim.contains('rce') ||
         claim.contains('remote code') ||
         claim.contains('injection') ||
         claim.contains('auth bypass') ||
@@ -186,10 +213,29 @@ class ReportEvidenceQuality {
     if (isNmap && exploitClass) {
       return 'Network service discovery is contextual reconnaissance and cannot confirm this exploit-class claim.';
     }
+    if (_isCommandExecutionClaim(vulnerability)) {
+      final boundedRequest = RegExp(
+        r'^(?:timeout\s+\d+\s+)?curl\s',
+      ).hasMatch(normalizedCommand);
+      final markerPattern = RegExp(
+        r'LLMTARY_SAFE_MARKER_[A-Za-z0-9_-]+',
+        caseSensitive: false,
+      );
+      final commandMarker = markerPattern.firstMatch(command)?.group(0);
+      final outputMarker = markerPattern.firstMatch(output)?.group(0);
+      final matchingMarker =
+          commandMarker != null &&
+          outputMarker != null &&
+          commandMarker.toLowerCase() == outputMarker.toLowerCase();
+      if (!boundedRequest || !matchingMarker) {
+        return 'Command-execution evidence must be an explicitly linked bounded HTTP request containing a one-shot marker and output returning that exact marker.';
+      }
+    }
 
     final isHeaderOrCookieClaim =
         claim.contains('header') || claim.contains('cookie');
-    final isHttpResponseTool = normalizedCommand.contains('curl ') ||
+    final isHttpResponseTool =
+        normalizedCommand.contains('curl ') ||
         RegExp(r'(^|\s|/)nikto(\s|$)').hasMatch(normalizedCommand) ||
         normalizedCommand.contains('wget ') ||
         RegExp(r'(^|\s|/)httpx(\s|$)').hasMatch(normalizedCommand);
@@ -201,19 +247,21 @@ class ReportEvidenceQuality {
     if (isDig && !claim.contains('dns') && !claim.contains('domain')) {
       return 'DNS query output is not relevant evidence for this finding type.';
     }
-    final claimsExternalDnsExposure = isDig &&
+    final claimsExternalDnsExposure =
+        isDig &&
         (description.contains('from outside') ||
             description.contains('external attacker') ||
             description.contains('externally exploitable'));
     final hasExternalVantageProvenance =
         normalizedOutput.contains('source vantage: external') ||
-            normalizedOutput.contains('test vantage: external') ||
-            normalizedOutput.contains('external vantage verified');
+        normalizedOutput.contains('test vantage: external') ||
+        normalizedOutput.contains('external vantage verified');
     if (claimsExternalDnsExposure && !hasExternalVantageProvenance) {
       return 'The DNS response proves recursion from the assessment network, not exposure from an external vantage.';
     }
 
-    final isTlsTool = normalizedCommand.contains('openssl s_client') ||
+    final isTlsTool =
+        normalizedCommand.contains('openssl s_client') ||
         normalizedCommand.contains('testssl') ||
         normalizedCommand.contains('sslscan');
     if (isTlsTool && !_isTlsClaim(vulnerability)) {
@@ -226,7 +274,8 @@ class ReportEvidenceQuality {
     final evidence = vulnerability.evidence.trim().toLowerCase();
     if (evidence.isEmpty || _isAbsenceOnly(evidence)) return false;
 
-    final claim = '${vulnerability.problem} ${vulnerability.vulnerabilityType}'.toLowerCase();
+    final claim = '${vulnerability.problem} ${vulnerability.vulnerabilityType}'
+        .toLowerCase();
     if (claim.contains('header') || claim.contains('cookie')) {
       return evidence.contains('http response') ||
           evidence.contains('response headers') ||
