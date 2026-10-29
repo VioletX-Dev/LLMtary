@@ -367,30 +367,71 @@ class TargetInputPanelState extends State<TargetInputPanel> {
       onProgress(
         'Checking ${missed.length} non-responsive hosts for common TCP services...',
       );
-      try {
-        final tcpResult = await Process.run(
-          'nmap',
-          ReconService.boundedFallbackNmapArgs(missed),
-        ).timeout(const Duration(minutes: 3));
-        if (tcpResult.exitCode == 0) {
-          final tcpAlive = ReconService.parseGrepableOpenHosts(
-            tcpResult.stdout as String,
-          );
-          final combined = ReconService.mergeDiscoveredHosts(
-            pingAlive,
-            tcpAlive,
-          );
+      final batches = ReconService.boundedFallbackBatches(missed);
+      var tcpAlive = <String>[];
+      var failedBatches = 0;
+      const concurrency = 4;
+      for (var start = 0; start < batches.length; start += concurrency) {
+        final end = (start + concurrency).clamp(0, batches.length);
+        final futures = batches
+            .sublist(start, end)
+            .asMap()
+            .entries
+            .map((entry) async {
+              final batchNumber = start + entry.key + 1;
+              try {
+                final tcpResult = await Process.run(
+                  'nmap',
+                  ReconService.boundedFallbackNmapArgs(entry.value),
+                ).timeout(const Duration(minutes: 1));
+                if (tcpResult.exitCode != 0) {
+                  return (
+                    batchNumber: batchNumber,
+                    hosts: <String>[],
+                    error: 'exit ${tcpResult.exitCode}',
+                  );
+                }
+                return (
+                  batchNumber: batchNumber,
+                  hosts: ReconService.parseGrepableOpenHosts(
+                    tcpResult.stdout as String,
+                  ),
+                  error: null,
+                );
+              } catch (_) {
+                return (
+                  batchNumber: batchNumber,
+                  hosts: <String>[],
+                  error: 'timed out or was unavailable',
+                );
+              }
+            });
+        await for (final result in Stream.fromFutures(futures)) {
+          if (result.error != null) {
+            failedBatches++;
+            onProgress(
+              'TCP fallback batch ${result.batchNumber}/${batches.length} failed '
+              '(${result.error})',
+            );
+            continue;
+          }
+          tcpAlive = ReconService.mergeDiscoveredHosts(tcpAlive, result.hosts);
           onProgress(
-            'TCP fallback recovered ${tcpAlive.length} ping-blocked host(s); '
-            '${combined.length}/${addresses.length} hosts are reachable',
+            'TCP fallback batch ${result.batchNumber}/${batches.length} recovered '
+            '${result.hosts.length} host(s); ${tcpAlive.length} recovered so far',
           );
-          return combined;
         }
-      } catch (_) {
-        // The primary discovery result remains valid if the bounded fallback
-        // is unavailable or times out.
       }
-      return pingAlive;
+      final combined = ReconService.mergeDiscoveredHosts(
+        pingAlive,
+        tcpAlive,
+      );
+      onProgress(
+        'TCP fallback recovered ${tcpAlive.length} ping-blocked host(s) '
+        'across ${batches.length - failedBatches}/${batches.length} completed batches; '
+        '${combined.length}/${addresses.length} hosts are reachable',
+      );
+      return combined;
     } catch (_) {
       return null;
     }

@@ -3069,6 +3069,24 @@ Respond ONLY with valid JSON.''';
     ];
   }
 
+  /// Split a large fallback scope into bounded invocations so one slow,
+  /// filtered subnet cannot discard positive results from every other host.
+  static List<List<String>> boundedFallbackBatches(
+    List<String> addresses, {
+    int batchSize = 64,
+  }) {
+    if (batchSize <= 0) {
+      throw ArgumentError.value(batchSize, 'batchSize', 'must be positive');
+    }
+    final uniqueAddresses = mergeDiscoveredHosts(const [], addresses);
+    final batches = <List<String>>[];
+    for (var start = 0; start < uniqueAddresses.length; start += batchSize) {
+      final end = (start + batchSize).clamp(0, uniqueAddresses.length);
+      batches.add(uniqueAddresses.sublist(start, end));
+    }
+    return batches;
+  }
+
   // ---------------------------------------------------------------------------
   // Phase 1.2 — Banner grabbing for unknown services
   // ---------------------------------------------------------------------------

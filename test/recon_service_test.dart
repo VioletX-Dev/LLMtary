@@ -160,6 +160,23 @@ Host: 172.16.2.20 ()\tPorts: 1433/open/tcp//ms-sql-s///\tIgnored State: filtered
       expect(args.where((arg) => arg == '172.17.2.8').length, 1);
       expect(args.where((arg) => arg == '172.16.2.20').length, 1);
     });
+
+    test('boundedFallbackBatches splits large scopes into bounded unique batches', () {
+      final addresses = [
+        for (var i = 1; i <= 254; i++) '172.17.2.$i',
+        for (var i = 1; i <= 253; i++) '172.16.2.$i',
+        '172.17.2.8',
+      ];
+
+      final batches = ReconService.boundedFallbackBatches(addresses);
+      final flattened = batches.expand((batch) => batch).toList();
+
+      expect(batches.length, 8);
+      expect(batches.every((batch) => batch.length <= 64), isTrue);
+      expect(flattened.length, 507);
+      expect(flattened.toSet().length, 507);
+      expect(flattened.where((address) => address == '172.17.2.8').length, 1);
+    });
   });
 
   group('OS and technology enrichment', () {
