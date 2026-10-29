@@ -3010,6 +3010,38 @@ Respond ONLY with valid JSON.''';
     return {'os': osMatch.group(1) ?? '', 'accuracy': osMatch.group(2) ?? ''};
   }
 
+  /// Extract hosts with at least one open port from grepable nmap output.
+  ///
+  /// A `-Pn` scan reports every supplied address as `Status: Up`, so status
+  /// lines alone are not evidence of reachability. Only a host line carrying
+  /// an explicit `/open/` port qualifies.
+  static List<String> parseGrepableOpenHosts(String output) {
+    final hosts = <String>[];
+    final seen = <String>{};
+    final openHost = RegExp(
+      r'^Host:\s+(\d{1,3}(?:\.\d{1,3}){3})\s.*Ports:.*\/open\/',
+    );
+    for (final line in output.split('\n')) {
+      final match = openHost.firstMatch(line);
+      final address = match?.group(1);
+      if (address != null && seen.add(address)) hosts.add(address);
+    }
+    return hosts;
+  }
+
+  /// Merge independent host-discovery signals while retaining stable order.
+  static List<String> mergeDiscoveredHosts(
+    List<String> primary,
+    List<String> additional,
+  ) {
+    final merged = <String>[];
+    final seen = <String>{};
+    for (final address in [...primary, ...additional]) {
+      if (seen.add(address)) merged.add(address);
+    }
+    return merged;
+  }
+
   // ---------------------------------------------------------------------------
   // Phase 1.2 — Banner grabbing for unknown services
   // ---------------------------------------------------------------------------

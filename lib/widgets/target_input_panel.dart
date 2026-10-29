@@ -331,10 +331,12 @@ class TargetInputPanelState extends State<TargetInputPanel> {
     }
   }
 
-  /// Run a single nmap -sn sweep over all [addresses] and return the live ones.
-  /// Returns null if nmap is unavailable or the sweep fails (caller should
-  /// fall back to ping). Returns an empty list if nmap ran successfully but
-  /// found no live hosts (caller should NOT fall back — result is definitive).
+  /// Run a bounded two-stage nmap discovery over all [addresses].
+  ///
+  /// The first pass uses normal host discovery. Hosts that do not answer that
+  /// pass receive a small no-discovery TCP check so firewalls that suppress
+  /// ICMP/discovery probes do not hide systems with common services exposed.
+  /// Returns null only when the primary nmap discovery cannot run.
   static Future<List<String>?> _nmapPingSweep(
     List<String> addresses,
     void Function(String) onProgress,
@@ -347,12 +349,53 @@ class TargetInputPanelState extends State<TargetInputPanel> {
       if (result.exitCode != 0) return null;
       final output = result.stdout as String;
       if (output.isEmpty) return null;
-      final alive = RegExp(r'Host:\s+(\d{1,3}(?:\.\d{1,3}){3})\s')
+      final pingAlive = RegExp(r'Host:\s+(\d{1,3}(?:\.\d{1,3}){3})\s')
           .allMatches(output)
           .map((m) => m.group(1)!)
           .toList();
-      onProgress('nmap -sn found ${alive.length}/${addresses.length} live hosts');
-      return alive;
+      onProgress(
+        'nmap host discovery found ${pingAlive.length}/${addresses.length} live hosts',
+      );
+
+      final missed = addresses.where((a) => !pingAlive.contains(a)).toList();
+      if (missed.isEmpty) return pingAlive;
+
+      onProgress(
+        'Checking ${missed.length} non-responsive hosts for common TCP services...',
+      );
+      try {
+        final tcpResult = await Process.run(
+          'nmap',
+          [
+            '-Pn',
+            '-T4',
+            '--open',
+            '-p',
+            '22,53,80,443,139,445,1433,3389',
+            '-oG',
+            '-',
+            ...missed,
+          ],
+        ).timeout(const Duration(minutes: 3));
+        if (tcpResult.exitCode == 0) {
+          final tcpAlive = ReconService.parseGrepableOpenHosts(
+            tcpResult.stdout as String,
+          );
+          final combined = ReconService.mergeDiscoveredHosts(
+            pingAlive,
+            tcpAlive,
+          );
+          onProgress(
+            'TCP fallback recovered ${tcpAlive.length} ping-blocked host(s); '
+            '${combined.length}/${addresses.length} hosts are reachable',
+          );
+          return combined;
+        }
+      } catch (_) {
+        // The primary discovery result remains valid if the bounded fallback
+        // is unavailable or times out.
+      }
+      return pingAlive;
     } catch (_) {
       return null;
     }

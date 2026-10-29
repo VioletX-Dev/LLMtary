@@ -122,6 +122,31 @@ void main() {
       final os = ReconService.parseNmapOs('<host></host>');
       expect(os, isEmpty);
     });
+
+    test('parseGrepableOpenHosts finds ping-blocked hosts with open ports', () {
+      const output = '''
+Host: 172.17.2.8 ()\tStatus: Up
+Host: 172.17.2.8 ()\tPorts: 445/open/tcp//microsoft-ds///\tIgnored State: filtered (7)
+Host: 172.17.2.9 ()\tStatus: Up
+Host: 172.17.2.10 ()\tPorts: 445/open/tcp//microsoft-ds///\tIgnored State: filtered (7)
+Host: 172.16.2.20 ()\tPorts: 1433/open/tcp//ms-sql-s///\tIgnored State: filtered (7)
+''';
+
+      expect(
+        ReconService.parseGrepableOpenHosts(output),
+        ['172.17.2.8', '172.17.2.10', '172.16.2.20'],
+      );
+    });
+
+    test('mergeDiscoveredHosts adds TCP responders without duplicates', () {
+      expect(
+        ReconService.mergeDiscoveredHosts(
+          ['172.16.2.5'],
+          ['172.17.2.8', '172.16.2.5', '172.16.2.20'],
+        ),
+        ['172.16.2.5', '172.17.2.8', '172.16.2.20'],
+      );
+    });
   });
 
   group('OS and technology enrichment', () {
