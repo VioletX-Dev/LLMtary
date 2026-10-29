@@ -349,10 +349,14 @@ class TargetInputPanelState extends State<TargetInputPanel> {
       if (result.exitCode != 0) return null;
       final output = result.stdout as String;
       if (output.isEmpty) return null;
-      final pingAlive = RegExp(r'Host:\s+(\d{1,3}(?:\.\d{1,3}){3})\s')
+      final rawPingAlive = RegExp(r'Host:\s+(\d{1,3}(?:\.\d{1,3}){3})\s')
           .allMatches(output)
           .map((m) => m.group(1)!)
           .toList();
+      final pingAlive = ReconService.mergeDiscoveredHosts(
+        const [],
+        rawPingAlive,
+      );
       onProgress(
         'nmap host discovery found ${pingAlive.length}/${addresses.length} live hosts',
       );
@@ -366,16 +370,7 @@ class TargetInputPanelState extends State<TargetInputPanel> {
       try {
         final tcpResult = await Process.run(
           'nmap',
-          [
-            '-Pn',
-            '-T4',
-            '--open',
-            '-p',
-            '22,53,80,443,139,445,1433,3389',
-            '-oG',
-            '-',
-            ...missed,
-          ],
+          ReconService.boundedFallbackNmapArgs(missed),
         ).timeout(const Duration(minutes: 3));
         if (tcpResult.exitCode == 0) {
           final tcpAlive = ReconService.parseGrepableOpenHosts(

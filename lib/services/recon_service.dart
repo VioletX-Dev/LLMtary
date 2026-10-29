@@ -337,12 +337,17 @@ class ReconService {
     // first leaves literal CIDRs in the work queue; the host pre-sweep then
     // returns individual IPs that have no matching Target checkpoint.
     if (trimmed.contains(',') || trimmed.contains('\n')) {
-      return trimmed
+      final targets = trimmed
           .split(RegExp(r'[,\n]'))
           .map((s) => s.trim())
           .where((s) => s.isNotEmpty)
-          .expand(parseTargetInput)
-          .toList();
+          .expand(parseTargetInput);
+      final uniqueTargets = <String>[];
+      final seen = <String>{};
+      for (final target in targets) {
+        if (seen.add(target)) uniqueTargets.add(target);
+      }
+      return uniqueTargets;
     }
 
     final cidrMatch =
@@ -3040,6 +3045,28 @@ Respond ONLY with valid JSON.''';
       if (seen.add(address)) merged.add(address);
     }
     return merged;
+  }
+
+  /// Build the bounded TCP fallback scan used for hosts that did not answer
+  /// normal discovery. DNS is disabled and retry/host limits prevent a large
+  /// filtered subnet from consuming the entire pre-sweep timeout.
+  static List<String> boundedFallbackNmapArgs(List<String> addresses) {
+    final uniqueAddresses = mergeDiscoveredHosts(const [], addresses);
+    return [
+      '-Pn',
+      '-n',
+      '-T4',
+      '--open',
+      '--max-retries',
+      '1',
+      '--host-timeout',
+      '15s',
+      '-p',
+      '22,53,80,443,139,445,1433,3389',
+      '-oG',
+      '-',
+      ...uniqueAddresses,
+    ];
   }
 
   // ---------------------------------------------------------------------------

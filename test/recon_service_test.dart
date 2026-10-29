@@ -147,6 +147,19 @@ Host: 172.16.2.20 ()\tPorts: 1433/open/tcp//ms-sql-s///\tIgnored State: filtered
         ['172.16.2.5', '172.17.2.8', '172.16.2.20'],
       );
     });
+
+    test('boundedFallbackNmapArgs limits retries and per-host runtime', () {
+      final args = ReconService.boundedFallbackNmapArgs([
+        '172.17.2.8',
+        '172.17.2.8',
+        '172.16.2.20',
+      ]);
+
+      expect(args, containsAllInOrder(['-n', '--max-retries', '1']));
+      expect(args, containsAllInOrder(['--host-timeout', '15s']));
+      expect(args.where((arg) => arg == '172.17.2.8').length, 1);
+      expect(args.where((arg) => arg == '172.16.2.20').length, 1);
+    });
   });
 
   group('OS and technology enrichment', () {
@@ -281,6 +294,22 @@ _dmarc.example.com. TXT "v=DMARC1; p=reject; rua=mailto:dmarc@example.com"
       expect(targets.last, '172.16.2.254');
       expect(targets, isNot(contains('172.17.2.0/24')));
       expect(targets, isNot(contains('172.16.2.0/24')));
+    });
+
+    test('parseTargetInput deduplicates explicit hosts already in CIDR scope', () {
+      final targets = ReconService.parseTargetInput(
+        '172.17.2.0/24\n'
+        '172.16.2.0/24\n'
+        '172.17.2.8\n'
+        '172.17.2.10\n'
+        '172.17.2.11\n'
+        '172.16.2.5\n'
+        '172.16.2.20',
+      );
+
+      expect(targets.length, 508);
+      expect(targets.where((target) => target == '172.16.2.5').length, 1);
+      expect(targets.where((target) => target == '172.17.2.8').length, 1);
     });
 
     test('parseTargetInput handles single target', () {
