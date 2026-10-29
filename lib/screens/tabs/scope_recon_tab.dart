@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../database/database_helper.dart';
 import '../../models/target.dart';
+import '../../services/phase_rerun_recorder.dart';
 import '../../widgets/app_state.dart';
 import '../../widgets/target_input_panel.dart';
 import '../../services/recon_service.dart';
 import '../../widgets/stats_bar.dart';
 import '../../widgets/tabbed_log_panel.dart';
 import '../../widgets/pulsating_button.dart';
+import '../../widgets/phase_rerun_button.dart';
 
 class ScopeReconTab extends StatefulWidget {
   final bool isAnalyzing;
@@ -105,6 +107,48 @@ class _ScopeReconTabState extends State<ScopeReconTab> {
     if (novel.isEmpty) return;
     await panelState.addAddressesToQueue(novel);
     setState(() {});
+  }
+
+  Future<void> _rerunRecon() async {
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF161929),
+        title: const Text('Re-run Scope / Recon?', style: TextStyle(color: Color(0xFFFFBB33))),
+        content: const Text(
+          'Every current in-scope address will be scanned again under the existing rules of engagement. Prior recon evidence and downstream findings are preserved. If a previously reachable host does not answer this pass, its prior result is retained and the failed recheck is logged.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('CANCEL')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('RE-RUN RECON', style: TextStyle(color: Color(0xFFFFBB33))),
+          ),
+        ],
+      ),
+    );
+    if (approved != true || !mounted) return;
+    final appState = context.read<AppState>();
+    final projectId = appState.currentProject?.id;
+    if (projectId == null) return;
+    final runId = PhaseRerunRecorder.createRunId('scope-recon');
+    final itemCount = appState.targets.length;
+    await PhaseRerunRecorder.started(
+      projectId: projectId,
+      phase: 'SCOPE / RECON',
+      runId: runId,
+      itemCount: itemCount,
+    );
+    setState(() { _starting = true; _scanStopped = false; });
+    await _targetPanelKey.currentState?.startScan(_scopeCtrl.text, forceRerun: true);
+    await PhaseRerunRecorder.completed(
+      projectId: projectId,
+      phase: 'SCOPE / RECON',
+      runId: runId,
+      itemCount: itemCount,
+      verification: 'Recon executor completed; prior evidence was retained.',
+    );
   }
 
   void _onScanComplete(AppState appState) {
@@ -245,6 +289,18 @@ class _ScopeReconTabState extends State<ScopeReconTab> {
               flex: 5,
               child: Column(
                 children: [
+                  if (appState.targets.any((target) => target.status == TargetStatus.complete))
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: PhaseRerunButton(
+                          phaseLabel: 'SCOPE / RECON',
+                          enabled: !isScanning && !widget.isAnalyzing && !widget.isExecuting,
+                          onPressed: _rerunRecon,
+                        ),
+                      ),
+                    ),
                   StatsBar(
                     extraCard: Consumer<AppState>(
                       builder: (context, state, _) {

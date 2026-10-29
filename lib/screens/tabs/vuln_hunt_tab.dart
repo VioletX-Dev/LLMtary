@@ -7,6 +7,7 @@ import '../../widgets/vulnerability_table.dart';
 import '../../widgets/stats_bar.dart';
 import '../../widgets/target_progress_list.dart';
 import '../../widgets/tabbed_log_panel.dart';
+import '../../widgets/phase_rerun_button.dart';
 import 'scope_recon_tab.dart' show CompletionDialog;
 
 class VulnHuntTab extends StatelessWidget {
@@ -20,6 +21,7 @@ class VulnHuntTab extends StatelessWidget {
   final Future<void> Function(AppState) onExportDebug;
   final Set<String> analyzingAddresses;
   final Future<void> Function(Target)? onReAnalyze;
+  final VoidCallback? onRerunPhase;
 
   const VulnHuntTab({
     super.key,
@@ -33,6 +35,7 @@ class VulnHuntTab extends StatelessWidget {
     required this.onExportDebug,
     this.analyzingAddresses = const {},
     this.onReAnalyze,
+    this.onRerunPhase,
   });
 
   @override
@@ -58,6 +61,18 @@ class VulnHuntTab extends StatelessWidget {
               flex: 5,
               child: Column(
                 children: [
+                  if (activeTargets.any((target) => target.analysisComplete))
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: PhaseRerunButton(
+                          phaseLabel: 'VULN / HUNT',
+                          enabled: !isAnalyzing && !isExecuting,
+                          onPressed: onRerunPhase ?? () {},
+                        ),
+                      ),
+                    ),
                   StatsBar(
                     extraCard: Consumer<AppState>(
                       builder: (context, state, _) {

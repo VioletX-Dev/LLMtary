@@ -95,6 +95,9 @@ class AssessmentNarrativeService {
           eventType != 'candidate_requeued' &&
           eventType != 'candidate_prerequisite_satisfied' &&
           eventType != 'candidate_closure_finalized' &&
+          eventType != 'phase_rerun_started' &&
+          eventType != 'phase_rerun_completed' &&
+          eventType != 'phase_rerun_failed' &&
           eventType != 'supervised_validation_event') {
         continue;
       }
@@ -110,6 +113,27 @@ class AssessmentNarrativeService {
         }
       } catch (_) {
         metadata = const {};
+      }
+      if (eventType.startsWith('phase_rerun_')) {
+        final runId = clean(metadata['run_id'], maxLength: 200);
+        final result = clean(metadata['result'], maxLength: 200);
+        entries.add(
+          AssessmentTimelineEntry(
+            timestamp: timestamp,
+            phase: clean(row['phase'], maxLength: 100),
+            target: 'All in-scope records',
+            finding: '',
+            action: '${eventType.replaceAll('_', ' ')} — run $runId',
+            rationale: clean(metadata['reason']),
+            observation:
+                '${clean(metadata['item_count'], maxLength: 50)} item(s) selected',
+            verification: clean(metadata['verification']),
+            result: result,
+            disposition: eventType == 'phase_rerun_started' ? '' : result,
+            sourceType: eventType,
+          ),
+        );
+        continue;
       }
       if (eventType == 'supervised_validation_event') {
         final evidence = metadata['evidence_references'];

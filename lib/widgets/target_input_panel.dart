@@ -7,6 +7,7 @@ import '../utils/scope_validator.dart';
 import '../models/target.dart';
 import '../services/recon_service.dart';
 import '../services/recon_batch_runner.dart';
+import '../services/phase_rerun_policy.dart';
 import '../models/llm_settings.dart';
 import 'app_state.dart';
 
@@ -91,11 +92,11 @@ class TargetInputPanelState extends State<TargetInputPanel> {
   }
 
   /// Public entry point called by the GO button in [_ScopePanel].
-  Future<void> startScan(String scopeInput) async {
-    await _startScan(scopeInput);
+  Future<void> startScan(String scopeInput, {bool forceRerun = false}) async {
+    await _startScan(scopeInput, forceRerun: forceRerun);
   }
 
-  Future<void> _startScan(String externalInput, {bool clearExisting = true}) async {
+  Future<void> _startScan(String externalInput, {bool clearExisting = true, bool forceRerun = false}) async {
     final appState = context.read<AppState>();
     String input = externalInput.trim();
 
@@ -137,11 +138,11 @@ class TargetInputPanelState extends State<TargetInputPanel> {
         return;
       }
 
-      final alreadyDone = widget.existingTargets
-          .where((t) => t.status == TargetStatus.complete)
-          .map((t) => t.address)
-          .toSet();
-      List<String> toScan = addresses.where((a) => !alreadyDone.contains(a)).toList();
+      List<String> toScan = PhaseRerunPolicy.reconAddresses(
+        addresses,
+        widget.existingTargets,
+        forceRerun: forceRerun,
+      );
 
       final exclusionList = appState.currentProject?.exclusionList ?? [];
       if (exclusionList.isNotEmpty) {
@@ -203,6 +204,10 @@ class TargetInputPanelState extends State<TargetInputPanel> {
             (t) => t.address == addr,
             orElse: () => Target(address: addr),
           );
+          if (PhaseRerunPolicy.preservePriorReconResult(dead, forceRerun: forceRerun)) {
+            widget.onProgress('[$addr] Re-run reachability failed — preserving prior recon result and evidence');
+            continue;
+          }
           _liveTargets.removeWhere((t) => t.address == addr);
           await widget.onTargetDeleted?.call(dead);
           widget.onProgress('[$addr] Pre-sweep: host is down — skipping');

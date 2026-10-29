@@ -33,6 +33,8 @@ import '../services/llm_service.dart';
 import '../services/test_budget.dart';
 import '../services/cloud_assist_service.dart';
 import '../services/assessment_session_checkpoint.dart';
+import '../services/phase_rerun_policy.dart';
+import '../services/phase_rerun_recorder.dart';
 import '../services/assessment_execution_policy.dart';
 import '../services/candidate_closeout_service.dart';
 import '../services/session_command_approval.dart';
@@ -321,6 +323,7 @@ class _MainScreenState extends State<MainScreen> {
                     onExportDebug: _exportDebug,
                     analyzingAddresses: _analyzingAddresses,
                     onReAnalyze: _reAnalyzeTarget,
+                    onRerunPhase: _rerunAnalysisPhase,
                   ),
                   ProofExploitTab(
                     isAnalyzing: _isAnalyzing,
@@ -334,6 +337,7 @@ class _MainScreenState extends State<MainScreen> {
                     executingAddresses: _executingAddresses,
                     onRetestFinding: _retestFinding,
                     onRunSpotTest: _runTargetedSpotTest,
+                    onRerunPhase: _rerunProofPhase,
                   ),
                   const ResultReportTab(),
                 ],
@@ -732,7 +736,7 @@ class _MainScreenState extends State<MainScreen> {
 
   // --- Business logic ---
 
-  Future<void> _analyzeDevice({bool resuming = false}) async {
+  Future<void> _analyzeDevice({bool resuming = false, bool forceRerun = false}) async {
     if (!await _ensureSessionPassword()) return;
     setState(() => _isAnalyzing = true);
     var checkpointStarted = false;
@@ -771,10 +775,10 @@ class _MainScreenState extends State<MainScreen> {
         );
       }
 
-      // Only analyze targets not yet analyzed
-      final targetsToAnalyze = completedTargets
-          .where((t) => !t.analysisComplete)
-          .toList();
+      final targetsToAnalyze = PhaseRerunPolicy.analysisTargets(
+        completedTargets,
+        forceRerun: forceRerun,
+      );
       if (targetsToAnalyze.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('All targets already analyzed')),
@@ -927,7 +931,10 @@ class _MainScreenState extends State<MainScreen> {
             continue;
           }
 
-          if (vulns.isEmpty) {
+          final priorTargetFindings = appState.vulnerabilities
+              .where((finding) => finding.targetAddress == target.address)
+              .toList();
+          if (vulns.isEmpty && priorTargetFindings.isEmpty) {
             appState.addDebugLog(
               '[${target.address}] Analysis complete: 0 findings',
             );
@@ -939,6 +946,12 @@ class _MainScreenState extends State<MainScreen> {
             v.targetAddress = target.address;
             v.targetId = target.id;
             v.projectId = appState.currentProject?.id;
+            if (forceRerun && priorTargetFindings.any((prior) =>
+                prior.problem.trim().toLowerCase() == v.problem.trim().toLowerCase() &&
+                prior.vulnerabilityType.trim().toLowerCase() == v.vulnerabilityType.trim().toLowerCase())) {
+              appState.addDebugLog('[${target.address}] Re-run matched retained finding: ${v.problem}');
+              continue;
+            }
             await DatabaseHelper.insertVulnerability(v);
           }
 
@@ -1040,6 +1053,51 @@ class _MainScreenState extends State<MainScreen> {
     } finally {
       setState(() => _isAnalyzing = false);
     }
+  }
+
+  Future<void> _rerunAnalysisPhase() async {
+    if (_isAnalyzing || _isExecuting) return;
+    final appState = context.read<AppState>();
+    final targets = PhaseRerunPolicy.analysisTargets(appState.targets, forceRerun: true);
+    if (targets.isEmpty || appState.currentProject?.id == null) return;
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF161929),
+        title: const Text('Re-run Vuln / Hunt?', style: TextStyle(color: Color(0xFFFFBB33))),
+        content: Text(
+          'Re-analyze all ${targets.length} completed target(s). Existing findings and evidence are retained. Matching findings are treated as duplicates and do not inflate totals; newly identified findings are added. Existing scope, exclusions, budgets, and credential boundaries remain enforced.',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('CANCEL')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('RE-RUN ANALYSIS', style: TextStyle(color: Color(0xFFFFBB33))),
+          ),
+        ],
+      ),
+    );
+    if (approved != true || !mounted) return;
+    final projectId = appState.currentProject!.id!;
+    final runId = PhaseRerunRecorder.createRunId('vuln-hunt');
+    await PhaseRerunRecorder.started(
+      projectId: projectId, phase: 'VULN / HUNT', runId: runId, itemCount: targets.length,
+    );
+    await _analyzeDevice(forceRerun: true);
+    if (_pauseGate.isPauseRequested) {
+      await PhaseRerunRecorder.failed(
+        projectId: projectId, phase: 'VULN / HUNT', runId: runId, itemCount: targets.length,
+      );
+      return;
+    }
+    await PhaseRerunRecorder.completed(
+      projectId: projectId,
+      phase: 'VULN / HUNT',
+      runId: runId,
+      itemCount: targets.length,
+      verification: 'Analysis executor reached its terminal state; retained findings were deduplicated and new findings persisted.',
+    );
   }
 
   Future<void> _reAnalyzeTarget(Target target) async {
@@ -1579,8 +1637,59 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
     }
   }
 
+  Future<void> _rerunProofPhase() async {
+    if (_isExecuting || _isAnalyzing) return;
+    if (!await _ensureSessionPassword() || !mounted) return;
+    final appState = context.read<AppState>();
+    final findings = PhaseRerunPolicy.proofFindings(appState.vulnerabilities, forceRerun: true);
+    if (findings.isEmpty || appState.currentProject?.id == null) return;
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF161929),
+        title: const Text('Re-run Proof / Exploit?', style: TextStyle(color: Color(0xFFFFBB33))),
+        content: Text(
+          'Re-test all ${findings.length} saved finding(s). Prior command evidence remains in the chronological ledger. Every command still passes scope, safety, budget, and approval checks; unsafe or destructive actions remain blocked.',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('CANCEL')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('RE-RUN PROOF', style: TextStyle(color: Color(0xFFFFBB33))),
+          ),
+        ],
+      ),
+    );
+    if (approved != true || !mounted) return;
+    for (final finding in appState.vulnerabilities) {
+      finding.selected = findings.contains(finding);
+    }
+    setState(() {});
+    final projectId = appState.currentProject!.id!;
+    final runId = PhaseRerunRecorder.createRunId('proof-exploit');
+    await PhaseRerunRecorder.started(
+      projectId: projectId, phase: 'PROOF / EXPLOIT', runId: runId, itemCount: findings.length,
+    );
+    await _executeSelected(phaseRerun: true);
+    if (_pauseGate.isPauseRequested) {
+      await PhaseRerunRecorder.failed(
+        projectId: projectId, phase: 'PROOF / EXPLOIT', runId: runId, itemCount: findings.length,
+      );
+      return;
+    }
+    await PhaseRerunRecorder.completed(
+      projectId: projectId,
+      phase: 'PROOF / EXPLOIT',
+      runId: runId,
+      itemCount: findings.length,
+      verification: 'Proof executor reached its terminal state; historical command evidence was retained.',
+    );
+  }
+
   Future<void> _executeSelected({
     bool resuming = false,
+    bool phaseRerun = false,
     List<int> resumeVulnerabilityIds = const [],
   }) async {
     if (!await _ensureSessionPassword()) return;
@@ -1628,7 +1737,7 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
 
     if (alreadyCompleted.isNotEmpty) {
       // Show confirmation dialog for already-completed vulns
-      final confirmed = await showDialog<bool>(
+      final confirmed = phaseRerun ? true : await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: const Color(0xFF161929),
@@ -1719,8 +1828,9 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
             v.id!,
             VulnerabilityStatus.pending,
           );
-          if (v.id != null)
+          if (!phaseRerun && v.id != null) {
             await DatabaseHelper.deleteCommandLogsByVulnId(v.id!);
+          }
         }
         pendingVulns = [...trulyPending, ...alreadyCompleted];
       }

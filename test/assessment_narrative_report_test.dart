@@ -119,6 +119,41 @@ void main() {
     expect(narrative.prompt, contains('Prohibited human-led validation'));
   });
 
+  test('includes phase rerun identity and lifecycle in the timeline', () {
+    final narrative = AssessmentNarrativeService.build(
+      targets: [target],
+      vulnerabilities: [finding],
+      commandLogs: const [],
+      sessionEvents: [
+        {
+          'targetId': 0,
+          'event_type': 'phase_rerun_started',
+          'phase': 'VULN / HUNT',
+          'timestamp': '2026-10-02T12:04:00.000Z',
+          'metadata':
+              '{"run_id":"vuln-hunt-42","reason":"User requested phase rerun","item_count":1}',
+        },
+        {
+          'targetId': 0,
+          'event_type': 'phase_rerun_completed',
+          'phase': 'VULN / HUNT',
+          'timestamp': '2026-10-02T12:05:00.000Z',
+          'metadata':
+              '{"run_id":"vuln-hunt-42","item_count":1,"result":"completed"}',
+        },
+      ],
+    );
+
+    final reruns = narrative.entries
+        .where((entry) => entry.sourceType.startsWith('phase_rerun_'))
+        .toList();
+    expect(reruns, hasLength(2));
+    expect(reruns.first.phase, 'VULN / HUNT');
+    expect(reruns.first.action, contains('vuln-hunt-42'));
+    expect(reruns.first.rationale, contains('User requested phase rerun'));
+    expect(reruns.last.disposition, contains('completed'));
+  });
+
   test('renders narrative and deterministic timeline in HTML and Markdown', () {
     final narrative = AssessmentNarrativeService.build(
       targets: [target],
