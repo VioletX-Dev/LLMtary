@@ -58,6 +58,14 @@ void main() {
     },
     {
       'targetId': 11,
+      'event_type': 'supervised_validation_event',
+      'phase': 'HUMAN-SUPERVISED AI VALIDATION',
+      'timestamp': '2026-10-02T12:02:30.000Z',
+      'metadata':
+          '{"event":"actionCompleted","engagement_reference":"ENG-7","observing_operator":"operator-1","source_address":"192.0.2.5","destination_address":"192.0.2.10","finding":"Diagnostic endpoint exposed","action_id":"action-1","exact_action":"hostname","rationale":"Validate the authorized remote boundary","expected_evidence":"Remote identity and hostname","detail":"Read-only identity proof completed","evidence_references":["evidence/action-1.png"]}',
+    },
+    {
+      'targetId': 11,
       'event_type': 'assessment_completed',
       'phase': 'CONFIRMATION',
       'timestamp': '2026-10-02T12:03:00.000Z',
@@ -74,8 +82,23 @@ void main() {
       sessionEvents: events,
     );
 
-    expect(narrative.entries, hasLength(4));
+    expect(narrative.entries, hasLength(5));
     expect(narrative.entries.first.timestamp, DateTime.utc(2026, 10, 2, 12, 1));
+    final supervised = narrative.entries.singleWhere(
+      (entry) => entry.sourceType == 'supervised_validation_event',
+    );
+    expect(supervised.phase, 'HUMAN-SUPERVISED AI VALIDATION');
+    expect(
+      supervised.action,
+      contains('Validate the authorized remote boundary'),
+    );
+    expect(supervised.action, contains('hostname'));
+    expect(supervised.finding, 'Diagnostic endpoint exposed');
+    expect(
+      supervised.observation,
+      contains('Read-only identity proof completed'),
+    );
+    expect(supervised.verification, contains('evidence/action-1.png'));
     expect(
       narrative.entries.first.rationale,
       contains('Validate the endpoint'),

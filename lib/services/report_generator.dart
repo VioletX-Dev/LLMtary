@@ -276,6 +276,8 @@ ${(assessmentNarrative != null && assessmentNarrative.isNotEmpty) || assessmentT
 </section>
 ''' : ''}
 
+${_supervisedValidationHtml(assessmentTimeline)}
+
 <!-- FINDINGS SUMMARY TABLE -->
 <section id="findings-table">
   <h2>Findings Summary</h2>
@@ -501,6 +503,8 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
         buf.writeln();
       }
     }
+
+    _writeSupervisedValidationMarkdown(buf, assessmentTimeline);
 
     buf.writeln('## Findings Summary');
     buf.writeln();
@@ -959,6 +963,68 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
       .where((p) => p.trim().isNotEmpty)
       .map((p) => '<p>${_esc(p.trim()).replaceAll('\n', '<br>')}</p>')
       .join('\n  ');
+
+  static String _supervisedValidationHtml(
+    List<AssessmentTimelineEntry> assessmentTimeline,
+  ) {
+    final entries = assessmentTimeline
+        .where((entry) => entry.sourceType == 'supervised_validation_event')
+        .toList();
+    if (entries.isEmpty) return '';
+    final rows = entries
+        .map(
+          (entry) =>
+              '<tr><td>${_esc(entry.timestamp.toUtc().toIso8601String())}</td><td>${_esc(entry.target)}</td><td>${_esc(entry.action)}${entry.rationale.isNotEmpty ? '<br><em>${_esc(entry.rationale)}</em>' : ''}</td><td>${_esc(entry.observation)}</td><td>${_esc(entry.verification)}</td><td>${_esc([entry.result, entry.disposition].where((value) => value.isNotEmpty).join(' — '))}</td></tr>',
+        )
+        .join('\n      ');
+    return '''
+<!-- HUMAN-SUPERVISED, AI-OPERATED VALIDATION -->
+<section id="supervised-ai-validation">
+  <h2>Human-Supervised, AI-Operated Validation</h2>
+  <p style="font-size:12px;color:#718096;margin-bottom:16px;">The AI proposed and executed each bounded action only after fresh approval by the named observing operator. This section is derived solely from the persisted deterministic event ledger and evidence references.</p>
+  <table>
+    <thead><tr><th>Time (UTC)</th><th>Authorized Target</th><th>AI Action and Rationale</th><th>Authorization / Observer</th><th>Evidence and Verification</th><th>Disposition / Cleanup</th></tr></thead>
+    <tbody>
+      $rows
+    </tbody>
+  </table>
+</section>
+''';
+  }
+
+  static void _writeSupervisedValidationMarkdown(
+    StringBuffer buf,
+    List<AssessmentTimelineEntry> assessmentTimeline,
+  ) {
+    final entries = assessmentTimeline
+        .where((entry) => entry.sourceType == 'supervised_validation_event')
+        .toList();
+    if (entries.isEmpty) return;
+    buf.writeln('## Human-Supervised, AI-Operated Validation');
+    buf.writeln();
+    buf.writeln(
+      '_The AI proposed and executed each bounded action only after fresh approval by the named observing operator. This section is derived solely from the persisted deterministic event ledger and evidence references._',
+    );
+    buf.writeln();
+    buf.writeln(
+      '| Time (UTC) | Authorized Target | AI Action and Rationale | Authorization / Observer | Evidence and Verification | Disposition / Cleanup |',
+    );
+    buf.writeln('|---|---|---|---|---|---|');
+    for (final entry in entries) {
+      final action = [
+        entry.action,
+        entry.rationale,
+      ].where((value) => value.isNotEmpty).join(' — ');
+      final disposition = [
+        entry.result,
+        entry.disposition,
+      ].where((value) => value.isNotEmpty).join(' — ');
+      buf.writeln(
+        '| ${_markdownCell(entry.timestamp.toUtc().toIso8601String())} | ${_markdownCell(entry.target)} | ${_markdownCell(action)} | ${_markdownCell(entry.observation)} | ${_markdownCell(entry.verification)} | ${_markdownCell(disposition)} |',
+      );
+    }
+    buf.writeln();
+  }
 
   static String _esc(String s) => s
       .replaceAll('&', '&amp;')

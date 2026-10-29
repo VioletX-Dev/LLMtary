@@ -795,22 +795,37 @@ Do NOT propose another port scan variant. Instead:
         onCommandExecuted?.call(checkLog.command, checkLog.output);
 
         if (!exists) {
-          onProgress?.call('[$address] $tool not found, attempting install...');
           final packageManager = await CommandExecutor.detectPackageManager();
-          bool installed;
-          try {
-            installed = await CommandExecutor.installTool(
-                tool, settings, llmService,
-                adminPassword: adminPassword,
-                onPasswordNeeded: onPasswordNeeded);
-          } catch (e) {
-            onProgress?.call('[$address] Install failed for $tool: $e');
-            installed = false;
+          final canInstall = CommandExecutor.shouldAttemptManagedInstall(
+            packageManager,
+            tool,
+          );
+          if (canInstall) {
+            onProgress?.call('[$address] $tool not found, attempting managed install...');
+          } else {
+            onProgress?.call(
+              '[$address] $tool is not in the audited managed installer allowlist; using a safe alternative',
+            );
+          }
+          bool installed = false;
+          if (canInstall) {
+            try {
+              installed = await CommandExecutor.installTool(
+                  tool, settings, llmService,
+                  adminPassword: adminPassword,
+                  onPasswordNeeded: onPasswordNeeded);
+            } catch (e) {
+              onProgress?.call('[$address] Install failed for $tool: $e');
+            }
           }
           final installLog = CommandLog(
             timestamp: DateTime.now(),
             command: CommandExecutor.getInstallDisplayCommand(packageManager, tool),
-            output: installed ? 'Successfully installed $tool' : 'Failed to install $tool',
+            output: installed
+                ? 'Successfully installed and verified $tool'
+                : canInstall
+                    ? 'Managed installation or verification failed for $tool; continuing with alternatives'
+                    : 'Automatic installation blocked: $tool is not in the audited managed installer allowlist',
             exitCode: installed ? 0 : 1,
             vulnerabilityIndex: null,
             projectId: projectId,

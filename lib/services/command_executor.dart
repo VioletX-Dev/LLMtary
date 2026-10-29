@@ -194,12 +194,23 @@ class CommandExecutor {
         _managedSourceTools.contains(normalized);
   }
 
+  static bool shouldAttemptManagedInstall(
+    String packageManager,
+    String tool,
+  ) {
+    if (Platform.isLinux && packageManager == 'apt-get') {
+      return canUseManagedInstaller(tool);
+    }
+    return true;
+  }
+
   static String getInstallDisplayCommand(String packageManager, String tool) {
     final normalized = tool.toLowerCase().trim();
     final aptPackage = getManagedAptPackage(normalized);
-    if (Platform.isLinux &&
-        packageManager == 'apt-get' &&
-        canUseManagedInstaller(normalized)) {
+    if (Platform.isLinux && packageManager == 'apt-get') {
+      if (!canUseManagedInstaller(normalized)) {
+        return 'managed installer blocked: $normalized';
+      }
       if (aptPackage != null) return 'apt-get install $aptPackage';
       return '/opt/LLMtary/libexec/llmtary-tool-installer $normalized';
     }

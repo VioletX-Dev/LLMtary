@@ -59,6 +59,21 @@ void main() {
     expect(CommandExecutor.canUseManagedInstaller('xfreerdp3'), isTrue);
   });
 
+  test('unsupported tools are blocked instead of shown as apt installs', () {
+    expect(
+      CommandExecutor.shouldAttemptManagedInstall('apt-get', 'snmpwalk'),
+      isTrue,
+    );
+    expect(
+      CommandExecutor.shouldAttemptManagedInstall('apt-get', 'evil-winrm'),
+      isFalse,
+    );
+    expect(
+      CommandExecutor.getInstallDisplayCommand('apt-get', 'evil-winrm'),
+      'managed installer blocked: evil-winrm',
+    );
+  });
+
   test('legacy RDP requirement resolves to maintained FreeRDP 3', () {
     expect(CommandExecutor.getToolBinary('rdesktop'), 'xfreerdp3');
     expect(CommandExecutor.getToolBinary('xfreerdp'), 'xfreerdp3');

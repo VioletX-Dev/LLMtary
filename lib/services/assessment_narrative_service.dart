@@ -94,7 +94,8 @@ class AssessmentNarrativeService {
           eventType != 'candidate_plan_created' &&
           eventType != 'candidate_requeued' &&
           eventType != 'candidate_prerequisite_satisfied' &&
-          eventType != 'candidate_closure_finalized') {
+          eventType != 'candidate_closure_finalized' &&
+          eventType != 'supervised_validation_event') {
         continue;
       }
       final timestamp = DateTime.tryParse(row['timestamp']?.toString() ?? '');
@@ -109,6 +110,42 @@ class AssessmentNarrativeService {
         }
       } catch (_) {
         metadata = const {};
+      }
+      if (eventType == 'supervised_validation_event') {
+        final evidence = metadata['evidence_references'];
+        final evidenceText = evidence is List
+            ? evidence.map((value) => clean(value, maxLength: 500)).join(', ')
+            : clean(evidence, maxLength: 1000);
+        entries.add(
+          AssessmentTimelineEntry(
+            timestamp: timestamp,
+            phase: 'HUMAN-SUPERVISED AI VALIDATION',
+            target: clean(
+              metadata['destination_address'] ?? 'Unknown',
+              maxLength: 300,
+            ),
+            finding: clean(metadata['finding'], maxLength: 500),
+            action: [
+              clean(metadata['event'], maxLength: 100),
+              clean(metadata['exact_action'], maxLength: 1000),
+              clean(metadata['rationale']),
+            ].where((value) => value.isNotEmpty).join(' — '),
+            rationale: [
+              'AI-operated action observed by ${clean(metadata['observing_operator'], maxLength: 200)}',
+              'Authorization ${clean(metadata['engagement_reference'], maxLength: 200)}',
+              'Source ${clean(metadata['source_address'], maxLength: 300)}',
+            ].where((value) => value.isNotEmpty).join(' — '),
+            observation: clean(metadata['detail']),
+            verification: [
+              clean(metadata['expected_evidence']),
+              evidenceText,
+            ].where((value) => value.isNotEmpty).join(' — Evidence: '),
+            result: clean(metadata['event'], maxLength: 100),
+            disposition: clean(metadata['disposition'], maxLength: 300),
+            sourceType: eventType,
+          ),
+        );
+        continue;
       }
       final vulnerabilityId = _asInt(metadata['vulnerability_id']);
       final vulnerability = vulnById[vulnerabilityId];
