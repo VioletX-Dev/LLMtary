@@ -177,6 +177,30 @@ Host: 172.16.2.20 ()\tPorts: 1433/open/tcp//ms-sql-s///\tIgnored State: filtered
       expect(flattened.toSet().length, 507);
       expect(flattened.where((address) => address == '172.17.2.8').length, 1);
     });
+
+    test('baseline liveness reuses explicit-open bounded fallback evidence', () {
+      final command = ReconService.boundedFallbackNmapCommand('172.16.2.20');
+
+      expect(command, contains('-Pn'));
+      expect(command, isNot(contains('-sn')));
+      expect(command, contains('1433'));
+      expect(command, contains('3389'));
+      expect(command, contains('-oG - 172.16.2.20'));
+      expect(
+        ReconService.hasExplicitOpenEvidence(
+          '172.16.2.20',
+          'Host: 172.16.2.20 ()\tPorts: 1433/open/tcp//ms-sql-s///',
+        ),
+        isTrue,
+      );
+      expect(
+        ReconService.hasExplicitOpenEvidence(
+          '172.16.2.20',
+          'Host: 172.16.2.20 ()\tStatus: Up',
+        ),
+        isFalse,
+      );
+    });
   });
 
   group('OS and technology enrichment', () {

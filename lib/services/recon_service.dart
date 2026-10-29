@@ -2633,11 +2633,10 @@ Respond ONLY with valid JSON.''';
       bool tcpAlive = false;
       if (!isWin) {
         final tcpOut = await runStep(
-            'nmap -sn -PS22,80,443,445 --open -T4 $address',
+            boundedFallbackNmapCommand(address),
             'TCP fallback probe (ICMP-blocking host)');
         if (tcpOut != null) {
-          tcpAlive = tcpOut.toLowerCase().contains('host is up') ||
-              tcpOut.toLowerCase().contains('1 host up');
+          tcpAlive = hasExplicitOpenEvidence(address, tcpOut);
         }
       } else {
         // Windows: try a few Test-NetConnection probes
@@ -3067,6 +3066,18 @@ Respond ONLY with valid JSON.''';
       '-',
       ...uniqueAddresses,
     ];
+  }
+
+  /// Build the approval-visible baseline fallback command. Every token is
+  /// fixed except the already scope-validated IPv4 address.
+  static String boundedFallbackNmapCommand(String address) {
+    return 'nmap ${boundedFallbackNmapArgs([address]).join(' ')}';
+  }
+
+  /// Retain a fallback host only when its own grepable record contains an
+  /// explicit open port. `-Pn` status text alone is not reachability proof.
+  static bool hasExplicitOpenEvidence(String address, String output) {
+    return parseGrepableOpenHosts(output).contains(address);
   }
 
   /// Split a large fallback scope into bounded invocations so one slow,
