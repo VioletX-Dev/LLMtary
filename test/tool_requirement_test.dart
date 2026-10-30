@@ -91,6 +91,7 @@ void main() {
     );
     expect(installer, contains('/usr/bin/sha256sum -c -'));
     expect(installer, contains('/usr/sbin/runuser -u llmtary'));
+    expect(installer, contains('libreadline-dev libncurses-dev'));
   });
 
   test('legacy RDP requirement resolves to maintained FreeRDP 3', () {

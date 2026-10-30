@@ -116,7 +116,7 @@ install_evil_winrm() {
     sha256='0bfa3080129c664de4a70f01477742dddf7907ade5c502afae38269e28c4f991'
     destination="/opt/llmtary-tools/evil-winrm-$version"
     if [ ! -x "$destination/bin/evil-winrm" ]; then
-        apt_install ruby ruby-dev build-essential ca-certificates curl
+        apt_install ruby ruby-dev build-essential libreadline-dev libncurses-dev ca-certificates curl
         /usr/bin/install -d -m 0755 /opt/llmtary-tools
         stage="/opt/llmtary-tools/.evil-winrm-$version-$$"
         gem_file="/opt/llmtary-tools/.evil-winrm-$version-$$.gem"
