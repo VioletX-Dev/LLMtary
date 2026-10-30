@@ -111,6 +111,49 @@ install_searchsploit() {
     /usr/bin/ln -sfn /opt/exploitdb/.searchsploit_rc /home/llmtary/.searchsploit_rc
 }
 
+install_evil_winrm() {
+    version='4.1'
+    sha256='0bfa3080129c664de4a70f01477742dddf7907ade5c502afae38269e28c4f991'
+    destination="/opt/llmtary-tools/evil-winrm-$version"
+    if [ ! -x "$destination/bin/evil-winrm" ]; then
+        apt_install ruby ruby-dev build-essential ca-certificates curl
+        /usr/bin/install -d -m 0755 /opt/llmtary-tools
+        stage="/opt/llmtary-tools/.evil-winrm-$version-$$"
+        gem_file="/opt/llmtary-tools/.evil-winrm-$version-$$.gem"
+        trap 'rm -rf "$stage" "$gem_file"' EXIT HUP INT TERM
+        /usr/bin/install -d -o llmtary -g llmtary -m 0750 "$stage/bin" "$stage/gems"
+        /usr/bin/curl --fail --silent --show-error --location \
+            --proto '=https' --tlsv1.2 \
+            --output "$gem_file" \
+            "https://rubygems.org/gems/evil-winrm-$version.gem"
+        printf '%s  %s\n' "$sha256" "$gem_file" | /usr/bin/sha256sum -c -
+        /usr/bin/chown llmtary:llmtary "$gem_file"
+        /usr/sbin/runuser -u llmtary -- /usr/bin/env \
+            HOME=/home/llmtary \
+            GEM_HOME="$stage/gems" \
+            GEM_PATH="$stage/gems" \
+            /usr/bin/gem install "$gem_file" --no-document \
+            --install-dir "$stage/gems" --bindir "$stage/bin"
+        [ -x "$stage/bin/evil-winrm" ] || {
+            echo "Evil-WinRM installation did not produce evil-winrm" >&2
+            exit 67
+        }
+        /usr/bin/chown -R root:root "$stage"
+        /usr/bin/mv "$stage" "$destination"
+        /bin/rm -f "$gem_file"
+        trap - EXIT HUP INT TERM
+    fi
+    /usr/bin/chmod -R go-w,a+rX "$destination"
+    wrapper=/usr/local/bin/evil-winrm
+    printf '%s\n' \
+        '#!/bin/sh' \
+        "export GEM_HOME='$destination/gems'" \
+        "export GEM_PATH='$destination/gems'" \
+        "exec '$destination/bin/evil-winrm' \"\$@\"" > "$wrapper"
+    /usr/bin/chown root:root "$wrapper"
+    /usr/bin/chmod 0755 "$wrapper"
+}
+
 case "$1" in
     smbclient) package=smbclient ;;
     impacket) package=python3-impacket ;;
@@ -130,6 +173,10 @@ case "$1" in
         ;;
     searchsploit|exploitdb|exploit-db)
         install_searchsploit
+        exit 0
+        ;;
+    evil-winrm)
+        install_evil_winrm
         exit 0
         ;;
     *)

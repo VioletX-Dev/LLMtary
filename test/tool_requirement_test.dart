@@ -53,25 +53,44 @@ void main() {
     expect(CommandExecutor.canUseManagedInstaller('netexec'), isTrue);
     expect(CommandExecutor.canUseManagedInstaller('searchsploit'), isTrue);
     expect(CommandExecutor.canUseManagedInstaller('exploitdb'), isTrue);
-    expect(CommandExecutor.canUseManagedInstaller('evil-winrm'), isFalse);
+    expect(CommandExecutor.canUseManagedInstaller('evil-winrm'), isTrue);
     expect(CommandExecutor.canUseManagedInstaller('rdesktop'), isTrue);
     expect(CommandExecutor.canUseManagedInstaller('xfreerdp'), isTrue);
     expect(CommandExecutor.canUseManagedInstaller('xfreerdp3'), isTrue);
   });
 
-  test('unsupported tools are blocked instead of shown as apt installs', () {
+  test('audited Evil-WinRM uses the managed installer', () {
     expect(
       CommandExecutor.shouldAttemptManagedInstall('apt-get', 'snmpwalk'),
       isTrue,
     );
     expect(
       CommandExecutor.shouldAttemptManagedInstall('apt-get', 'evil-winrm'),
-      isFalse,
+      isTrue,
     );
     expect(
       CommandExecutor.getInstallDisplayCommand('apt-get', 'evil-winrm'),
-      'managed installer blocked: evil-winrm',
+      '/opt/LLMtary/libexec/llmtary-tool-installer evil-winrm',
     );
+  });
+
+  test('unknown tools remain blocked from root-managed installation', () {
+    expect(CommandExecutor.canUseManagedInstaller('unreviewed-tool'), isFalse);
+    expect(
+      CommandExecutor.getInstallDisplayCommand('apt-get', 'unreviewed-tool'),
+      'managed installer blocked: unreviewed-tool',
+    );
+  });
+
+  test('Evil-WinRM installer pins and verifies the audited gem', () {
+    final installer = File('linux/llmtary-tool-installer').readAsStringSync();
+    expect(installer, contains("version='4.1'"));
+    expect(
+      installer,
+      contains("sha256='0bfa3080129c664de4a70f01477742dddf7907ade5c502afae38269e28c4f991'"),
+    );
+    expect(installer, contains('/usr/bin/sha256sum -c -'));
+    expect(installer, contains('/usr/sbin/runuser -u llmtary'));
   });
 
   test('legacy RDP requirement resolves to maintained FreeRDP 3', () {

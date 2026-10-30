@@ -145,6 +145,7 @@ class CommandExecutor {
     'rdesktop': 'xfreerdp3',
     'xfreerdp': 'xfreerdp3',
     'xfreerdp3': 'xfreerdp3',
+    'evil-winrm': 'evil-winrm',
   };
 
   // Some LLM responses name Python modules rather than executable binaries.
@@ -183,6 +184,7 @@ class CommandExecutor {
     'searchsploit',
     'exploitdb',
     'exploit-db',
+    'evil-winrm',
   };
 
   static String? getManagedAptPackage(String tool) =>
