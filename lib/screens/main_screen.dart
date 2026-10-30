@@ -28,6 +28,7 @@ import '../utils/app_exceptions.dart';
 import '../utils/scope_validator.dart';
 import '../services/storage_service.dart';
 import '../services/evidence_storage_service.dart';
+import '../services/automated_screenshot_service.dart';
 import '../services/prompt_templates.dart';
 import '../services/llm_service.dart';
 import '../services/test_budget.dart';
@@ -1581,6 +1582,23 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
         onCommandExecuted: (command, output, _) async {
           appState.addDebugLog('[${target.address}] Command: $command');
           await appState.loadCommandLogs();
+          final project = appState.currentProject;
+          final findingId = vulnerability.id;
+          if (project != null && findingId != null) {
+            try {
+              await AutomatedScreenshotService.captureFinding(
+                project: project,
+                vulnerabilityId: findingId,
+                phase: 'PROOF / EXPLOIT',
+                targetLabel: target.address,
+                command: command,
+              );
+            } catch (error) {
+              appState.addDebugLog(
+                'Automatic screenshot failed: ${error.runtimeType}',
+              );
+            }
+          }
         },
         onPromptResponse: appState.addPromptLog,
         onTokensUsed: (sent, received) => appState.recordTokenUsage(
@@ -1987,6 +2005,23 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
                 onCommandExecuted: (cmd, output, idx) async {
                   appState.addDebugLog('[${vuln.targetAddress}] Command: $cmd');
                   await appState.loadCommandLogs();
+                  final project = appState.currentProject;
+                  final findingId = vuln.id;
+                  if (project != null && findingId != null) {
+                    try {
+                      await AutomatedScreenshotService.captureFinding(
+                        project: project,
+                        vulnerabilityId: findingId,
+                        phase: 'PROOF / EXPLOIT',
+                        targetLabel: vuln.targetAddress,
+                        command: cmd,
+                      );
+                    } catch (error) {
+                      appState.addDebugLog(
+                        'Automatic screenshot failed: ${error.runtimeType}',
+                      );
+                    }
+                  }
                   if (mounted) setState(() {});
                 },
                 onPromptResponse: (prompt, response) {

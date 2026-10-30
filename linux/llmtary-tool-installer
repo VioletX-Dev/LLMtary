@@ -1,14 +1,33 @@
 #!/bin/sh
 set -eu
 
-if [ "$(id -u)" -ne 0 ] || [ "$#" -ne 1 ]; then
-    echo "managed installer requires one logical tool name and root" >&2
+if [ "$(id -u)" -ne 0 ]; then
+    echo "managed installer requires root" >&2
     exit 64
 fi
 
 export DEBIAN_FRONTEND=noninteractive
 exec 9>/run/lock/llmtary-tool-installer.lock
 /usr/bin/flock 9
+
+if [ "$#" -eq 2 ] && [ "$1" = "apt-package" ]; then
+    package=$2
+    printf '%s' "$package" | /bin/grep -Eq '^[a-z0-9][a-z0-9+.-]{0,127}$' || {
+        echo "invalid package identifier" >&2
+        exit 64
+    }
+    /usr/bin/apt-cache show -- "$package" >/dev/null 2>&1 || {
+        echo "package is not available from configured repositories" >&2
+        exit 65
+    }
+    export DEBIAN_FRONTEND=noninteractive
+    exec /usr/bin/apt-get install -y --no-install-recommends "$package"
+fi
+
+if [ "$#" -ne 1 ]; then
+    echo "managed installer requires one logical tool name" >&2
+    exit 64
+fi
 
 apt_install() {
     /usr/bin/apt-get install -y --no-install-recommends "$@"

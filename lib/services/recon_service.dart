@@ -804,7 +804,7 @@ Do NOT propose another port scan variant. Instead:
             onProgress?.call('[$address] $tool not found, attempting managed install...');
           } else {
             onProgress?.call(
-              '[$address] $tool is not in the audited managed installer allowlist; using a safe alternative',
+              '[$address] $tool is not a valid package identifier; using a safe alternative',
             );
           }
           bool installed = false;
@@ -825,7 +825,7 @@ Do NOT propose another port scan variant. Instead:
                 ? 'Successfully installed and verified $tool'
                 : canInstall
                     ? 'Managed installation or verification failed for $tool; continuing with alternatives'
-                    : 'Automatic installation blocked: $tool is not in the audited managed installer allowlist',
+                    : 'Automatic installation blocked: invalid package identifier for $tool',
             exitCode: installed ? 0 : 1,
             vulnerabilityIndex: null,
             projectId: projectId,

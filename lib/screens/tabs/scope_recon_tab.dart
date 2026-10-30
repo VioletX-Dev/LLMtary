@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../database/database_helper.dart';
 import '../../models/target.dart';
 import '../../services/phase_rerun_recorder.dart';
+import '../../services/automated_screenshot_service.dart';
 import '../../widgets/app_state.dart';
 import '../../widgets/target_input_panel.dart';
 import '../../services/recon_service.dart';
@@ -260,7 +261,25 @@ class _ScopeReconTabState extends State<ScopeReconTab> {
                       }
                     },
                     onPromptResponse: (p, r) => appState.addPromptLog(p, r),
-                    onCommandExecuted: (cmd, output) async => await appState.loadCommandLogs(),
+                    onCommandExecuted: (cmd, output) async {
+                      await appState.loadCommandLogs();
+                      final project = appState.currentProject;
+                      if (project != null) {
+                        try {
+                          final path = await AutomatedScreenshotService.captureOperational(
+                            project: project,
+                            phase: 'SCOPE / RECON',
+                            targetLabel: appState.selectedTarget?.address ?? 'project',
+                            command: cmd,
+                          );
+                          appState.addDebugLog('Automatic screenshot saved: $path');
+                        } catch (error) {
+                          appState.addDebugLog(
+                            'Automatic screenshot failed: ${error.runtimeType}',
+                          );
+                        }
+                      }
+                    },
                     onTargetsDiscovered: (targets) async {
                       if (_starting && mounted) setState(() => _starting = false);
                       await appState.setTargets(targets);

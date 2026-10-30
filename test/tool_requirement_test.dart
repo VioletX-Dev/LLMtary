@@ -40,10 +40,7 @@ void main() {
     );
     expect(CommandExecutor.getManagedAptPackage('urllib'), isNull);
     expect(CommandExecutor.getManagedAptPackage('unknown-tool'), isNull);
-    expect(
-      CommandExecutor.getManagedAptPackage('rdesktop'),
-      'freerdp3-x11',
-    );
+    expect(CommandExecutor.getManagedAptPackage('rdesktop'), 'freerdp3-x11');
   });
 
   test('managed installer supports audited apt and source tools', () {
@@ -74,12 +71,13 @@ void main() {
     );
   });
 
-  test('unknown tools remain blocked from root-managed installation', () {
-    expect(CommandExecutor.canUseManagedInstaller('unreviewed-tool'), isFalse);
+  test('LLM or human identified package names use dynamic managed install', () {
+    expect(CommandExecutor.canUseManagedInstaller('unreviewed-tool'), isTrue);
     expect(
       CommandExecutor.getInstallDisplayCommand('apt-get', 'unreviewed-tool'),
-      'managed installer blocked: unreviewed-tool',
+      '/opt/LLMtary/libexec/llmtary-tool-installer apt-package <resolved-package>',
     );
+    expect(CommandExecutor.canUseManagedInstaller('../unsafe'), isFalse);
   });
 
   test('Evil-WinRM installer pins and verifies the audited gem', () {
@@ -87,11 +85,19 @@ void main() {
     expect(installer, contains("version='4.1'"));
     expect(
       installer,
-      contains("sha256='0bfa3080129c664de4a70f01477742dddf7907ade5c502afae38269e28c4f991'"),
+      contains(
+        "sha256='0bfa3080129c664de4a70f01477742dddf7907ade5c502afae38269e28c4f991'",
+      ),
     );
     expect(installer, contains('/usr/bin/sha256sum -c -'));
     expect(installer, contains('/usr/sbin/runuser -u llmtary'));
     expect(installer, contains('libreadline-dev libncurses-dev'));
+    expect(installer, contains('apt-package'));
+    expect(installer, contains('/usr/bin/apt-cache show'));
+    expect(
+      installer.indexOf('/usr/bin/flock 9'),
+      lessThan(installer.indexOf('apt-package')),
+    );
   });
 
   test('legacy RDP requirement resolves to maintained FreeRDP 3', () {

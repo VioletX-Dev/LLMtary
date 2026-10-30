@@ -157,8 +157,8 @@ class CommandExecutor {
     'impacket': 'impacket',
   };
 
-  // Appliance runtime installs are deliberately restricted to this audited
-  // logical-tool allowlist. The root-owned helper performs the same mapping.
+  // Appliance runtime installs use audited mappings when available and otherwise
+  // accept a strict package identifier resolved by the LLM from configured repos.
   static const Map<String, String> _managedAptPackages = {
     'smbclient': 'smbclient',
     'impacket': 'python3-impacket',
@@ -190,16 +190,20 @@ class CommandExecutor {
   static String? getManagedAptPackage(String tool) =>
       _managedAptPackages[tool.toLowerCase().trim()];
 
+  static bool _isAuditedManagedTool(String tool) =>
+      _managedAptPackages.containsKey(tool) ||
+      _managedSourceTools.contains(tool);
+
+  static bool _isSafePackageIdentifier(String value) =>
+      RegExp(r'^[a-z0-9][a-z0-9+.-]{0,127}$').hasMatch(value);
+
   static bool canUseManagedInstaller(String tool) {
     final normalized = tool.toLowerCase().trim();
-    return _managedAptPackages.containsKey(normalized) ||
-        _managedSourceTools.contains(normalized);
+    return _isAuditedManagedTool(normalized) ||
+        _isSafePackageIdentifier(normalized);
   }
 
-  static bool shouldAttemptManagedInstall(
-    String packageManager,
-    String tool,
-  ) {
+  static bool shouldAttemptManagedInstall(String packageManager, String tool) {
     if (Platform.isLinux && packageManager == 'apt-get') {
       return canUseManagedInstaller(tool);
     }
@@ -214,7 +218,10 @@ class CommandExecutor {
         return 'managed installer blocked: $normalized';
       }
       if (aptPackage != null) return 'apt-get install $aptPackage';
-      return '/opt/LLMtary/libexec/llmtary-tool-installer $normalized';
+      if (_managedSourceTools.contains(normalized)) {
+        return '/opt/LLMtary/libexec/llmtary-tool-installer $normalized';
+      }
+      return '/opt/LLMtary/libexec/llmtary-tool-installer apt-package <resolved-package>';
     }
     return '$packageManager install $tool';
   }
@@ -1001,7 +1008,7 @@ Respond ONLY with valid JSON.''';
 
       if (Platform.isLinux &&
           packageManager == 'apt-get' &&
-          canUseManagedInstaller(primaryTool)) {
+          _isAuditedManagedTool(primaryTool.toLowerCase())) {
         final helper = File(
           '${File(Platform.resolvedExecutable).parent.path}/libexec/llmtary-tool-installer',
         );
@@ -1030,13 +1037,6 @@ Respond ONLY with valid JSON.''';
         }
         print(
           '${_timestamp()} DEBUG: Managed installer is not provisioned; an appliance administrator must install $primaryTool',
-        );
-        return false;
-      }
-
-      if (Platform.isLinux && packageManager == 'apt-get') {
-        print(
-          '${_timestamp()} DEBUG: $primaryTool is not in the managed installer allowlist; automatic installation is blocked',
         );
         return false;
       }
@@ -1139,6 +1139,34 @@ Respond ONLY with valid JSON.''';
           .timeout(Duration(seconds: 30));
       final decision = _parseJson(response);
       String installCmd = decision['command'] ?? '';
+
+      if (Platform.isLinux && packageManager == 'apt-get') {
+        final package = (decision['package'] ?? '')
+            .toString()
+            .toLowerCase()
+            .trim();
+        if (!_isSafePackageIdentifier(package)) {
+          print(
+            '${_timestamp()} DEBUG: LLM returned an unsafe package identifier',
+          );
+          return false;
+        }
+        final helper = File(
+          '${File(Platform.resolvedExecutable).parent.path}/libexec/llmtary-tool-installer',
+        );
+        if (!await helper.exists()) return false;
+        final result = await Process.run('sudo', [
+          '-n',
+          helper.path,
+          'apt-package',
+          package,
+        ]).timeout(const Duration(minutes: 3));
+        if (result.exitCode != 0) {
+          print('${_timestamp()} DEBUG: Dynamic managed install failed');
+          return false;
+        }
+        return checkToolExists(primaryTool, settings, llmService);
+      }
 
       if (installCmd.isEmpty) {
         print('${_timestamp()} DEBUG: LLM did not provide install command');
