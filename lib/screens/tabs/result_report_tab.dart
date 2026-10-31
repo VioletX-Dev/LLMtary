@@ -13,6 +13,7 @@ import '../../models/report_evidence.dart';
 import '../../models/cloud_assist.dart';
 import '../../models/candidate_closure.dart';
 import '../../models/controlled_exploitation.dart';
+import '../../models/validation_run.dart';
 import '../../services/report_generator.dart';
 import '../../services/report_content_service.dart';
 import '../../services/assessment_narrative_service.dart';
@@ -413,6 +414,9 @@ class _InlineReportFormState extends State<_InlineReportForm> {
       final controlledExploitations = updatedProject.id != null
           ? await DatabaseHelper.getControlledExploitations(updatedProject.id!)
           : const <ControlledExploitationRecord>[];
+      final validationRuns = updatedProject.id != null
+          ? await DatabaseHelper.getValidationRuns(updatedProject.id!)
+          : const <ValidationRun>[];
       final assessmentData = AssessmentNarrativeService.build(
         targets: widget.appState.targets,
         vulnerabilities: widget.appState.vulnerabilities,
@@ -478,6 +482,7 @@ class _InlineReportFormState extends State<_InlineReportForm> {
           visualEvidence: visualEvidence,
           closures: closures,
           controlledExploitations: controlledExploitations,
+          validationRuns: validationRuns,
         ),
         'md' => ReportGenerator.generateMarkdown(
           project: updatedProject,
@@ -496,6 +501,7 @@ class _InlineReportFormState extends State<_InlineReportForm> {
           visualEvidence: visualEvidence,
           closures: closures,
           controlledExploitations: controlledExploitations,
+          validationRuns: validationRuns,
         ),
         'csv' => ReportGenerator.generateCsv(
           vulnerabilities: widget.appState.vulnerabilities,
@@ -503,6 +509,7 @@ class _InlineReportFormState extends State<_InlineReportForm> {
           confirmedOnly: false,
           closures: closures,
           controlledExploitations: controlledExploitations,
+          validationRuns: validationRuns,
         ),
         _ => '',
       };
@@ -600,6 +607,9 @@ class _InlineReportFormState extends State<_InlineReportForm> {
       final closures = await DatabaseHelper.getCandidateClosures(project.id!);
       final controlledExploitations =
           await DatabaseHelper.getControlledExploitations(project.id!);
+      final validationRuns = await DatabaseHelper.getValidationRuns(
+        project.id!,
+      );
       final visualEvidence = await EvidenceStorageService.loadReportEvidence(
         project: updatedProject,
         artifacts: artifacts,
@@ -618,6 +628,7 @@ class _InlineReportFormState extends State<_InlineReportForm> {
         visualEvidence: visualEvidence,
         closures: closures,
         controlledExploitations: controlledExploitations,
+        validationRuns: validationRuns,
       );
       final packageBytes = await EvidencePackageBuilder.build(
         projectName: updatedProject.name,

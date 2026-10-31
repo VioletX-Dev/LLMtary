@@ -11,6 +11,10 @@ class CandidatePrerequisites {
   final bool credentialsAvailable;
   final bool manualMfaCompleted;
   final bool requiredToolAvailable;
+  final int retryBudget;
+  final int retriesUsed;
+  final int toolBudget;
+  final int toolsUsed;
   final int requestBudget;
   final int requestsUsed;
   final List<String> attemptedMethodIds;
@@ -23,6 +27,10 @@ class CandidatePrerequisites {
     this.credentialsAvailable = false,
     this.manualMfaCompleted = false,
     this.requiredToolAvailable = true,
+    this.retryBudget = 3,
+    this.retriesUsed = 0,
+    this.toolBudget = 3,
+    this.toolsUsed = 0,
     this.requestBudget = 8,
     this.requestsUsed = 0,
     this.attemptedMethodIds = const [],
@@ -153,6 +161,22 @@ class CandidateClosurePlanner {
             'MFA must be completed manually by an authorized operator.',
         prerequisites: contract.prerequisites,
         owner: WorkOwner.operator,
+      );
+    }
+    if (state.retriesUsed >= state.retryBudget) {
+      return const CandidatePlanDecision(
+        shouldExecute: false,
+        disposition: CandidateDisposition.safeTestingLimitReached,
+        reasonCode: ClosureReasonCode.safeRetryBudgetExhausted,
+        explanation: 'The bounded retry budget was exhausted.',
+      );
+    }
+    if (state.toolsUsed >= state.toolBudget) {
+      return const CandidatePlanDecision(
+        shouldExecute: false,
+        disposition: CandidateDisposition.safeTestingLimitReached,
+        reasonCode: ClosureReasonCode.safeToolBudgetExhausted,
+        explanation: 'The bounded distinct-tool budget was exhausted.',
       );
     }
     if (state.requestsUsed >= state.requestBudget) {

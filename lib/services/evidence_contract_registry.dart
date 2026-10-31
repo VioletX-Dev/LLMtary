@@ -150,7 +150,7 @@ class EvidenceContractRegistry {
     ],
     safeMethodIds: const [
       'http-response-headers',
-      'http-response-headers-repeat',
+      'http-response-headers-native',
     ],
     prohibitedMethods: const ['generic reachability as proof'],
     evaluator: (o) {

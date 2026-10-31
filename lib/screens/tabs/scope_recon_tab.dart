@@ -5,6 +5,7 @@ import '../../database/database_helper.dart';
 import '../../models/target.dart';
 import '../../services/phase_rerun_recorder.dart';
 import '../../services/automated_screenshot_service.dart';
+import '../../services/evidence_target_resolver.dart';
 import '../../widgets/app_state.dart';
 import '../../widgets/target_input_panel.dart';
 import '../../services/recon_service.dart';
@@ -269,7 +270,14 @@ class _ScopeReconTabState extends State<ScopeReconTab> {
                           final path = await AutomatedScreenshotService.captureOperational(
                             project: project,
                             phase: 'SCOPE / RECON',
-                            targetLabel: appState.selectedTarget?.address ?? 'project',
+                            targetLabel: EvidenceTargetResolver.resolve(
+                              selectedTarget: appState.selectedTarget?.address,
+                              knownTargets: appState.targets.map(
+                                (target) => target.address,
+                              ),
+                              command: cmd,
+                              output: output,
+                            ),
                             command: appState.redactCloudReviewPayload(cmd),
                             output: appState.redactCloudReviewPayload(output),
                           );

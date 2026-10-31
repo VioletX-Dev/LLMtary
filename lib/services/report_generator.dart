@@ -7,6 +7,7 @@ import '../models/llm_settings.dart';
 import '../models/report_evidence.dart';
 import '../models/candidate_closure.dart';
 import '../models/controlled_exploitation.dart';
+import '../models/validation_run.dart';
 import '../utils/cvss_calculator.dart';
 import 'assessment_narrative_service.dart';
 import 'report_evidence_quality.dart';
@@ -37,6 +38,7 @@ class ReportGenerator {
     List<ReportEvidence> visualEvidence = const [],
     List<CandidateClosure> closures = const [],
     List<ControlledExploitationRecord> controlledExploitations = const [],
+    List<ValidationRun> validationRuns = const [],
   }) {
     final decisions = <Vulnerability, ReportEvidenceDecision>{
       for (final vulnerability in vulnerabilities)
@@ -300,6 +302,7 @@ ${_supervisedValidationHtml(assessmentTimeline)}
 ${qualityExceptions.isNotEmpty ? _qualityExceptionsSection(qualityExceptions, decisions) : ''}
 ${assessmentCandidates.isNotEmpty ? _assessmentCandidatesSection(assessmentCandidates) : ''}
 ${_closureCoverageHtml(vulnerabilities, closures)}
+${_validationAssuranceHtml(validationRuns)}
 ${_controlledExploitationHtml(vulnerabilities, controlledExploitations)}
 
 ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
@@ -339,6 +342,7 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     List<ReportEvidence> visualEvidence = const [],
     List<CandidateClosure> closures = const [],
     List<ControlledExploitationRecord> controlledExploitations = const [],
+    List<ValidationRun> validationRuns = const [],
   }) {
     final decisions = <Vulnerability, ReportEvidenceDecision>{
       for (final vulnerability in vulnerabilities)
@@ -646,6 +650,7 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     }
 
     buf.write(_closureCoverageMarkdown(vulnerabilities, closures));
+    buf.write(_validationAssuranceMarkdown(validationRuns));
     buf.write(
       _controlledExploitationMarkdown(vulnerabilities, controlledExploitations),
     );
@@ -673,6 +678,7 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     bool confirmedOnly = false,
     List<CandidateClosure> closures = const [],
     List<ControlledExploitationRecord> controlledExploitations = const [],
+    List<ValidationRun> validationRuns = const [],
   }) {
     final decisions = <Vulnerability, ReportEvidenceDecision>{
       for (final vulnerability in vulnerabilities)
@@ -847,6 +853,52 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     }
     buffer.writeln();
     return buffer.toString();
+  }
+
+  static String _validationAssuranceHtml(List<ValidationRun> runs) {
+    final assessmentRuns = runs
+        .where((run) => run.mode == ValidationRunMode.assessment)
+        .toList(growable: false);
+    if (assessmentRuns.isEmpty) return '';
+    final counts = <ValidationRunOutcome, int>{
+      for (final outcome in ValidationRunOutcome.values) outcome: 0,
+    };
+    for (final run in assessmentRuns) {
+      counts[run.outcome] = counts[run.outcome]! + 1;
+    }
+    final supervisedCount = assessmentRuns
+        .where((run) => run.constraints.contains('Human-supervised'))
+        .length;
+    return '''<section id="validation-assurance">
+  <h2>Validation Assurance and Coverage</h2>
+  <p>Human-supervised runs are AI-operated under continuous human supervision with exact-command approval. Standard runs remain bounded and non-destructive. The platform uses adaptive, service-specific validation. A timeout, iteration limit, parser error, missing tool, or tool failure is recorded as inconclusive and is not evidence of absence.</p>
+  <table><thead><tr><th>Total runs</th><th>Human-supervised</th><th>Standard</th><th>Condition observed</th><th>Condition not observed</th><th>Inconclusive</th><th>Error</th><th>Pending</th></tr></thead><tbody><tr><td>${assessmentRuns.length}</td><td>$supervisedCount</td><td>${assessmentRuns.length - supervisedCount}</td><td>${counts[ValidationRunOutcome.conditionObserved]}</td><td>${counts[ValidationRunOutcome.conditionNotObserved]}</td><td>${counts[ValidationRunOutcome.inconclusive]}</td><td>${counts[ValidationRunOutcome.error]}</td><td>${counts[ValidationRunOutcome.pending]}</td></tr></tbody></table>
+</section>''';
+  }
+
+  static String _validationAssuranceMarkdown(List<ValidationRun> runs) {
+    final assessmentRuns = runs
+        .where((run) => run.mode == ValidationRunMode.assessment)
+        .toList(growable: false);
+    if (assessmentRuns.isEmpty) return '';
+    final counts = <ValidationRunOutcome, int>{
+      for (final outcome in ValidationRunOutcome.values) outcome: 0,
+    };
+    for (final run in assessmentRuns) {
+      counts[run.outcome] = counts[run.outcome]! + 1;
+    }
+    final supervisedCount = assessmentRuns
+        .where((run) => run.constraints.contains('Human-supervised'))
+        .length;
+    return '''## Validation Assurance and Coverage
+
+Human-supervised runs are AI-operated under continuous human supervision with exact-command approval. Standard runs remain bounded and non-destructive. The platform uses adaptive, service-specific validation. A timeout, iteration limit, parser error, missing tool, or tool failure is recorded as inconclusive and is not evidence of absence.
+
+| Total runs | Human-supervised | Standard | Condition observed | Condition not observed | Inconclusive | Error | Pending |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| ${assessmentRuns.length} | $supervisedCount | ${assessmentRuns.length - supervisedCount} | ${counts[ValidationRunOutcome.conditionObserved]} | ${counts[ValidationRunOutcome.conditionNotObserved]} | ${counts[ValidationRunOutcome.inconclusive]} | ${counts[ValidationRunOutcome.error]} | ${counts[ValidationRunOutcome.pending]} |
+
+''';
   }
 
   static String _controlledExploitationHtml(

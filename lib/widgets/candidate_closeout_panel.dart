@@ -207,7 +207,14 @@ class _ClosureTile extends StatelessWidget {
           ),
         TextButton(
           onPressed: () => onRequeue(closure),
-          child: const Text('Requeue'),
+          child: Text(
+            closure.disposition ==
+                        CandidateDisposition.safeTestingLimitReached ||
+                    closure.disposition ==
+                        CandidateDisposition.technicallyInconclusiveBounded
+                ? 'Extend + requeue'
+                : 'Requeue',
+          ),
         ),
       ],
     ),

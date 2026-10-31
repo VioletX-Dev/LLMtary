@@ -207,11 +207,17 @@ class _SafeMethodClassifier {
     final value = original.toLowerCase();
     if (value.isEmpty) return null;
     final isCurl = RegExp(r'(^|\s|/)curl(\s|$)').hasMatch(value);
+    final isWget = RegExp(r'(^|\s|/)wget(\s|$)').hasMatch(value);
     final requestsHeaders =
         RegExp(r'(^|\s)-(?:I|D)(?:\s|$)').hasMatch(original) ||
         value.contains(' --head');
     switch (family) {
       case ClaimFamily.httpHeaders:
+        if (isWget &&
+            value.contains('--server-response') &&
+            value.contains('--spider')) {
+          return 'http-response-headers-native';
+        }
         return isCurl && requestsHeaders ? 'http-response-headers' : null;
       case ClaimFamily.cookies:
         return isCurl ? 'http-cookie-response' : null;

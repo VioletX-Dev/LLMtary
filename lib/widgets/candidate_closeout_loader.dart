@@ -54,24 +54,35 @@ class _CandidateCloseoutLoaderState extends State<CandidateCloseoutLoader> {
   }
 
   Future<void> _requeue(CandidateClosure closure) async {
-    final updated = closure.copyWith(
-      disposition: CandidateDisposition.planned,
-      explanation:
-          'Eligible for bounded re-test at the next safe candidate boundary.',
-      nextAction: 'Resume the assessment closeout queue.',
-      updatedAt: DateTime.now().toUtc(),
-    );
+    final isSupervisedExtension =
+        closure.disposition == CandidateDisposition.safeTestingLimitReached ||
+        closure.disposition ==
+            CandidateDisposition.technicallyInconclusiveBounded;
+    final updated = isSupervisedExtension
+        ? closure.extendForSupervisedValidation()
+        : closure.copyWith(
+            disposition: CandidateDisposition.planned,
+            explanation:
+                'Eligible for bounded re-test at the next safe candidate boundary.',
+            nextAction: 'Resume the assessment closeout queue.',
+            updatedAt: DateTime.now().toUtc(),
+          );
     await DatabaseHelper.upsertCandidateClosure(updated);
     await _appendCheckpoint(closure.vulnerabilityId);
     await DatabaseHelper.insertSessionEvent(
       projectId: widget.projectId,
       targetId: 0,
-      eventType: 'candidate_requeued',
+      eventType: isSupervisedExtension
+          ? 'candidate_supervised_budget_extended'
+          : 'candidate_requeued',
       phase: 'CLOSEOUT',
       metadata: {
         'vulnerability_id': closure.vulnerabilityId,
         'terminal_disposition': updated.disposition.name,
         'reason_code': updated.reasonCode.name,
+        'retry_budget': updated.retryBudget,
+        'tool_budget': updated.toolBudget,
+        'request_budget': updated.requestBudget,
       },
     );
     await _load();

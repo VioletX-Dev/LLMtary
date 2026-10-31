@@ -2,6 +2,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:llmtary/models/validation_run.dart';
 
 void main() {
+  test('assessment validation mode round-trips', () {
+    final run = ValidationRun(
+      projectId: 3,
+      targetId: 7,
+      vulnerabilityId: 12,
+      mode: ValidationRunMode.assessment,
+      title: 'Deep validation: TLS weakness',
+      objective: 'Obtain claim-specific positive or negative evidence.',
+      constraints: 'Human-supervised; exact-command approval required.',
+      startedAt: DateTime.utc(2026, 10, 8, 12),
+    );
+
+    expect(
+      ValidationRun.fromMap(run.toMap()).mode,
+      ValidationRunMode.assessment,
+    );
+  });
+
   test('validation run round-trips retest audit metadata', () {
     final started = DateTime.utc(2026, 10, 8, 12);
     final completed = DateTime.utc(2026, 10, 8, 12, 5);

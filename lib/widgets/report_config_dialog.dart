@@ -6,6 +6,7 @@ import '../models/evidence_artifact.dart';
 import '../models/report_evidence.dart';
 import '../models/candidate_closure.dart';
 import '../models/controlled_exploitation.dart';
+import '../models/validation_run.dart';
 import '../services/evidence_storage_service.dart';
 import '../services/report_content_service.dart';
 import '../services/report_generator.dart';
@@ -258,6 +259,9 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
       final controlledExploitations = updatedProject.id != null
           ? await DatabaseHelper.getControlledExploitations(updatedProject.id!)
           : const <ControlledExploitationRecord>[];
+      final validationRuns = updatedProject.id != null
+          ? await DatabaseHelper.getValidationRuns(updatedProject.id!)
+          : const <ValidationRun>[];
       final evidenceArtifacts = updatedProject.id != null
           ? await DatabaseHelper.getProjectEvidence(updatedProject.id!)
           : const <EvidenceArtifact>[];
@@ -300,6 +304,7 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
           visualEvidence: visualEvidence,
           closures: closures,
           controlledExploitations: controlledExploitations,
+          validationRuns: validationRuns,
         ),
         'md' => ReportGenerator.generateMarkdown(
           project: updatedProject,
@@ -316,6 +321,7 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
           visualEvidence: visualEvidence,
           closures: closures,
           controlledExploitations: controlledExploitations,
+          validationRuns: validationRuns,
         ),
         'csv' => ReportGenerator.generateCsv(
           vulnerabilities: widget.appState.vulnerabilities,
@@ -323,6 +329,7 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
           confirmedOnly: false,
           closures: closures,
           controlledExploitations: controlledExploitations,
+          validationRuns: validationRuns,
         ),
         _ => '',
       };

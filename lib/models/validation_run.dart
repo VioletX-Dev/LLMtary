@@ -1,4 +1,4 @@
-enum ValidationRunMode { retest, spotTest }
+enum ValidationRunMode { assessment, retest, spotTest }
 
 enum ValidationRunOutcome {
   pending,

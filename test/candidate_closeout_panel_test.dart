@@ -5,6 +5,35 @@ import 'package:llmtary/models/controlled_exploitation.dart';
 import 'package:llmtary/widgets/candidate_closeout_panel.dart';
 
 void main() {
+  testWidgets('shows explicit supervised extension for exhausted budgets', (
+    tester,
+  ) async {
+    final closure = CandidateClosure(
+      vulnerabilityId: 9,
+      projectId: 1,
+      disposition: CandidateDisposition.safeTestingLimitReached,
+      reasonCode: ClosureReasonCode.safeRequestBudgetExhausted,
+      explanation: 'Budget exhausted.',
+      startedAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2026),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CandidateCloseoutPanel(
+            totalCandidates: 1,
+            closures: [closure],
+            workItems: const [],
+            onRequeue: (_) async {},
+            onRecordManualMfa: (_) async {},
+            onAddEvidenceReference: (item, reference) async {},
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Extend + requeue'), findsOneWidget);
+  });
+
   testWidgets('shows closeout readiness blocker and safe operator actions', (
     tester,
   ) async {

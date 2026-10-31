@@ -1,11 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llmtary/models/candidate_closure.dart';
+import 'package:llmtary/models/command_log.dart';
 import 'package:llmtary/models/controlled_exploitation.dart';
 import 'package:llmtary/models/human_validation_work_item.dart';
 import 'package:llmtary/models/vulnerability.dart';
 import 'package:llmtary/services/candidate_admission_service.dart';
 import 'package:llmtary/services/candidate_closeout_service.dart';
 import 'package:llmtary/services/candidate_closure_planner.dart';
+import 'package:llmtary/services/candidate_closure_finalizer.dart';
 import 'package:llmtary/services/evidence_contract_registry.dart';
 
 Vulnerability candidate(String problem, {String type = ''}) => Vulnerability(
@@ -59,6 +61,38 @@ void main() {
         CandidateClosure.fromMap(encoded).disposition,
         CandidateDisposition.blockedMissingCredentials,
       );
+    });
+
+    test('supervised extension raises limits and preserves usage', () {
+      final closure = CandidateClosure(
+        vulnerabilityId: 7,
+        projectId: 1,
+        disposition: CandidateDisposition.safeTestingLimitReached,
+        reasonCode: ClosureReasonCode.safeRequestBudgetExhausted,
+        explanation: 'Budget exhausted.',
+        retryBudget: 3,
+        toolBudget: 3,
+        requestBudget: 8,
+        retriesUsed: 2,
+        toolsUsed: 3,
+        requestsUsed: 8,
+        stoppingReason: 'safeRequestBudgetExhausted',
+        startedAt: DateTime.utc(2026, 1, 1),
+        updatedAt: DateTime.utc(2026, 1, 2),
+      );
+
+      final extended = closure.extendForSupervisedValidation(
+        now: DateTime.utc(2026, 1, 3),
+      );
+      expect(extended.disposition, CandidateDisposition.planned);
+      expect(extended.retryBudget, 5);
+      expect(extended.toolBudget, 8);
+      expect(extended.requestBudget, 30);
+      expect(extended.retriesUsed, 2);
+      expect(extended.toolsUsed, 3);
+      expect(extended.requestsUsed, 8);
+      expect(extended.stoppingReason, isEmpty);
+      expect(extended.nextAction, contains('human-supervised'));
     });
   });
 
@@ -114,6 +148,22 @@ void main() {
         ),
         EvidenceOutcome.supportsClaim,
       );
+    });
+
+    test('native HTTP client is recorded as a distinct fallback method', () {
+      final vuln = candidate('Missing X-Frame-Options Header');
+      final closure = CandidateClosureFinalizer.finalize(vuln, [
+        CommandLog(
+          timestamp: DateTime.utc(2026, 10, 31),
+          command: 'wget --server-response --spider https://192.0.2.10/',
+          output: 'HTTP/1.1 200 OK\nServer: example',
+          exitCode: 0,
+          vulnerabilityId: vuln.id,
+          projectId: 1,
+          targetId: 2,
+        ),
+      ]);
+      expect(closure.attemptedMethods, ['http-response-headers-native']);
     });
 
     test('one-shot command marker supports execution without a shell', () {
@@ -179,6 +229,39 @@ void main() {
       expect(
         exhausted.disposition,
         CandidateDisposition.safeTestingLimitReached,
+      );
+    });
+
+    test('stops at explicit retry and tool budgets', () {
+      final vuln = candidate('Missing X-Frame-Options Header');
+      final retryExhausted = CandidateClosurePlanner.plan(
+        vuln,
+        const CandidatePrerequisites(
+          retryBudget: 5,
+          retriesUsed: 5,
+          toolBudget: 8,
+          toolsUsed: 1,
+        ),
+      );
+      expect(retryExhausted.shouldExecute, isFalse);
+      expect(
+        retryExhausted.reasonCode,
+        ClosureReasonCode.safeRetryBudgetExhausted,
+      );
+
+      final toolExhausted = CandidateClosurePlanner.plan(
+        vuln,
+        const CandidatePrerequisites(
+          retryBudget: 5,
+          retriesUsed: 1,
+          toolBudget: 8,
+          toolsUsed: 8,
+        ),
+      );
+      expect(toolExhausted.shouldExecute, isFalse);
+      expect(
+        toolExhausted.reasonCode,
+        ClosureReasonCode.safeToolBudgetExhausted,
       );
     });
   });

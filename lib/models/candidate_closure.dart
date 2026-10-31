@@ -34,6 +34,8 @@ enum ClosureReasonCode {
   targetUnreachable,
   applianceUnavailable,
   outOfScope,
+  safeRetryBudgetExhausted,
+  safeToolBudgetExhausted,
   safeRequestBudgetExhausted,
   boundedMethodsExhausted,
   customerClarificationRequired,
@@ -151,6 +153,9 @@ class CandidateClosure {
     List<String>? remainingPrerequisites,
     String? nextAction,
     WorkOwner? owner,
+    int? retryBudget,
+    int? toolBudget,
+    int? requestBudget,
     int? retriesUsed,
     int? toolsUsed,
     int? requestsUsed,
@@ -171,15 +176,32 @@ class CandidateClosure {
         remainingPrerequisites ?? this.remainingPrerequisites,
     nextAction: nextAction ?? this.nextAction,
     owner: owner ?? this.owner,
-    retryBudget: retryBudget,
-    toolBudget: toolBudget,
-    requestBudget: requestBudget,
+    retryBudget: retryBudget ?? this.retryBudget,
+    toolBudget: toolBudget ?? this.toolBudget,
+    requestBudget: requestBudget ?? this.requestBudget,
     retriesUsed: retriesUsed ?? this.retriesUsed,
     toolsUsed: toolsUsed ?? this.toolsUsed,
     requestsUsed: requestsUsed ?? this.requestsUsed,
     stoppingReason: stoppingReason ?? this.stoppingReason,
     startedAt: startedAt,
     updatedAt: updatedAt ?? this.updatedAt,
+  );
+
+  /// Reopens an exhausted candidate only after an explicit supervised action.
+  /// Usage is retained so the ledger remains cumulative and auditable.
+  CandidateClosure extendForSupervisedValidation({DateTime? now}) => copyWith(
+    disposition: CandidateDisposition.planned,
+    reasonCode: ClosureReasonCode.customerClarificationRequired,
+    explanation:
+        'An observing operator approved a bounded human-supervised validation extension.',
+    nextAction:
+        'Resume human-supervised validation with a materially different safe method.',
+    owner: WorkOwner.operator,
+    retryBudget: retryBudget < 5 ? 5 : retryBudget + 2,
+    toolBudget: toolBudget < 8 ? 8 : toolBudget + 3,
+    requestBudget: requestBudget < 30 ? 30 : requestBudget + 10,
+    stoppingReason: '',
+    updatedAt: (now ?? DateTime.now()).toUtc(),
   );
 
   Map<String, dynamic> toMap() => {

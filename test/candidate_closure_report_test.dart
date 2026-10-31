@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:llmtary/models/candidate_closure.dart';
 import 'package:llmtary/models/controlled_exploitation.dart';
 import 'package:llmtary/models/project.dart';
+import 'package:llmtary/models/validation_run.dart';
 import 'package:llmtary/models/vulnerability.dart';
 import 'package:llmtary/services/report_generator.dart';
 
@@ -83,4 +84,67 @@ void main() {
       }
     },
   );
+
+  test('reports deep validation assurance and inconclusive coverage', () {
+    final project = Project(
+      id: 1,
+      name: 'Deep assessment',
+      folderPath: '/tmp/deep',
+      createdAt: DateTime.utc(2026),
+      lastOpenedAt: DateTime.utc(2026),
+    );
+    final vulnerability = Vulnerability(
+      id: 7,
+      projectId: 1,
+      targetId: 2,
+      targetAddress: '192.0.2.10',
+      problem: 'TLS weakness',
+      description: 'Validate TLS.',
+      severity: 'HIGH',
+      confidence: 'LOW',
+      evidence: '',
+      recommendation: 'Harden TLS.',
+    );
+    final run = ValidationRun(
+      projectId: 1,
+      targetId: 2,
+      vulnerabilityId: 7,
+      mode: ValidationRunMode.assessment,
+      title: 'Deep validation: TLS weakness',
+      objective: 'Obtain claim-specific evidence.',
+      constraints: 'Human-supervised; exact-command approval required.',
+      statusBefore: 'pending',
+      statusAfter: 'undetermined',
+      outcome: ValidationRunOutcome.inconclusive,
+      summary: 'Two safe methods exhausted without direct proof.',
+      startedAt: DateTime.utc(2026),
+      completedAt: DateTime.utc(2026, 1, 1, 0, 5),
+    );
+
+    final html = ReportGenerator.generateHtml(
+      project: project,
+      targets: const [],
+      vulnerabilities: [vulnerability],
+      validationRuns: [run],
+      confirmedOnly: false,
+    );
+    final markdown = ReportGenerator.generateMarkdown(
+      project: project,
+      targets: const [],
+      vulnerabilities: [vulnerability],
+      validationRuns: [run],
+      confirmedOnly: false,
+    );
+
+    for (final report in [html, markdown]) {
+      expect(report, contains('Validation Assurance and Coverage'));
+      expect(
+        report,
+        contains('AI-operated under continuous human supervision'),
+      );
+      expect(report, contains('Inconclusive'));
+      expect(report, contains('1'));
+      expect(report, contains('tool failure'));
+    }
+  });
 }
