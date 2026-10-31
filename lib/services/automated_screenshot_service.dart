@@ -9,6 +9,14 @@ import '../models/project.dart';
 import 'evidence_package_builder.dart';
 import 'evidence_storage_service.dart';
 
+typedef CommandOutputRenderer =
+    Future<String> Function({
+      required String phase,
+      required String targetLabel,
+      required String command,
+      required String output,
+    });
+
 class AutomatedScreenshotService {
   static Future<EvidenceArtifact> captureFinding({
     required Project project,
@@ -16,21 +24,32 @@ class AutomatedScreenshotService {
     required String phase,
     required String targetLabel,
     required String command,
-    Future<String> Function()? captureDesktop,
+    required String output,
+    CommandOutputRenderer? renderCommandOutput,
     Future<void> Function(EvidenceArtifact)? insertArtifact,
     DateTime? capturedAt,
   }) async {
-    final ownsCapture = captureDesktop == null;
+    final ownsCapture = renderCommandOutput == null;
     final sourcePath =
-        await (captureDesktop?.call() ??
-            EvidenceStorageService.captureDesktop(delaySeconds: 1));
+        await (renderCommandOutput?.call(
+              phase: phase,
+              targetLabel: targetLabel,
+              command: command,
+              output: output,
+            ) ??
+            EvidenceStorageService.renderCommandOutput(
+              phase: phase,
+              targetLabel: targetLabel,
+              command: command,
+              output: output,
+            ));
     try {
       final artifact = await EvidenceStorageService.importImage(
         project: project,
         vulnerabilityId: vulnerabilityId,
         sourcePath: sourcePath,
         caption:
-            'Automatically captured $phase evidence for ${targetLabel.trim().isEmpty ? 'the current target' : targetLabel.trim()}.',
+            'Automatically rendered $phase terminal command and output for ${targetLabel.trim().isEmpty ? 'the current target' : targetLabel.trim()}.',
         source: EvidenceSource.captured,
         capturedAt: capturedAt,
       );
@@ -49,13 +68,24 @@ class AutomatedScreenshotService {
     required String phase,
     required String targetLabel,
     required String command,
-    Future<String> Function()? captureDesktop,
+    required String output,
+    CommandOutputRenderer? renderCommandOutput,
     DateTime? capturedAt,
   }) async {
-    final ownsCapture = captureDesktop == null;
+    final ownsCapture = renderCommandOutput == null;
     final sourcePath =
-        await (captureDesktop?.call() ??
-            EvidenceStorageService.captureDesktop(delaySeconds: 1));
+        await (renderCommandOutput?.call(
+              phase: phase,
+              targetLabel: targetLabel,
+              command: command,
+              output: output,
+            ) ??
+            EvidenceStorageService.renderCommandOutput(
+              phase: phase,
+              targetLabel: targetLabel,
+              command: command,
+              output: output,
+            ));
     try {
       final image = await EvidenceStorageService.validateImageFile(sourcePath);
       final time = (capturedAt ?? DateTime.now()).toUtc();
@@ -89,6 +119,9 @@ class AutomatedScreenshotService {
       final commandDigest = EvidencePackageBuilder.sha256Hex(
         utf8.encode(command),
       );
+      final outputDigest = EvidencePackageBuilder.sha256Hex(
+        utf8.encode(output),
+      );
       final stem =
           '${time.microsecondsSinceEpoch}-${imageDigest.substring(0, 12)}';
       final imagePath = p.join(canonicalDirectory, '$stem.${image.extension}');
@@ -101,7 +134,8 @@ class AutomatedScreenshotService {
           'target': targetLabel,
           'image_sha256': imageDigest,
           'command_sha256': commandDigest,
-          'capture': 'automatic',
+          'output_sha256': outputDigest,
+          'capture': 'terminal_output',
         }),
         flush: true,
       );

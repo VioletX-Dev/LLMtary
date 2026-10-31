@@ -270,7 +270,8 @@ class _ScopeReconTabState extends State<ScopeReconTab> {
                             project: project,
                             phase: 'SCOPE / RECON',
                             targetLabel: appState.selectedTarget?.address ?? 'project',
-                            command: cmd,
+                            command: appState.redactCloudReviewPayload(cmd),
+                            output: appState.redactCloudReviewPayload(output),
                           );
                           appState.addDebugLog('Automatic screenshot saved: $path');
                         } catch (error) {

@@ -5,10 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:llmtary/models/evidence_artifact.dart';
 import 'package:llmtary/models/project.dart';
 import 'package:llmtary/services/automated_screenshot_service.dart';
+import 'package:llmtary/services/evidence_storage_service.dart';
 
 void main() {
   test(
-    'automatically stores command screenshot without raw command secrets',
+    'automatically renders command and output instead of the LLMtary desktop',
     () async {
       final temp = await Directory.systemTemp.createTemp('auto-shot-test-');
       addTearDown(() async {
@@ -29,12 +30,23 @@ void main() {
         lastOpenedAt: DateTime.utc(2026),
       );
 
+      String? renderedOutput;
       final relative = await AutomatedScreenshotService.captureOperational(
         project: project,
         phase: 'SCOPE / RECON',
         targetLabel: '172.16.2.5',
         command: 'scanner --password super-secret',
-        captureDesktop: () async => source.path,
+        output: '443/tcp open https',
+        renderCommandOutput:
+            ({
+              required phase,
+              required targetLabel,
+              required command,
+              required output,
+            }) async {
+              renderedOutput = output;
+              return source.path;
+            },
         capturedAt: DateTime.utc(2026, 10, 30, 12),
       );
 
@@ -44,7 +56,52 @@ void main() {
         '${project.folderPath}/${relative.replaceAll('.png', '.json')}',
       ).readAsString();
       expect(metadata, contains('command_sha256'));
+      expect(metadata, contains('output_sha256'));
+      expect(metadata, contains('terminal_output'));
       expect(metadata, isNot(contains('super-secret')));
+      expect(metadata, isNot(contains('443/tcp open https')));
+      expect(renderedOutput, '443/tcp open https');
+    },
+  );
+
+  test(
+    'renders a validated terminal-output PNG without desktop capture',
+    () async {
+      final path = await EvidenceStorageService.renderCommandOutput(
+        phase: 'SCOPE / RECON',
+        targetLabel: '172.16.2.5',
+        command: 'nmap -sV 172.16.2.5',
+        output: '443/tcp open https',
+      );
+      addTearDown(() => EvidenceStorageService.deleteTemporaryCapture(path));
+
+      final image = await EvidenceStorageService.validateImageFile(path);
+      expect(image.extension, 'png');
+      expect(image.width, 1600);
+      expect(image.height, 1200);
+
+      final secretPath = await EvidenceStorageService.renderCommandOutput(
+        phase: 'PROOF / EXPLOIT',
+        targetLabel: '172.16.2.5',
+        command: 'scanner --password super-secret',
+        output: 'token=output-secret',
+      );
+      final redactedPath = await EvidenceStorageService.renderCommandOutput(
+        phase: 'PROOF / EXPLOIT',
+        targetLabel: '172.16.2.5',
+        command: 'scanner --password [REDACTED]',
+        output: 'token=[REDACTED]',
+      );
+      addTearDown(
+        () => EvidenceStorageService.deleteTemporaryCapture(secretPath),
+      );
+      addTearDown(
+        () => EvidenceStorageService.deleteTemporaryCapture(redactedPath),
+      );
+      expect(
+        await File(secretPath).readAsBytes(),
+        await File(redactedPath).readAsBytes(),
+      );
     },
   );
 
@@ -77,14 +134,21 @@ void main() {
       phase: 'PROOF / EXPLOIT',
       targetLabel: '172.16.2.5',
       command: 'safe proof command',
-      captureDesktop: () async => source.path,
+      output: 'validated access to the authorized target',
+      renderCommandOutput:
+          ({
+            required phase,
+            required targetLabel,
+            required command,
+            required output,
+          }) async => source.path,
       insertArtifact: (value) async => inserted = value,
     );
 
     expect(artifact.vulnerabilityId, 42);
     expect(artifact.source, EvidenceSource.captured);
     expect(inserted?.sha256, artifact.sha256);
-    expect(artifact.caption, contains('Automatically captured'));
+    expect(artifact.caption, contains('Automatically rendered'));
   });
 
   test('rejects automated evidence symlink escape', () async {
@@ -119,7 +183,14 @@ void main() {
         phase: 'SCOPE / RECON',
         targetLabel: 'target',
         command: 'command',
-        captureDesktop: () async => source.path,
+        output: 'output',
+        renderCommandOutput:
+            ({
+              required phase,
+              required targetLabel,
+              required command,
+              required output,
+            }) async => source.path,
       ),
       throwsStateError,
     );

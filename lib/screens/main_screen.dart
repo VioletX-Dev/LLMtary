@@ -1591,7 +1591,8 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
                 vulnerabilityId: findingId,
                 phase: 'PROOF / EXPLOIT',
                 targetLabel: target.address,
-                command: command,
+                command: appState.redactCloudReviewPayload(command),
+                output: appState.redactCloudReviewPayload(output),
               );
             } catch (error) {
               appState.addDebugLog(
@@ -2014,7 +2015,8 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
                         vulnerabilityId: findingId,
                         phase: 'PROOF / EXPLOIT',
                         targetLabel: vuln.targetAddress,
-                        command: cmd,
+                        command: appState.redactCloudReviewPayload(cmd),
+                        output: appState.redactCloudReviewPayload(output),
                       );
                     } catch (error) {
                       appState.addDebugLog(

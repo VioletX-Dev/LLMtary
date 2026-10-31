@@ -233,6 +233,141 @@ class EvidenceStorageService {
     return (result[1] as int, result[2] as int);
   }
 
+  static Future<String> renderCommandOutput({
+    required String phase,
+    required String targetLabel,
+    required String command,
+    required String output,
+  }) async {
+    await cleanupStaleCaptures();
+    final captureDirectory = await Directory.systemTemp.createTemp(
+      'llmtary-evidence-',
+    );
+    await _setOwnerOnly(captureDirectory.path, directory: true);
+    final path = p.join(captureDirectory.path, 'terminal-output.png');
+    try {
+      const width = 1600;
+      const height = 1200;
+      const left = 28;
+      const top = 24;
+      const lineHeight = 28;
+      const maxCharactersPerLine = 110;
+      const maxVisibleLines = 38;
+      final canvas = img.Image(width: width, height: height);
+      img.fill(canvas, color: img.ColorRgb8(12, 16, 22));
+
+      final safeTarget = targetLabel.trim().isEmpty
+          ? 'unspecified'
+          : targetLabel;
+      final header =
+          '${_safeTerminalText(phase)}  •  Target: '
+          '${_safeTerminalText(safeTarget)}';
+      img.drawString(
+        canvas,
+        header,
+        font: img.arial24,
+        x: left,
+        y: top,
+        color: img.ColorRgb8(132, 204, 255),
+      );
+
+      final commandLines = _boundedTerminalLines(
+        _terminalLines(
+          '\$ ${_redactTerminalSecrets(command)}',
+          maxCharactersPerLine,
+        ),
+        8,
+      );
+      final outputLines = _terminalLines(
+        output.trim().isEmpty
+            ? '[command completed with no textual output]'
+            : _redactTerminalSecrets(output),
+        maxCharactersPerLine,
+      );
+      final combined = <String>[
+        ...commandLines,
+        '',
+        ..._boundedTerminalLines(
+          outputLines,
+          maxVisibleLines - commandLines.length - 1,
+        ),
+      ];
+      var y = top + 48;
+      for (final line in combined.take(maxVisibleLines)) {
+        img.drawString(
+          canvas,
+          line,
+          font: img.arial24,
+          x: left,
+          y: y,
+          color: img.ColorRgb8(226, 232, 240),
+        );
+        y += lineHeight;
+      }
+      await File(path).writeAsBytes(img.encodePng(canvas), flush: true);
+      await _setOwnerOnly(path, directory: false);
+      return path;
+    } catch (_) {
+      await deleteTemporaryCapture(path);
+      rethrow;
+    }
+  }
+
+  static List<String> _terminalLines(String value, int width) {
+    final lines = <String>[];
+    for (final rawLine in _safeTerminalText(value).split('\n')) {
+      if (rawLine.isEmpty) {
+        lines.add('');
+        continue;
+      }
+      var remaining = rawLine;
+      while (remaining.length > width) {
+        lines.add(remaining.substring(0, width));
+        remaining = remaining.substring(width);
+      }
+      lines.add(remaining);
+    }
+    return lines;
+  }
+
+  static List<String> _boundedTerminalLines(List<String> lines, int limit) {
+    if (limit <= 0) return const <String>[];
+    if (lines.length <= limit) return lines;
+    if (limit < 4) return lines.take(limit).toList();
+    final tailCount = (limit / 4).floor().clamp(1, 12);
+    final headCount = limit - tailCount - 1;
+    return <String>[
+      ...lines.take(headCount),
+      '[... ${lines.length - headCount - tailCount} output lines omitted from screenshot; full output remains in the command log ...]',
+      ...lines.skip(lines.length - tailCount),
+    ];
+  }
+
+  static String _safeTerminalText(String value) => value
+      .replaceAll(RegExp(r'\x1B\[[0-?]*[ -/]*[@-~]'), '')
+      .replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'), '�')
+      .replaceAll('\r\n', '\n')
+      .replaceAll('\r', '\n');
+
+  static String _redactTerminalSecrets(String value) {
+    var redacted = _safeTerminalText(value);
+    redacted = redacted.replaceAllMapped(
+      RegExp(
+        r'(\b(?:password|passwd|token|api[_-]?key|secret|authorization)\s*[=:]\s*)([^\s,;]+)',
+        caseSensitive: false,
+      ),
+      (match) => '${match.group(1)}[REDACTED]',
+    );
+    redacted = redacted.replaceAllMapped(
+      RegExp(
+        r'(--(?:password|passwd|token|api-key|secret)\s+)(\S+)',
+        caseSensitive: false,
+      ),
+      (match) => '${match.group(1)}[REDACTED]',
+    );
+    return redacted;
+  }
+
   static Future<String> captureDesktop({
     int delaySeconds = 3,
     Future<ProcessResult> Function(String, List<String>)? runProcess,
