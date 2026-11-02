@@ -15,9 +15,14 @@ import '../models/cloud_assist.dart';
 import '../models/candidate_closure.dart';
 import '../models/controlled_exploitation.dart';
 import '../models/human_validation_work_item.dart';
+import '../models/attack_trace.dart';
+import '../models/context_artifact.dart';
 import '../services/evidence_repository.dart';
 import '../services/validation_run_repository.dart';
 import '../services/candidate_closure_repository.dart';
+import '../services/attack_trace_repository.dart';
+import '../services/context_artifact_repository.dart';
+import '../services/independent_validation_repository.dart';
 
 class DatabaseHelper {
   static Future<Database>? _initFuture;
@@ -38,7 +43,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 29,
+      version: 31,
       singleInstance: true,
       onConfigure: (db) async {
         await db.execute('PRAGMA busy_timeout=5000');
@@ -261,6 +266,7 @@ class DatabaseHelper {
         await ValidationRunRepository.createTable(db);
         await migrateCloudAssist(db);
         await CandidateClosureRepository.migrate(db);
+        await migratePlatformContext(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         debugPrint('[DB] onUpgrade: $oldVersion → $newVersion');
@@ -585,6 +591,9 @@ class DatabaseHelper {
         if (oldVersion < 29) {
           await CandidateClosureRepository.migrate(db);
         }
+        if (oldVersion < 31) {
+          await migratePlatformContext(db);
+        }
       },
     );
     final version = await db.getVersion();
@@ -658,6 +667,12 @@ class DatabaseHelper {
         FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
       )
     ''');
+  }
+
+  static Future<void> migratePlatformContext(Database db) async {
+    await ContextArtifactRepository.createTables(db);
+    await AttackTraceRepository.createTables(db);
+    await IndependentValidationRepository.createTable(db);
   }
 
   static Future<int> insertVulnerability(Vulnerability vuln) async {
@@ -751,6 +766,33 @@ class DatabaseHelper {
   static Future<List<ValidationRun>> getValidationRuns(int projectId) async {
     final db = await database;
     return ValidationRunRepository(db).forProject(projectId);
+  }
+
+  static Future<List<AttackTraceGraph>> getAttackTraceGraphs(
+    int projectId,
+  ) async {
+    final db = await database;
+    final repository = AttackTraceRepository(db);
+    final traces = await repository.forProject(projectId);
+    final graphs = <AttackTraceGraph>[];
+    for (final trace in traces) {
+      if (trace.id != null) graphs.add(await repository.graph(trace.id!));
+    }
+    return graphs;
+  }
+
+  static Future<List<ContextArtifact>> getContextArtifacts(
+    int projectId,
+  ) async {
+    final db = await database;
+    return ContextArtifactRepository(db).forProject(projectId);
+  }
+
+  static Future<int> persistContextArtifact(
+    ContextIngestionResult result,
+  ) async {
+    final db = await database;
+    return ContextArtifactRepository(db).persist(result);
   }
 
   static Future<List<ValidationRun>> getFindingValidationRuns(

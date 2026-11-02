@@ -14,14 +14,17 @@ import '../../models/cloud_assist.dart';
 import '../../models/candidate_closure.dart';
 import '../../models/controlled_exploitation.dart';
 import '../../models/validation_run.dart';
+import '../../models/attack_trace.dart';
 import '../../services/report_generator.dart';
 import '../../services/report_content_service.dart';
 import '../../services/assessment_narrative_service.dart';
 import '../../services/cloud_assist_service.dart';
 import '../../services/evidence_package_builder.dart';
 import '../../services/evidence_storage_service.dart';
+import '../../services/context_ingestion_service.dart';
 import '../../utils/file_dialog.dart';
 import '../../widgets/candidate_closeout_loader.dart';
+import '../../widgets/assessment_context_dialog.dart';
 
 class ResultReportTab extends StatefulWidget {
   const ResultReportTab({super.key});
@@ -55,6 +58,65 @@ class _ResultReportTabState extends State<ResultReportTab> {
         if (mounted) setState(() => _savingReport = value);
       },
     );
+  }
+
+  Future<void> _onViewContext(AppState appState) async {
+    final projectId = appState.currentProject?.id;
+    if (projectId == null) return;
+    final artifacts = await DatabaseHelper.getContextArtifacts(projectId);
+    final traces = await DatabaseHelper.getAttackTraceGraphs(projectId);
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) =>
+          AssessmentContextDialog(artifacts: artifacts, traces: traces),
+    );
+  }
+
+  Future<void> _onImportContext(AppState appState) async {
+    final projectId = appState.currentProject?.id;
+    if (projectId == null) return;
+    try {
+      final selection = await FileDialog.pickFiles(
+        dialogTitle: 'Import Assessment Context',
+        allowedExtensions: const [
+          'json',
+          'yaml',
+          'yml',
+          'wsdl',
+          'xml',
+          'zip',
+          'md',
+          'txt',
+          'rst',
+        ],
+      );
+      final selected = selection?.files.singleOrNull;
+      if (selected?.path == null) return;
+      final file = File(selected!.path!);
+      final length = await file.length();
+      if (length > 100 * 1024 * 1024) {
+        throw const FormatException('Context artifact exceeds the 100 MB limit.');
+      }
+      final result = await const ContextIngestionService().ingestBytesAsync(
+        projectId: projectId,
+        fileName: selected.name,
+        bytes: await file.readAsBytes(),
+        ingestedAt: DateTime.now().toUtc(),
+      );
+      await DatabaseHelper.persistContextArtifact(result);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Imported context: ${selected.name}')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Context import failed: ${error.runtimeType}'),
+        ),
+      );
+    }
   }
 
   @override
@@ -201,6 +263,28 @@ class _ResultReportTabState extends State<ResultReportTab> {
                   : null,
               icon: const Icon(Icons.folder_zip_outlined, size: 16),
               label: const Text('Download Evidence Package'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: appState.currentProject?.id == null
+                  ? null
+                  : () => _onImportContext(appState),
+              icon: const Icon(Icons.upload_file_outlined, size: 16),
+              label: const Text('Import Assessment Context'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: appState.currentProject?.id == null
+                  ? null
+                  : () => _onViewContext(appState),
+              icon: const Icon(Icons.account_tree_outlined, size: 16),
+              label: const Text('View Context & Attack Traces'),
             ),
           ),
         ],
@@ -417,6 +501,9 @@ class _InlineReportFormState extends State<_InlineReportForm> {
       final validationRuns = updatedProject.id != null
           ? await DatabaseHelper.getValidationRuns(updatedProject.id!)
           : const <ValidationRun>[];
+      final attackTraces = updatedProject.id != null
+          ? await DatabaseHelper.getAttackTraceGraphs(updatedProject.id!)
+          : const <AttackTraceGraph>[];
       final assessmentData = AssessmentNarrativeService.build(
         targets: widget.appState.targets,
         vulnerabilities: widget.appState.vulnerabilities,
@@ -483,6 +570,7 @@ class _InlineReportFormState extends State<_InlineReportForm> {
           closures: closures,
           controlledExploitations: controlledExploitations,
           validationRuns: validationRuns,
+          attackTraces: attackTraces,
         ),
         'md' => ReportGenerator.generateMarkdown(
           project: updatedProject,
@@ -502,6 +590,7 @@ class _InlineReportFormState extends State<_InlineReportForm> {
           closures: closures,
           controlledExploitations: controlledExploitations,
           validationRuns: validationRuns,
+          attackTraces: attackTraces,
         ),
         'csv' => ReportGenerator.generateCsv(
           vulnerabilities: widget.appState.vulnerabilities,
@@ -510,6 +599,7 @@ class _InlineReportFormState extends State<_InlineReportForm> {
           closures: closures,
           controlledExploitations: controlledExploitations,
           validationRuns: validationRuns,
+          attackTraces: attackTraces,
         ),
         _ => '',
       };
@@ -610,6 +700,9 @@ class _InlineReportFormState extends State<_InlineReportForm> {
       final validationRuns = await DatabaseHelper.getValidationRuns(
         project.id!,
       );
+      final attackTraces = await DatabaseHelper.getAttackTraceGraphs(
+        project.id!,
+      );
       final visualEvidence = await EvidenceStorageService.loadReportEvidence(
         project: updatedProject,
         artifacts: artifacts,
@@ -629,6 +722,7 @@ class _InlineReportFormState extends State<_InlineReportForm> {
         closures: closures,
         controlledExploitations: controlledExploitations,
         validationRuns: validationRuns,
+        attackTraces: attackTraces,
       );
       final packageBytes = await EvidencePackageBuilder.build(
         projectName: updatedProject.name,

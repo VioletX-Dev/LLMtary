@@ -7,6 +7,7 @@ import '../models/report_evidence.dart';
 import '../models/candidate_closure.dart';
 import '../models/controlled_exploitation.dart';
 import '../models/validation_run.dart';
+import '../models/attack_trace.dart';
 import '../services/evidence_storage_service.dart';
 import '../services/report_content_service.dart';
 import '../services/report_generator.dart';
@@ -262,6 +263,9 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
       final validationRuns = updatedProject.id != null
           ? await DatabaseHelper.getValidationRuns(updatedProject.id!)
           : const <ValidationRun>[];
+      final attackTraces = updatedProject.id != null
+          ? await DatabaseHelper.getAttackTraceGraphs(updatedProject.id!)
+          : const <AttackTraceGraph>[];
       final evidenceArtifacts = updatedProject.id != null
           ? await DatabaseHelper.getProjectEvidence(updatedProject.id!)
           : const <EvidenceArtifact>[];
@@ -305,6 +309,7 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
           closures: closures,
           controlledExploitations: controlledExploitations,
           validationRuns: validationRuns,
+          attackTraces: attackTraces,
         ),
         'md' => ReportGenerator.generateMarkdown(
           project: updatedProject,
@@ -322,6 +327,7 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
           closures: closures,
           controlledExploitations: controlledExploitations,
           validationRuns: validationRuns,
+          attackTraces: attackTraces,
         ),
         'csv' => ReportGenerator.generateCsv(
           vulnerabilities: widget.appState.vulnerabilities,
@@ -330,6 +336,7 @@ class _ReportConfigDialogState extends State<ReportConfigDialog> {
           closures: closures,
           controlledExploitations: controlledExploitations,
           validationRuns: validationRuns,
+          attackTraces: attackTraces,
         ),
         _ => '',
       };

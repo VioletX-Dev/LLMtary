@@ -171,13 +171,15 @@ void main() {
     await db.close();
   });
 
-  test('v27 cloud-assist migration is additive and defaults to local-only', () async {
-    final db = await openDatabase(
-      inMemoryDatabasePath,
-      version: 1,
-      singleInstance: false,
-      onCreate: (db, version) async {
-        await db.execute('''
+  test(
+    'v27 cloud-assist migration is additive and defaults to local-only',
+    () async {
+      final db = await openDatabase(
+        inMemoryDatabasePath,
+        version: 1,
+        singleInstance: false,
+        onCreate: (db, version) async {
+          await db.execute('''
           CREATE TABLE projects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
@@ -186,47 +188,100 @@ void main() {
             lastOpenedAt TEXT NOT NULL
           )
         ''');
-      },
-    );
-    await db.insert('projects', {
-      'name': 'legacy-local',
-      'folderPath': '/tmp/legacy-local',
-      'createdAt': DateTime.utc(2026).toIso8601String(),
-      'lastOpenedAt': DateTime.utc(2026).toIso8601String(),
-    });
+        },
+      );
+      await db.insert('projects', {
+        'name': 'legacy-local',
+        'folderPath': '/tmp/legacy-local',
+        'createdAt': DateTime.utc(2026).toIso8601String(),
+        'lastOpenedAt': DateTime.utc(2026).toIso8601String(),
+      });
 
-    await DatabaseHelper.migrateCloudAssist(db);
+      await DatabaseHelper.migrateCloudAssist(db);
 
-    final columns = await db.rawQuery('PRAGMA table_info(projects)');
-    final names = columns.map((row) => row['name']).toSet();
-    expect(names, containsAll([
-      'cloud_assist_enabled',
-      'cloud_assist_provider',
-      'cloud_assist_finding_review',
-      'cloud_assist_report_review',
-      'cloud_assist_budget_usd',
-      'cloud_assist_spent_usd',
-    ]));
-    final reviewTable = await db.rawQuery(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='cloud_assist_reviews'",
-    );
-    expect(reviewTable, hasLength(1));
-    final row = (await db.query('projects')).single;
-    expect(row['cloud_assist_enabled'], 0);
-    expect(row['cloud_assist_finding_review'], 0);
-    expect(row['cloud_assist_report_review'], 0);
-    expect((row['cloud_assist_budget_usd'] as num).toDouble(), 0);
-    expect((row['cloud_assist_spent_usd'] as num).toDouble(), 0);
-    await db.close();
-  });
+      final columns = await db.rawQuery('PRAGMA table_info(projects)');
+      final names = columns.map((row) => row['name']).toSet();
+      expect(
+        names,
+        containsAll([
+          'cloud_assist_enabled',
+          'cloud_assist_provider',
+          'cloud_assist_finding_review',
+          'cloud_assist_report_review',
+          'cloud_assist_budget_usd',
+          'cloud_assist_spent_usd',
+        ]),
+      );
+      final reviewTable = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='cloud_assist_reviews'",
+      );
+      expect(reviewTable, hasLength(1));
+      final row = (await db.query('projects')).single;
+      expect(row['cloud_assist_enabled'], 0);
+      expect(row['cloud_assist_finding_review'], 0);
+      expect(row['cloud_assist_report_review'], 0);
+      expect((row['cloud_assist_budget_usd'] as num).toDouble(), 0);
+      expect((row['cloud_assist_spent_usd'] as num).toDouble(), 0);
+      await db.close();
+    },
+  );
 
-  test('v26 budget migration preserves projects and adds budget columns', () async {
-    final db = await openDatabase(
-      inMemoryDatabasePath,
-      version: 1,
-      singleInstance: false,
-      onCreate: (db, version) async {
-        await db.execute('''
+  test(
+    'v31 platform-context migration adds context, traces, and independent validation',
+    () async {
+      final db = await openDatabase(
+        inMemoryDatabasePath,
+        version: 1,
+        singleInstance: false,
+        onCreate: (db, version) async {
+          await db.execute('CREATE TABLE projects (id INTEGER PRIMARY KEY)');
+          await db.execute(
+            'CREATE TABLE targets (id INTEGER PRIMARY KEY, projectId INTEGER NOT NULL)',
+          );
+          await db.execute(
+            'CREATE TABLE vulnerabilities ('
+            'id INTEGER PRIMARY KEY, projectId INTEGER NOT NULL, targetId INTEGER NOT NULL)',
+          );
+          await db.execute(
+            'CREATE TABLE validation_runs ('
+            'id INTEGER PRIMARY KEY, projectId INTEGER NOT NULL, vulnerabilityId INTEGER)',
+          );
+        },
+      );
+      addTearDown(db.close);
+
+      await DatabaseHelper.migratePlatformContext(db);
+
+      final rows = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND "
+        "name IN ('context_artifacts','context_api_endpoints',"
+        "'context_archive_entries','context_dependencies',"
+        "'context_prior_findings','attack_traces','attack_trace_steps',"
+        "'attack_trace_edges','independent_validation_results') ORDER BY name",
+      );
+      expect(rows.map((row) => row['name']).toSet(), {
+        'context_artifacts',
+        'context_api_endpoints',
+        'context_archive_entries',
+        'context_dependencies',
+        'context_prior_findings',
+        'attack_traces',
+        'attack_trace_steps',
+        'attack_trace_edges',
+        'independent_validation_results',
+      });
+    },
+  );
+
+  test(
+    'v26 budget migration preserves projects and adds budget columns',
+    () async {
+      final db = await openDatabase(
+        inMemoryDatabasePath,
+        version: 1,
+        singleInstance: false,
+        onCreate: (db, version) async {
+          await db.execute('''
           CREATE TABLE projects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
@@ -235,23 +290,32 @@ void main() {
             lastOpenedAt TEXT NOT NULL
           )
         ''');
-      },
-    );
-    await db.insert('projects', {
-      'name': 'legacy',
-      'folderPath': '/tmp/legacy',
-      'createdAt': DateTime.utc(2026).toIso8601String(),
-      'lastOpenedAt': DateTime.utc(2026).toIso8601String(),
-    });
+        },
+      );
+      await db.insert('projects', {
+        'name': 'legacy',
+        'folderPath': '/tmp/legacy',
+        'createdAt': DateTime.utc(2026).toIso8601String(),
+        'lastOpenedAt': DateTime.utc(2026).toIso8601String(),
+      });
 
-    await DatabaseHelper.migrateProjectBudgets(db);
+      await DatabaseHelper.migrateProjectBudgets(db);
 
-    final columns = await db.rawQuery('PRAGMA table_info(projects)');
-    final names = columns.map((row) => row['name']).toSet();
-    expect(names, containsAll(['budget_mode', 'budget_limit', 'budget_spent_usd', 'budget_started_at']));
-    final rows = await db.query('projects');
-    expect(rows.single['name'], 'legacy');
-    expect((rows.single['budget_spent_usd'] as num).toDouble(), 0.0);
-    await db.close();
-  });
+      final columns = await db.rawQuery('PRAGMA table_info(projects)');
+      final names = columns.map((row) => row['name']).toSet();
+      expect(
+        names,
+        containsAll([
+          'budget_mode',
+          'budget_limit',
+          'budget_spent_usd',
+          'budget_started_at',
+        ]),
+      );
+      final rows = await db.query('projects');
+      expect(rows.single['name'], 'legacy');
+      expect((rows.single['budget_spent_usd'] as num).toDouble(), 0.0);
+      await db.close();
+    },
+  );
 }

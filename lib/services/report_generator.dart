@@ -8,9 +8,11 @@ import '../models/report_evidence.dart';
 import '../models/candidate_closure.dart';
 import '../models/controlled_exploitation.dart';
 import '../models/validation_run.dart';
+import '../models/attack_trace.dart';
 import '../utils/cvss_calculator.dart';
 import 'assessment_narrative_service.dart';
 import 'report_evidence_quality.dart';
+import 'sensitive_text_redactor.dart';
 
 /// Generates professional penetration test reports from collected findings.
 ///
@@ -39,6 +41,7 @@ class ReportGenerator {
     List<CandidateClosure> closures = const [],
     List<ControlledExploitationRecord> controlledExploitations = const [],
     List<ValidationRun> validationRuns = const [],
+    List<AttackTraceGraph> attackTraces = const [],
   }) {
     final decisions = <Vulnerability, ReportEvidenceDecision>{
       for (final vulnerability in vulnerabilities)
@@ -303,6 +306,7 @@ ${qualityExceptions.isNotEmpty ? _qualityExceptionsSection(qualityExceptions, de
 ${assessmentCandidates.isNotEmpty ? _assessmentCandidatesSection(assessmentCandidates) : ''}
 ${_closureCoverageHtml(vulnerabilities, closures)}
 ${_validationAssuranceHtml(validationRuns)}
+${_attackTracesHtml(attackTraces)}
 ${_controlledExploitationHtml(vulnerabilities, controlledExploitations)}
 
 ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
@@ -343,6 +347,7 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     List<CandidateClosure> closures = const [],
     List<ControlledExploitationRecord> controlledExploitations = const [],
     List<ValidationRun> validationRuns = const [],
+    List<AttackTraceGraph> attackTraces = const [],
   }) {
     final decisions = <Vulnerability, ReportEvidenceDecision>{
       for (final vulnerability in vulnerabilities)
@@ -651,6 +656,7 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
 
     buf.write(_closureCoverageMarkdown(vulnerabilities, closures));
     buf.write(_validationAssuranceMarkdown(validationRuns));
+    buf.write(_attackTracesMarkdown(attackTraces));
     buf.write(
       _controlledExploitationMarkdown(vulnerabilities, controlledExploitations),
     );
@@ -679,6 +685,7 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     List<CandidateClosure> closures = const [],
     List<ControlledExploitationRecord> controlledExploitations = const [],
     List<ValidationRun> validationRuns = const [],
+    List<AttackTraceGraph> attackTraces = const [],
   }) {
     final decisions = <Vulnerability, ReportEvidenceDecision>{
       for (final vulnerability in vulnerabilities)
@@ -899,6 +906,98 @@ Human-supervised runs are AI-operated under continuous human supervision with ex
 | ${assessmentRuns.length} | $supervisedCount | ${assessmentRuns.length - supervisedCount} | ${counts[ValidationRunOutcome.conditionObserved]} | ${counts[ValidationRunOutcome.conditionNotObserved]} | ${counts[ValidationRunOutcome.inconclusive]} | ${counts[ValidationRunOutcome.error]} | ${counts[ValidationRunOutcome.pending]} |
 
 ''';
+  }
+
+  static String _attackTracesHtml(List<AttackTraceGraph> traces) {
+    if (traces.isEmpty) return '';
+    final sections = traces.map((graph) {
+      final rows = graph.steps.map((step) {
+        final action = SensitiveTextRedactor.redact(
+          step.action,
+          maxLength: 2000,
+        );
+        final output = SensitiveTextRedactor.redact(
+          step.output,
+          maxLength: 4000,
+        );
+        final interpretation = SensitiveTextRedactor.redact(
+          step.interpretation,
+          maxLength: 4000,
+        );
+        final parents = step.parentStepKeys.isEmpty
+            ? 'root'
+            : step.parentStepKeys.join(', ');
+        final evidence = step.evidenceArtifactIds.isEmpty
+            ? 'Evidence: none'
+            : 'Evidence: ${step.evidenceArtifactIds.join(', ')}';
+        final result = step.kind == AttackTraceStepKind.validatorResult
+            ? step.validatorResult.name
+            : step.cleanupStatus.isNotEmpty
+            ? step.cleanupStatus
+            : '';
+        return '<tr><td>${step.sequence ?? ''}</td><td>${_esc(step.stepKey)}</td><td>${_esc(parents)}</td><td>${_esc(step.kind.name)}</td><td>${_esc(action)}</td><td>${_esc(output)}</td><td>${_esc(interpretation)}</td><td>${_esc(evidence)}</td><td>${_esc(result)}</td></tr>';
+      }).join();
+      return '''<h3>${_esc(graph.trace.title)}</h3>
+  <p>Status: ${_esc(graph.trace.status.name)} · Target ID: ${graph.trace.targetId} · Finding ID: ${graph.trace.vulnerabilityId ?? 'none'}</p>
+  <table><thead><tr><th>#</th><th>Step</th><th>Parents</th><th>Kind</th><th>Action</th><th>Output</th><th>Interpretation</th><th>Evidence</th><th>Result / cleanup</th></tr></thead><tbody>$rows</tbody></table>''';
+    }).join();
+    return '''<section id="attack-traces">
+  <h2>Graph-Backed Attack Traces</h2>
+  <p>These persisted graphs join hypotheses, actions, observations, adaptations, evidence, independent validation, and cleanup. They are deterministic records rather than generated narrative.</p>
+  $sections
+</section>''';
+  }
+
+  static String _attackTracesMarkdown(List<AttackTraceGraph> traces) {
+    if (traces.isEmpty) return '';
+    final buffer = StringBuffer()
+      ..writeln('## Graph-Backed Attack Traces')
+      ..writeln()
+      ..writeln(
+        'These persisted graphs are deterministic records joining actions, observations, evidence, validation, and cleanup.',
+      )
+      ..writeln();
+    for (final graph in traces) {
+      buffer
+        ..writeln('### ${graph.trace.title}')
+        ..writeln()
+        ..writeln(
+          '**Status:** ${graph.trace.status.name} · **Target ID:** ${graph.trace.targetId} · **Finding ID:** ${graph.trace.vulnerabilityId ?? 'none'}',
+        )
+        ..writeln()
+        ..writeln(
+          '| # | Step | Parents | Kind | Action | Output | Interpretation | Evidence | Result / cleanup |',
+        )
+        ..writeln('|---:|---|---|---|---|---|---|---|---|');
+      for (final step in graph.steps) {
+        final action = SensitiveTextRedactor.redact(
+          step.action,
+          maxLength: 2000,
+        );
+        final output = SensitiveTextRedactor.redact(
+          step.output,
+          maxLength: 4000,
+        );
+        final interpretation = SensitiveTextRedactor.redact(
+          step.interpretation,
+          maxLength: 4000,
+        );
+        final parents = step.parentStepKeys.isEmpty
+            ? 'root'
+            : step.parentStepKeys.join(', ');
+        final evidence = step.evidenceArtifactIds.isEmpty
+            ? 'Evidence: none'
+            : 'Evidence: ${step.evidenceArtifactIds.join(', ')}';
+        final result = step.kind == AttackTraceStepKind.validatorResult
+            ? step.validatorResult.name
+            : step.cleanupStatus;
+        buffer.writeln(
+          '| ${step.sequence ?? ''} | ${_markdownCell(step.stepKey)} | ${_markdownCell(parents)} | ${step.kind.name} | ${_markdownCell(action)} | ${_markdownCell(output)} | ${_markdownCell(interpretation)} | ${_markdownCell(evidence)} | ${_markdownCell(result)} |',
+        );
+      }
+      buffer.writeln();
+    }
+    return buffer.toString();
   }
 
   static String _controlledExploitationHtml(
