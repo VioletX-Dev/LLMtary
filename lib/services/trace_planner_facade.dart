@@ -31,13 +31,16 @@ class TracePlannerFacade {
       return null; // budget exhausted
     }
 
-    // Deduplicate hypotheses by hypothesis text and choose the earliest createdAt
+    // Deduplicate hypotheses by hypothesis text and choose the latest createdAt
+    // (prefer the most recent occurrence so follow-ups that reference an earlier
+    // hypothesis are considered for planning).
     final hypotheses = graph.steps.where((s) => s.kind == AttackTraceStepKind.hypothesis);
     final Map<String, AttackTraceStep> unique = {};
     for (final h in hypotheses) {
       final key = h.hypothesis.trim();
       if (key.isEmpty) continue;
-      if (!unique.containsKey(key) || unique[key]!.createdAt.isAfter(h.createdAt)) {
+      // Prefer the most recently created hypothesis for planning
+      if (!unique.containsKey(key) || unique[key]!.createdAt.isBefore(h.createdAt)) {
         unique[key] = h;
       }
     }
