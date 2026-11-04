@@ -80,6 +80,46 @@ void main() {
     expect(CommandExecutor.canUseManagedInstaller('../unsafe'), isFalse);
   });
 
+  test('standard package installs an audited Chromium runtime', () {
+    final installerFile = File('linux/llmtary-browser-installer');
+    expect(installerFile.existsSync(), isTrue);
+    final installer = installerFile.readAsStringSync();
+    expect(installer, contains("package='chromium'"));
+    expect(installer, contains("fallback_package='chromium-browser'"));
+    expect(installer, contains('/usr/bin/apt-cache'));
+    expect(installer, contains('/usr/bin/apt-get install'));
+    expect(installer, contains('/usr/bin/chromium'));
+    expect(installer, isNot(contains('curl')));
+    expect(installer, isNot(contains('wget')));
+    expect(installer, isNot(contains('http://')));
+    expect(installer, isNot(contains('https://')));
+
+    expect(installer, isNot(contains('/usr/bin/ln')));
+    expect(installer, isNot(contains('ln -sfn')));
+    expect(installer, contains('set -euo pipefail'));
+    expect(installer, contains('[ -L /etc/llmtary ]'));
+    expect(installer, contains('browser-runtime.conf.tmp'));
+    expect(installer, contains('if [[ ! -d /etc/llmtary ]]'));
+
+    final cmake = File('linux/CMakeLists.txt').readAsStringSync();
+    expect(cmake, contains('llmtary-browser-installer'));
+    final postInstall = File('linux/post-install.sh').readAsStringSync();
+    expect(postInstall, isNot(contains('llmtary-browser-installer')));
+    expect(postInstall, isNot(contains('apt-get')));
+    expect(postInstall, contains('CHROMIUM_EXECUTABLE='));
+    expect(postInstall, contains('if [ ! -d /etc/llmtary ]'));
+  });
+
+  test('Debian package declares the standard browser dependency', () {
+    final builderFile = File('linux/build-debian-package.sh');
+    expect(builderFile.existsSync(), isTrue);
+    final builder = builderFile.readAsStringSync();
+    expect(builder, contains('chromium | chromium-browser'));
+    expect(builder, contains('linux/post-install.sh'));
+    expect(builder, contains('llmtary_\${version}_amd64.deb'));
+    expect(builder, contains('/usr/bin/LLMtary'));
+  });
+
   test('Evil-WinRM installer pins and verifies the audited gem', () {
     final installer = File('linux/llmtary-tool-installer').readAsStringSync();
     expect(installer, contains("version='4.1'"));

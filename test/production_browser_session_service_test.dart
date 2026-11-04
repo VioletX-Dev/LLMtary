@@ -105,6 +105,7 @@ void main() {
         repository: repository,
         launcher: _Launcher(),
         chromiumExecutable: '/usr/bin/chromium',
+        executableProbe: (_) => true,
       );
       final recorder = _Recorder();
       var closed = false;

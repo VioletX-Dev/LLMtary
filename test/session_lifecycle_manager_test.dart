@@ -46,6 +46,7 @@ class _FakeSink implements IOSink {
 
 class _FakeLauncher implements BrowserProcessLauncher {
   final List<BrowserProcess> launched = [];
+  final List<String> executables = [];
   int nextPid = 1;
   @override
   Future<BrowserProcess> startChromium({
@@ -53,6 +54,7 @@ class _FakeLauncher implements BrowserProcessLauncher {
     List<String> extraArgs = const [],
     Map<String, String>? environment,
   }) async {
+    executables.add(executable);
     final profile = await Directory.systemTemp.createTemp('browser-role-');
     final process = BrowserProcess(
       process: _FakeProcess(nextPid++),
@@ -73,11 +75,29 @@ void main() {
     await BrowserSessionRepository.createTables(db);
     final repository = BrowserSessionRepository(db);
     final launcher = _FakeLauncher();
+    expect(
+      () => SessionLifecycleManager(
+        repository: repository,
+        launcher: launcher,
+        chromiumExecutable: '/tmp/untrusted-chromium',
+        executableProbe: (_) => true,
+      ),
+      throwsArgumentError,
+    );
+    final unavailable = SessionLifecycleManager(
+      repository: repository,
+      launcher: launcher,
+      executableProbe: (_) => false,
+    );
+    await expectLater(
+      unavailable.createSession(projectId: 4, roleId: 'unavailable'),
+      throwsStateError,
+    );
     var now = DateTime.utc(2026, 11, 4, 12);
     final manager = SessionLifecycleManager(
       repository: repository,
       launcher: launcher,
-      chromiumExecutable: '/usr/bin/chromium',
+      executableProbe: (_) => true,
       maxIdle: const Duration(minutes: 30),
       now: () => now,
     );
@@ -87,6 +107,7 @@ void main() {
 
     expect(admin.sessionId, isNot(user.sessionId));
     expect(launcher.launched, hasLength(2));
+    expect(launcher.executables, everyElement('/usr/bin/chromium'));
     expect(
       launcher.launched[0].profileDirectory.path,
       isNot(launcher.launched[1].profileDirectory.path),

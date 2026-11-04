@@ -3,12 +3,14 @@ import 'dart:math';
 
 import '../models/browser_session.dart';
 import 'browser_process_manager.dart';
+import 'browser_runtime_configuration.dart';
 import 'browser_session_repository.dart';
 
 class SessionLifecycleManager {
   final BrowserSessionRepository repository;
   final BrowserProcessLauncher launcher;
   final String chromiumExecutable;
+  final bool Function(String executable) executableProbe;
   final Duration maxIdle;
   final DateTime Function() now;
   final Map<String, BrowserProcess> _processes = {};
@@ -16,15 +18,21 @@ class SessionLifecycleManager {
   SessionLifecycleManager({
     required this.repository,
     required this.launcher,
-    required this.chromiumExecutable,
+    String? chromiumExecutable,
+    bool Function(String executable)? executableProbe,
     this.maxIdle = const Duration(minutes: 15),
     DateTime Function()? now,
-  }) : now = now ?? (() => DateTime.now().toUtc()) {
-    if (!chromiumExecutable.startsWith('/')) {
+  }) : chromiumExecutable =
+           chromiumExecutable ?? BrowserRuntimeConfiguration.resolve(),
+       executableProbe = executableProbe ?? BrowserRuntimeConfiguration.isUsable,
+       now = now ?? (() => DateTime.now().toUtc()) {
+    if (!BrowserRuntimeConfiguration.approvedExecutables.contains(
+      this.chromiumExecutable,
+    )) {
       throw ArgumentError.value(
-        chromiumExecutable,
+        this.chromiumExecutable,
         'chromiumExecutable',
-        'A trusted absolute executable path is required',
+        'An approved managed Chromium executable path is required',
       );
     }
   }
@@ -35,6 +43,11 @@ class SessionLifecycleManager {
   }) async {
     if (projectId <= 0 || roleId.trim().isEmpty) {
       throw ArgumentError('Persisted project id and non-empty role id required');
+    }
+    if (!executableProbe(chromiumExecutable)) {
+      throw StateError(
+        'The managed Chromium runtime is unavailable: $chromiumExecutable',
+      );
     }
     final sessionId = _randomId();
     final process = await launcher.startChromium(executable: chromiumExecutable);

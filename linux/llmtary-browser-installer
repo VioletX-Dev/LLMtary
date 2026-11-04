@@ -1,0 +1,69 @@
+#!/bin/bash
+set -euo pipefail
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+umask 022
+
+if [[ "$(id -u)" -ne 0 ]]; then
+    echo "browser runtime installer requires root" >&2
+    exit 64
+fi
+if [[ "$#" -ne 0 ]]; then
+    echo "browser runtime installer accepts no arguments" >&2
+    exit 64
+fi
+
+for command in /usr/bin/apt-cache /usr/bin/apt-get /usr/bin/awk /usr/bin/install /usr/bin/mktemp /usr/bin/chown /usr/bin/chmod /bin/mv /bin/rm; do
+    [[ -x "$command" ]] || {
+        echo "required system command is unavailable: $command" >&2
+        exit 65
+    }
+done
+
+export DEBIAN_FRONTEND=noninteractive
+package='chromium'
+fallback_package='chromium-browser'
+
+has_candidate() {
+    local policy candidate
+    policy="$(/usr/bin/apt-cache policy "$1")" || return 1
+    candidate="$(printf '%s\n' "$policy" | /usr/bin/awk '/Candidate:/ {print $2; exit}')"
+    [[ -n "$candidate" && "$candidate" != '(none)' ]]
+}
+
+/usr/bin/apt-get update
+if has_candidate "$package"; then
+    /usr/bin/apt-get install -y --no-install-recommends "$package"
+elif has_candidate "$fallback_package"; then
+    /usr/bin/apt-get install -y --no-install-recommends "$fallback_package"
+else
+    echo "no approved Chromium package is available from configured repositories" >&2
+    exit 66
+fi
+
+if [[ -x /usr/bin/chromium ]]; then
+    runtime=/usr/bin/chromium
+elif [[ -x /usr/bin/chromium-browser ]]; then
+    runtime=/usr/bin/chromium-browser
+elif [[ -x /snap/bin/chromium ]]; then
+    runtime=/snap/bin/chromium
+else
+    echo "approved Chromium package did not provide an executable" >&2
+    exit 67
+fi
+
+if [[ -L /etc/llmtary ]] || [[ -e /etc/llmtary && ! -d /etc/llmtary ]]; then
+    echo "/etc/llmtary must be a real directory" >&2
+    exit 68
+fi
+if [[ ! -d /etc/llmtary ]]; then
+    /usr/bin/install -d -o root -g root -m 0755 /etc/llmtary
+fi
+temporary="$(/usr/bin/mktemp /etc/llmtary/browser-runtime.conf.tmp.XXXXXX)"
+trap '/bin/rm -f "$temporary"' EXIT
+printf 'CHROMIUM_EXECUTABLE=%s\n' "$runtime" > "$temporary"
+/usr/bin/chown root:root "$temporary"
+/usr/bin/chmod 0644 "$temporary"
+/bin/mv -f "$temporary" /etc/llmtary/browser-runtime.conf
+trap - EXIT
+
+echo "LLMtary browser runtime ready: $runtime"
