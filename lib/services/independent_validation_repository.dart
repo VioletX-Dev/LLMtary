@@ -59,6 +59,18 @@ class IndependentValidationRepository {
     return db.insert('independent_validation_results', _toMap(record));
   }
 
+  Future<IndependentValidationRecord?> tryForValidationRun(
+    int validationRunId,
+  ) async {
+    final rows = await db.query(
+      'independent_validation_results',
+      where: 'validation_run_id = ?',
+      whereArgs: [validationRunId],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : _fromMap(rows.single);
+  }
+
   Future<IndependentValidationRecord> forValidationRun(
     int validationRunId,
   ) async {
