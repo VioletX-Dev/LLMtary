@@ -59,6 +59,16 @@ class AttackTraceRepository {
         PRIMARY KEY (trace_id, parent_step_id, child_step_id)
       )
     ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS attack_trace_checkpoints (
+        trace_id INTEGER NOT NULL,
+        checkpoint_key TEXT NOT NULL,
+        payload TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (trace_id, checkpoint_key),
+        FOREIGN KEY (trace_id) REFERENCES attack_traces(id) ON DELETE CASCADE
+      )
+    ''');
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_attack_traces_project '
       'ON attack_traces(project_id, target_id, vulnerability_id)',
