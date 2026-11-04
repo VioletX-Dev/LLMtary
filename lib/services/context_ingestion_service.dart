@@ -14,10 +14,14 @@ class ContextIngestionService {
   static const parserVersion = '1';
   final int maxExpandedArchiveBytes;
   final int maxArchiveEntries;
+  final int maxArchiveTextBytes;
+  final int maxArchiveTextFileBytes;
 
   const ContextIngestionService({
     this.maxExpandedArchiveBytes = 100 * 1024 * 1024,
     this.maxArchiveEntries = 20000,
+    this.maxArchiveTextBytes = 2 * 1024 * 1024,
+    this.maxArchiveTextFileBytes = 256 * 1024,
   });
 
   static const _httpMethods = {
@@ -55,6 +59,15 @@ class ContextIngestionService {
     final data = Uint8List.fromList(bytes);
     final digest = sha256.convert(data).toString();
     final lowerName = fileName.toLowerCase();
+    if (lowerName.endsWith('.docx')) {
+      return _docx(
+        projectId: projectId,
+        fileName: fileName,
+        bytes: data,
+        digest: digest,
+        ingestedAt: ingestedAt,
+      );
+    }
     if (lowerName.endsWith('.zip')) {
       return _sourceArchive(
         projectId: projectId,
@@ -64,9 +77,43 @@ class ContextIngestionService {
         ingestedAt: ingestedAt,
       );
     }
+    if (lowerName.endsWith('.pdf')) {
+      return _pdf(
+        projectId: projectId,
+        fileName: fileName,
+        bytes: data,
+        digest: digest,
+        ingestedAt: ingestedAt,
+      );
+    }
     final decoded = utf8.decode(data, allowMalformed: false);
-    if (lowerName.endsWith('.yaml') || lowerName.endsWith('.yml')) {
+    if (lowerName.endsWith('.yaml') ||
+        lowerName.endsWith('.yml') ||
+        lowerName.endsWith('pubspec.lock')) {
       final yaml = _yamlToDart(loadYaml(decoded));
+      if ((lowerName.endsWith('pubspec.yaml') ||
+              lowerName.endsWith('pubspec.yml')) &&
+          yaml is Map<String, dynamic>) {
+        return _dartManifest(
+          projectId: projectId,
+          fileName: fileName,
+          bytes: data,
+          digest: digest,
+          document: yaml,
+          ingestedAt: ingestedAt,
+        );
+      }
+      if (lowerName.endsWith('pubspec.lock') &&
+          yaml is Map<String, dynamic>) {
+        return _dartLock(
+          projectId: projectId,
+          fileName: fileName,
+          bytes: data,
+          digest: digest,
+          document: yaml,
+          ingestedAt: ingestedAt,
+        );
+      }
       if (yaml is Map<String, dynamic> &&
           (yaml.containsKey('openapi') || yaml.containsKey('swagger'))) {
         return _openApi(
@@ -82,6 +129,17 @@ class ContextIngestionService {
     }
     if (lowerName.endsWith('.json')) {
       final value = jsonDecode(decoded);
+      if (lowerName.endsWith('package-lock.json') &&
+          value is Map<String, dynamic>) {
+        return _packageLock(
+          projectId: projectId,
+          fileName: fileName,
+          bytes: data,
+          digest: digest,
+          document: value,
+          ingestedAt: ingestedAt,
+        );
+      }
       if (lowerName.endsWith('package.json') && value is Map<String, dynamic>) {
         return _packageJson(
           projectId: projectId,
@@ -117,6 +175,81 @@ class ContextIngestionService {
         );
       }
     }
+    if (lowerName.endsWith('requirements.txt') ||
+        lowerName.endsWith('requirements.in')) {
+      return _requirements(
+        projectId: projectId,
+        fileName: fileName,
+        bytes: data,
+        digest: digest,
+        document: decoded,
+        ingestedAt: ingestedAt,
+      );
+    }
+    if (lowerName.endsWith('pyproject.toml') ||
+        lowerName.endsWith('poetry.lock')) {
+      return _pythonTomlManifest(
+        projectId: projectId,
+        fileName: fileName,
+        bytes: data,
+        digest: digest,
+        document: decoded,
+        ingestedAt: ingestedAt,
+      );
+    }
+    if (lowerName.endsWith('pom.xml')) {
+      return _mavenManifest(
+        projectId: projectId,
+        fileName: fileName,
+        bytes: data,
+        digest: digest,
+        document: decoded,
+        ingestedAt: ingestedAt,
+      );
+    }
+    if (lowerName.endsWith('.gradle') ||
+        lowerName.endsWith('.gradle.kts')) {
+      return _gradleManifest(
+        projectId: projectId,
+        fileName: fileName,
+        bytes: data,
+        digest: digest,
+        document: decoded,
+        ingestedAt: ingestedAt,
+      );
+    }
+    if (lowerName.endsWith('.csproj') ||
+        lowerName.endsWith('.fsproj') ||
+        lowerName.endsWith('packages.config')) {
+      return _dotnetManifest(
+        projectId: projectId,
+        fileName: fileName,
+        bytes: data,
+        digest: digest,
+        document: decoded,
+        ingestedAt: ingestedAt,
+      );
+    }
+    if (lowerName.endsWith('.html') || lowerName.endsWith('.htm')) {
+      return _priorReportHtml(
+        projectId: projectId,
+        fileName: fileName,
+        bytes: data,
+        digest: digest,
+        document: decoded,
+        ingestedAt: ingestedAt,
+      );
+    }
+    if (lowerName.endsWith('.csv')) {
+      return _priorReportCsv(
+        projectId: projectId,
+        fileName: fileName,
+        bytes: data,
+        digest: digest,
+        document: decoded,
+        ingestedAt: ingestedAt,
+      );
+    }
     if (lowerName.endsWith('.wsdl') ||
         (lowerName.endsWith('.xml') && decoded.contains('<definitions'))) {
       return _wsdl(
@@ -126,6 +259,19 @@ class ContextIngestionService {
         digest: digest,
         document: decoded,
         ingestedAt: ingestedAt,
+      );
+    }
+    if (lowerName.endsWith('.md') &&
+        (lowerName.contains('report') || lowerName.contains('finding'))) {
+      return _result(
+        projectId: projectId,
+        fileName: fileName,
+        bytes: data,
+        digest: digest,
+        type: ContextArtifactType.priorReport,
+        extractionMethod: 'prior-report-markdown-deterministic',
+        ingestedAt: ingestedAt,
+        normalizedText: decoded,
       );
     }
     if ((lowerName.endsWith('.md') ||
@@ -154,6 +300,393 @@ class ContextIngestionService {
       normalizedText: decoded,
     );
   }
+
+  ContextIngestionResult _pdf({
+    required int projectId,
+    required String fileName,
+    required Uint8List bytes,
+    required String digest,
+    required DateTime ingestedAt,
+  }) {
+    final source = latin1.decode(bytes, allowInvalid: true);
+    final text = RegExp(r'\(([^()]*)\)\s*T[jJ]')
+        .allMatches(source)
+        .map((match) => (match.group(1) ?? '')
+            .replaceAll(r'\(', '(')
+            .replaceAll(r'\)', ')')
+            .replaceAll(r'\\', r'\'))
+        .where((value) => value.trim().isNotEmpty)
+        .join('\n');
+    if (text.isEmpty) {
+      throw const FormatException('PDF has no supported text layer.');
+    }
+    return _result(
+      projectId: projectId,
+      fileName: fileName,
+      bytes: bytes,
+      digest: digest,
+      type: ContextArtifactType.architectureDocument,
+      extractionMethod: 'pdf-text-layer-bounded',
+      ingestedAt: ingestedAt,
+      normalizedText: text,
+    );
+  }
+
+  ContextIngestionResult _docx({
+    required int projectId,
+    required String fileName,
+    required Uint8List bytes,
+    required String digest,
+    required DateTime ingestedAt,
+  }) {
+    final archive = ZipDecoder().decodeBytes(bytes);
+    final documentEntry = archive.files.where(
+      (entry) => entry.isFile && entry.name == 'word/document.xml',
+    );
+    if (documentEntry.isEmpty) {
+      throw const FormatException('DOCX document.xml is missing.');
+    }
+    final entry = documentEntry.single;
+    if (entry.isSymbolicLink || entry.size > maxExpandedArchiveBytes) {
+      throw const FormatException('DOCX document exceeds the safe byte limit.');
+    }
+    final content = Uint8List.fromList(entry.content as List<int>);
+    if (content.length > maxExpandedArchiveBytes) {
+      throw const FormatException('DOCX document exceeds the safe byte limit.');
+    }
+    final xml = XmlDocument.parse(utf8.decode(content, allowMalformed: false));
+    final text = xml.descendants
+        .whereType<XmlElement>()
+        .where((element) => element.name.local == 't')
+        .map((element) => element.innerText.trim())
+        .where((value) => value.isNotEmpty)
+        .join('\n');
+    return _result(
+      projectId: projectId,
+      fileName: fileName,
+      bytes: bytes,
+      digest: digest,
+      type: ContextArtifactType.architectureDocument,
+      extractionMethod: 'docx-xml-bounded',
+      ingestedAt: ingestedAt,
+      normalizedText: text,
+    );
+  }
+
+  ContextIngestionResult _priorReportHtml({
+    required int projectId,
+    required String fileName,
+    required Uint8List bytes,
+    required String digest,
+    required String document,
+    required DateTime ingestedAt,
+  }) {
+    var text = document
+        .replaceAll(RegExp(r'<script\b[\s\S]*?<\/script\s*>', caseSensitive: false), ' ')
+        .replaceAll(RegExp(r'<style\b[\s\S]*?<\/style\s*>', caseSensitive: false), ' ')
+        .replaceAll(RegExp(r'<[^>]+>'), ' ')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&amp;', '&')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    text = SensitiveTextRedactor.redact(text);
+    return _result(
+      projectId: projectId,
+      fileName: fileName,
+      bytes: bytes,
+      digest: digest,
+      type: ContextArtifactType.priorReport,
+      extractionMethod: 'prior-report-html-deterministic',
+      ingestedAt: ingestedAt,
+      normalizedText: text,
+    );
+  }
+
+  ContextIngestionResult _priorReportCsv({
+    required int projectId,
+    required String fileName,
+    required Uint8List bytes,
+    required String digest,
+    required String document,
+    required DateTime ingestedAt,
+  }) {
+    final rows = const _CsvParser().parse(document);
+    if (rows.isEmpty) throw const FormatException('CSV report is empty.');
+    final headers = rows.first.map((value) => value.trim().toLowerCase()).toList();
+    final findings = <PriorFindingContext>[];
+    String valueAt(List<String> row, String name) {
+      final index = headers.indexOf(name);
+      return index >= 0 && index < row.length ? row[index].trim() : '';
+    }
+    for (final row in rows.skip(1)) {
+      final title = valueAt(row, 'title');
+      if (title.isEmpty) continue;
+      findings.add(PriorFindingContext(
+        title: title,
+        severity: valueAt(row, 'severity').toUpperCase(),
+        status: valueAt(row, 'status').toLowerCase(),
+        evidence: valueAt(row, 'evidence'),
+        remediation: valueAt(row, 'remediation'),
+      ));
+    }
+    return _result(
+      projectId: projectId,
+      fileName: fileName,
+      bytes: bytes,
+      digest: digest,
+      type: ContextArtifactType.priorReport,
+      extractionMethod: 'prior-report-csv-deterministic',
+      ingestedAt: ingestedAt,
+      priorFindings: findings,
+      normalizedText: document,
+    );
+  }
+
+  ContextIngestionResult _requirements({
+    required int projectId,
+    required String fileName,
+    required Uint8List bytes,
+    required String digest,
+    required String document,
+    required DateTime ingestedAt,
+  }) {
+    final dependencies = <DependencyContext>[];
+    final pattern = RegExp(r'^([A-Za-z0-9_.-]+)\s*(.*)$');
+    for (final rawLine in const LineSplitter().convert(document)) {
+      final line = rawLine.split('#').first.trim();
+      if (line.isEmpty || line.startsWith('-')) continue;
+      final match = pattern.firstMatch(line);
+      if (match == null) continue;
+      dependencies.add(DependencyContext(
+        name: match.group(1)!,
+        versionConstraint: (match.group(2) ?? '').trim(),
+        ecosystem: 'pypi',
+      ));
+    }
+    dependencies.sort((a, b) => a.name.compareTo(b.name));
+    return _dependencyResult(projectId, fileName, bytes, digest, ingestedAt,
+        'python-requirements-deterministic', dependencies, document);
+  }
+
+  ContextIngestionResult _dartManifest({
+    required int projectId,
+    required String fileName,
+    required Uint8List bytes,
+    required String digest,
+    required Map<String, dynamic> document,
+    required DateTime ingestedAt,
+  }) {
+    final dependencies = <DependencyContext>[];
+    void add(Object? value, bool developmentOnly) {
+      if (value is! Map) return;
+      final names = value.keys.map((key) => key.toString()).toList()..sort();
+      for (final name in names) {
+        dependencies.add(DependencyContext(
+          name: name,
+          versionConstraint: value[name]?.toString() ?? '',
+          ecosystem: 'pub',
+          developmentOnly: developmentOnly,
+        ));
+      }
+    }
+    add(document['dependencies'], false);
+    add(document['dev_dependencies'], true);
+    return _dependencyResult(projectId, fileName, bytes, digest, ingestedAt,
+        'dart-pubspec-deterministic', dependencies, jsonEncode(document));
+  }
+
+  ContextIngestionResult _dartLock({
+    required int projectId,
+    required String fileName,
+    required Uint8List bytes,
+    required String digest,
+    required Map<String, dynamic> document,
+    required DateTime ingestedAt,
+  }) {
+    final dependencies = <DependencyContext>[];
+    final packages = document['packages'];
+    if (packages is Map) {
+      final names = packages.keys.map((key) => key.toString()).toList()..sort();
+      for (final name in names) {
+        final details = packages[name];
+        final map = details is Map ? details : const {};
+        dependencies.add(DependencyContext(
+          name: name,
+          versionConstraint: map['version']?.toString() ?? '',
+          ecosystem: 'pub',
+          developmentOnly: (map['dependency']?.toString() ?? '').contains('dev'),
+        ));
+      }
+    }
+    return _dependencyResult(projectId, fileName, bytes, digest, ingestedAt,
+        'dart-pub-lock-deterministic', dependencies, jsonEncode(document));
+  }
+
+  ContextIngestionResult _packageLock({
+    required int projectId,
+    required String fileName,
+    required Uint8List bytes,
+    required String digest,
+    required Map<String, dynamic> document,
+    required DateTime ingestedAt,
+  }) {
+    final dependencies = <DependencyContext>[];
+    final packages = document['packages'];
+    if (packages is Map) {
+      final paths = packages.keys.map((key) => key.toString()).toList()..sort();
+      for (final path in paths) {
+        if (!path.startsWith('node_modules/')) continue;
+        final name = path.substring('node_modules/'.length);
+        if (name.isEmpty || name.contains('/node_modules/')) continue;
+        final details = packages[path];
+        final map = details is Map ? details : const {};
+        dependencies.add(DependencyContext(
+          name: name,
+          versionConstraint: map['version']?.toString() ?? '',
+          ecosystem: 'npm',
+          developmentOnly: map['dev'] == true,
+        ));
+      }
+    }
+    return _dependencyResult(projectId, fileName, bytes, digest, ingestedAt,
+        'npm-package-lock-deterministic', dependencies, jsonEncode(document));
+  }
+
+  ContextIngestionResult _pythonTomlManifest({
+    required int projectId,
+    required String fileName,
+    required Uint8List bytes,
+    required String digest,
+    required String document,
+    required DateTime ingestedAt,
+  }) {
+    final dependencies = <DependencyContext>[];
+    final seen = <String>{};
+    final quoted = RegExp(r'''["']([A-Za-z0-9_.-]+)\s*([^"']*)["']''');
+    for (final match in quoted.allMatches(document)) {
+      final name = match.group(1) ?? '';
+      if (name.isEmpty || !seen.add(name)) continue;
+      dependencies.add(DependencyContext(
+        name: name,
+        versionConstraint: (match.group(2) ?? '').trim(),
+        ecosystem: 'pypi',
+      ));
+    }
+    dependencies.sort((a, b) => a.name.compareTo(b.name));
+    return _dependencyResult(projectId, fileName, bytes, digest, ingestedAt,
+        'python-toml-lock-deterministic', dependencies, document);
+  }
+
+  ContextIngestionResult _gradleManifest({
+    required int projectId,
+    required String fileName,
+    required Uint8List bytes,
+    required String digest,
+    required String document,
+    required DateTime ingestedAt,
+  }) {
+    final dependencies = <DependencyContext>[];
+    final pattern = RegExp(
+      r'''(?:implementation|api|compileOnly|runtimeOnly|testImplementation)\s*\(?\s*["']([^:"']+):([^:"']+):([^"']+)["']''',
+    );
+    for (final match in pattern.allMatches(document)) {
+      final configuration = match.group(0) ?? '';
+      dependencies.add(DependencyContext(
+        name: '${match.group(1)}:${match.group(2)}',
+        versionConstraint: match.group(3) ?? '',
+        ecosystem: 'maven',
+        developmentOnly: configuration.startsWith('testImplementation'),
+      ));
+    }
+    return _dependencyResult(projectId, fileName, bytes, digest, ingestedAt,
+        'gradle-dependencies-deterministic', dependencies, document);
+  }
+
+  ContextIngestionResult _mavenManifest({
+    required int projectId,
+    required String fileName,
+    required Uint8List bytes,
+    required String digest,
+    required String document,
+    required DateTime ingestedAt,
+  }) {
+    final xml = XmlDocument.parse(document);
+    final dependencies = <DependencyContext>[];
+    for (final element in xml.descendants.whereType<XmlElement>().where(
+      (element) => element.name.local == 'dependency',
+    )) {
+      String child(String name) => element.children
+          .whereType<XmlElement>()
+          .where((value) => value.name.local == name)
+          .map((value) => value.innerText.trim())
+          .firstWhere((value) => value.isNotEmpty, orElse: () => '');
+      final artifact = child('artifactId');
+      if (artifact.isEmpty) continue;
+      final group = child('groupId');
+      dependencies.add(DependencyContext(
+        name: group.isEmpty ? artifact : '$group:$artifact',
+        versionConstraint: child('version'),
+        ecosystem: 'maven',
+        developmentOnly: child('scope') == 'test',
+      ));
+    }
+    return _dependencyResult(projectId, fileName, bytes, digest, ingestedAt,
+        'maven-pom-deterministic', dependencies, document);
+  }
+
+  ContextIngestionResult _dotnetManifest({
+    required int projectId,
+    required String fileName,
+    required Uint8List bytes,
+    required String digest,
+    required String document,
+    required DateTime ingestedAt,
+  }) {
+    final xml = XmlDocument.parse(document);
+    final dependencies = <DependencyContext>[];
+    for (final element in xml.descendants.whereType<XmlElement>().where(
+      (element) => element.name.local == 'PackageReference' || element.name.local == 'package',
+    )) {
+      final name = element.getAttribute('Include') ?? element.getAttribute('id') ?? '';
+      if (name.isEmpty) continue;
+      final version = element.getAttribute('Version') ??
+          element.getAttribute('version') ??
+          element.children
+              .whereType<XmlElement>()
+              .where((value) => value.name.local == 'Version')
+              .map((value) => value.innerText.trim())
+              .firstWhere((value) => value.isNotEmpty, orElse: () => '');
+      dependencies.add(DependencyContext(
+        name: name,
+        versionConstraint: version,
+        ecosystem: 'nuget',
+      ));
+    }
+    return _dependencyResult(projectId, fileName, bytes, digest, ingestedAt,
+        'dotnet-package-deterministic', dependencies, document);
+  }
+
+  ContextIngestionResult _dependencyResult(
+    int projectId,
+    String fileName,
+    Uint8List bytes,
+    String digest,
+    DateTime ingestedAt,
+    String method,
+    List<DependencyContext> dependencies,
+    String normalized,
+  ) => _result(
+    projectId: projectId,
+    fileName: fileName,
+    bytes: bytes,
+    digest: digest,
+    type: ContextArtifactType.dependencyManifest,
+    extractionMethod: method,
+    ingestedAt: ingestedAt,
+    dependencies: dependencies,
+    normalizedText: normalized,
+  );
 
   ContextIngestionResult _priorReportJson({
     required int projectId,
@@ -242,6 +775,14 @@ class ContextIngestionService {
     final entries = <ContextArchiveEntry>[];
     final paths = <String>{};
     var expandedBytes = 0;
+    var extractedTextBytes = 0;
+    final selectedText = StringBuffer();
+    const textExtensions = <String>{
+      '.dart', '.py', '.js', '.ts', '.java', '.kt', '.go', '.rs', '.rb',
+      '.php', '.cs', '.xml', '.json', '.yaml', '.yml', '.toml', '.ini',
+      '.conf', '.properties', '.md', '.txt', '.rst', '.html', '.css',
+      '.sql', '.graphql', '.proto', '.sh', '.ps1', '.gradle',
+    };
     for (final entry in archive.files) {
       if (!entry.isFile) continue;
       if (entries.length >= maxArchiveEntries) {
@@ -278,6 +819,26 @@ class ContextIngestionService {
           sizeBytes: content.length,
         ),
       );
+      final lowerPath = path.toLowerCase();
+      final dot = lowerPath.lastIndexOf('.');
+      final extension = dot < 0 ? '' : lowerPath.substring(dot);
+      if (textExtensions.contains(extension) &&
+          content.length <= maxArchiveTextFileBytes &&
+          extractedTextBytes < maxArchiveTextBytes) {
+        try {
+          final decoded = utf8.decode(content, allowMalformed: false);
+          final remaining = maxArchiveTextBytes - extractedTextBytes;
+          final selected = decoded.length <= remaining
+              ? decoded
+              : decoded.substring(0, remaining);
+          selectedText
+            ..writeln('--- $path ---')
+            ..writeln(selected);
+          extractedTextBytes += utf8.encode(selected).length;
+        } on FormatException {
+          // Non-UTF8 entries remain in the deterministic inventory only.
+        }
+      }
     }
     entries.sort((left, right) => left.path.compareTo(right.path));
     return _result(
@@ -289,6 +850,7 @@ class ContextIngestionService {
       extractionMethod: 'zip-safe-inventory',
       ingestedAt: ingestedAt,
       archiveEntries: entries,
+      normalizedText: selectedText.toString(),
     );
   }
 
@@ -484,5 +1046,44 @@ class ContextIngestionService {
       archiveEntries: List.unmodifiable(archiveEntries),
       normalizedText: SensitiveTextRedactor.redact(normalizedText),
     );
+  }
+}
+
+class _CsvParser {
+  const _CsvParser();
+
+  List<List<String>> parse(String source) {
+    final rows = <List<String>>[];
+    var row = <String>[];
+    var field = StringBuffer();
+    var quoted = false;
+    for (var index = 0; index < source.length; index++) {
+      final character = source[index];
+      if (character == '"') {
+        if (quoted && index + 1 < source.length && source[index + 1] == '"') {
+          field.write('"');
+          index++;
+        } else {
+          quoted = !quoted;
+        }
+      } else if (character == ',' && !quoted) {
+        row.add(field.toString());
+        field = StringBuffer();
+      } else if ((character == '\n' || character == '\r') && !quoted) {
+        if (character == '\r' && index + 1 < source.length && source[index + 1] == '\n') {
+          index++;
+        }
+        row.add(field.toString());
+        field = StringBuffer();
+        if (row.any((value) => value.isNotEmpty)) rows.add(row);
+        row = <String>[];
+      } else {
+        field.write(character);
+      }
+    }
+    if (quoted) throw const FormatException('CSV contains an unterminated quote.');
+    row.add(field.toString());
+    if (row.any((value) => value.isNotEmpty)) rows.add(row);
+    return rows;
   }
 }
