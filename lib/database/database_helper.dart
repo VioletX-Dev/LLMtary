@@ -23,6 +23,7 @@ import '../services/candidate_closure_repository.dart';
 import '../services/attack_trace_repository.dart';
 import '../services/context_artifact_repository.dart';
 import '../services/independent_validation_repository.dart';
+import '../services/browser_session_repository.dart';
 
 class DatabaseHelper {
   static Future<Database>? _initFuture;
@@ -43,7 +44,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 31,
+      version: 32,
       singleInstance: true,
       onConfigure: (db) async {
         await db.execute('PRAGMA busy_timeout=5000');
@@ -267,6 +268,7 @@ class DatabaseHelper {
         await migrateCloudAssist(db);
         await CandidateClosureRepository.migrate(db);
         await migratePlatformContext(db);
+        await migrateBrowserSessions(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         debugPrint('[DB] onUpgrade: $oldVersion → $newVersion');
@@ -594,6 +596,9 @@ class DatabaseHelper {
         if (oldVersion < 31) {
           await migratePlatformContext(db);
         }
+        if (oldVersion < 32) {
+          await migrateBrowserSessions(db);
+        }
       },
     );
     final version = await db.getVersion();
@@ -673,6 +678,10 @@ class DatabaseHelper {
     await ContextArtifactRepository.createTables(db);
     await AttackTraceRepository.createTables(db);
     await IndependentValidationRepository.createTable(db);
+  }
+
+  static Future<void> migrateBrowserSessions(Database db) async {
+    await BrowserSessionRepository.createTables(db);
   }
 
   static Future<int> insertVulnerability(Vulnerability vuln) async {

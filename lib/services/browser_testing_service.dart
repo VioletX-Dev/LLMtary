@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
 import '../models/browser_test.dart';
+import 'attack_trace_recorder.dart';
 
 class BrowserTestingService {
   static const _sensitiveHeaders = {
@@ -13,8 +14,22 @@ class BrowserTestingService {
   };
 
   final BrowserDriver driver;
+  final AttackTraceRecorder? attackTraceRecorder;
+  final int? attackTraceId;
 
-  const BrowserTestingService(this.driver);
+  BrowserTestingService(
+    this.driver, {
+    this.attackTraceRecorder,
+    this.attackTraceId,
+  }) {
+    if (attackTraceRecorder != null && (attackTraceId == null || attackTraceId! <= 0)) {
+      throw ArgumentError.value(
+        attackTraceId,
+        'attackTraceId',
+        'A persisted trace id is required when trace recording is enabled',
+      );
+    }
+  }
 
   Future<BrowserActionRecord> execute(BrowserActionRequest request) async {
     final observation = await driver.perform(request);
@@ -30,7 +45,7 @@ class BrowserTestingService {
         )
         .toList(growable: false);
     final evidenceId = observation.screenshotEvidenceArtifactId;
-    return BrowserActionRecord(
+    final record = BrowserActionRecord(
       kind: request.kind,
       action: _actionDescription(request),
       roleId: request.roleId,
@@ -42,6 +57,18 @@ class BrowserTestingService {
       networkExchanges: exchanges,
       evidenceArtifactIds: evidenceId == null ? const [] : [evidenceId],
     );
+
+    if (attackTraceRecorder != null) {
+      final createdAt = DateTime.now().toUtc();
+      await attackTraceRecorder!.recordBrowserAction(
+        traceId: attackTraceId!,
+        stepKey: 'browser:${createdAt.microsecondsSinceEpoch}',
+        record: record,
+        createdAt: createdAt,
+      );
+    }
+
+    return record;
   }
 
   String _actionDescription(BrowserActionRequest request) =>

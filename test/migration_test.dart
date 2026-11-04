@@ -273,6 +273,29 @@ void main() {
     },
   );
 
+  test('v32 browser-session migration adds bounded session storage', () async {
+    final db = await openDatabase(
+      inMemoryDatabasePath,
+      version: 1,
+      singleInstance: false,
+      onCreate: (db, version) async {
+        await db.execute('CREATE TABLE projects (id INTEGER PRIMARY KEY)');
+      },
+    );
+    addTearDown(db.close);
+
+    await DatabaseHelper.migrateBrowserSessions(db);
+
+    final tables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='browser_sessions'",
+    );
+    final indexes = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_browser_sessions_project_status'",
+    );
+    expect(tables, hasLength(1));
+    expect(indexes, hasLength(1));
+  });
+
   test(
     'v26 budget migration preserves projects and adds budget columns',
     () async {
