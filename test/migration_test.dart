@@ -292,8 +292,12 @@ void main() {
     final indexes = await db.rawQuery(
       "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_browser_sessions_project_status'",
     );
+    final checkpointTables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('attack_trace_checkpoints','attack_trace_locks','independent_validation_locks')",
+    );
     expect(tables, hasLength(1));
     expect(indexes, hasLength(1));
+    expect(checkpointTables, hasLength(3));
   });
 
   test(

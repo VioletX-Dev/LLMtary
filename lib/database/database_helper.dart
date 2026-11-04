@@ -17,6 +17,7 @@ import '../models/controlled_exploitation.dart';
 import '../models/human_validation_work_item.dart';
 import '../models/attack_trace.dart';
 import '../models/context_artifact.dart';
+import '../models/independent_validation.dart';
 import '../services/evidence_repository.dart';
 import '../services/validation_run_repository.dart';
 import '../services/candidate_closure_repository.dart';
@@ -24,6 +25,7 @@ import '../services/attack_trace_repository.dart';
 import '../services/context_artifact_repository.dart';
 import '../services/independent_validation_repository.dart';
 import '../services/browser_session_repository.dart';
+import '../services/context_selection_service.dart';
 
 class DatabaseHelper {
   static Future<Database>? _initFuture;
@@ -682,6 +684,9 @@ class DatabaseHelper {
 
   static Future<void> migrateBrowserSessions(Database db) async {
     await BrowserSessionRepository.createTables(db);
+    // v31 already has these repositories, while v32 adds planner and validation locks.
+    await AttackTraceRepository.createTables(db);
+    await IndependentValidationRepository.createTable(db);
   }
 
   static Future<int> insertVulnerability(Vulnerability vuln) async {
@@ -802,6 +807,26 @@ class DatabaseHelper {
   ) async {
     final db = await database;
     return ContextArtifactRepository(db).persist(result);
+  }
+
+  static Future<String> getAssessmentContextPrompt(
+    int projectId,
+    AssessmentContextPhase phase,
+  ) async {
+    if (projectId <= 0) return '';
+    final db = await database;
+    return const ContextSelectionService().selectForProject(
+      projectId: projectId,
+      phase: phase,
+      repository: ContextArtifactRepository(db),
+    );
+  }
+
+  static Future<List<IndependentValidationRecord>> getIndependentValidations(
+    int projectId,
+  ) async {
+    final db = await database;
+    return IndependentValidationRepository(db).forProject(projectId);
   }
 
   static Future<List<ValidationRun>> getFindingValidationRuns(

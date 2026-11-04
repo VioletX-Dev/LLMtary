@@ -4,6 +4,8 @@ import 'dart:isolate';
 
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
+import 'package:pdf_document/pdf_document.dart';
+import 'package:pdf_graphics/pdf_graphics.dart';
 import 'package:xml/xml.dart';
 import 'package:yaml/yaml.dart';
 
@@ -103,8 +105,7 @@ class ContextIngestionService {
           ingestedAt: ingestedAt,
         );
       }
-      if (lowerName.endsWith('pubspec.lock') &&
-          yaml is Map<String, dynamic>) {
+      if (lowerName.endsWith('pubspec.lock') && yaml is Map<String, dynamic>) {
         return _dartLock(
           projectId: projectId,
           fileName: fileName,
@@ -207,8 +208,7 @@ class ContextIngestionService {
         ingestedAt: ingestedAt,
       );
     }
-    if (lowerName.endsWith('.gradle') ||
-        lowerName.endsWith('.gradle.kts')) {
+    if (lowerName.endsWith('.gradle') || lowerName.endsWith('.gradle.kts')) {
       return _gradleManifest(
         projectId: projectId,
         fileName: fileName,
@@ -301,6 +301,20 @@ class ContextIngestionService {
     );
   }
 
+  String _truncateUtf8(String value, int maxBytes) {
+    if (maxBytes <= 0) return '';
+    final buffer = StringBuffer();
+    var used = 0;
+    for (final rune in value.runes) {
+      final character = String.fromCharCode(rune);
+      final byteLength = utf8.encode(character).length;
+      if (used + byteLength > maxBytes) break;
+      buffer.write(character);
+      used += byteLength;
+    }
+    return buffer.toString();
+  }
+
   ContextIngestionResult _pdf({
     required int projectId,
     required String fileName,
@@ -308,17 +322,30 @@ class ContextIngestionService {
     required String digest,
     required DateTime ingestedAt,
   }) {
-    final source = latin1.decode(bytes, allowInvalid: true);
-    final text = RegExp(r'\(([^()]*)\)\s*T[jJ]')
-        .allMatches(source)
-        .map((match) => (match.group(1) ?? '')
-            .replaceAll(r'\(', '(')
-            .replaceAll(r'\)', ')')
-            .replaceAll(r'\\', r'\'))
-        .where((value) => value.trim().isNotEmpty)
-        .join('\n');
-    if (text.isEmpty) {
-      throw const FormatException('PDF has no supported text layer.');
+    String text;
+    try {
+      final document = PdfDocument.open(bytes);
+      final buffer = StringBuffer();
+      var usedBytes = 0;
+      final pageLimit = document.pageCount > 500 ? 500 : document.pageCount;
+      for (var page = 0; page < pageLimit; page++) {
+        final pageText = PdfTextExtractor.extract(document, page).text.trim();
+        if (pageText.isEmpty) continue;
+        final header = '--- page ${page + 1} ---\n';
+        final headerBytes = utf8.encode(header).length;
+        final remaining = maxArchiveTextBytes - usedBytes - headerBytes - 1;
+        if (remaining <= 0) break;
+        final selected = _truncateUtf8(pageText, remaining);
+        if (selected.isEmpty) break;
+        buffer
+          ..write(header)
+          ..writeln(selected);
+        usedBytes += headerBytes + utf8.encode(selected).length + 1;
+      }
+      text = buffer.toString().trim();
+      if (text.isEmpty) text = '[PDF contains no extractable text layer]';
+    } catch (error) {
+      throw FormatException('PDF parsing failed: ${error.runtimeType}');
     }
     return _result(
       projectId: projectId,
@@ -326,7 +353,7 @@ class ContextIngestionService {
       bytes: bytes,
       digest: digest,
       type: ContextArtifactType.architectureDocument,
-      extractionMethod: 'pdf-text-layer-bounded',
+      extractionMethod: 'pdf-graphics-text-layer-bounded',
       ingestedAt: ingestedAt,
       normalizedText: text,
     );
@@ -382,8 +409,14 @@ class ContextIngestionService {
     required DateTime ingestedAt,
   }) {
     var text = document
-        .replaceAll(RegExp(r'<script\b[\s\S]*?<\/script\s*>', caseSensitive: false), ' ')
-        .replaceAll(RegExp(r'<style\b[\s\S]*?<\/style\s*>', caseSensitive: false), ' ')
+        .replaceAll(
+          RegExp(r'<script\b[\s\S]*?<\/script\s*>', caseSensitive: false),
+          ' ',
+        )
+        .replaceAll(
+          RegExp(r'<style\b[\s\S]*?<\/style\s*>', caseSensitive: false),
+          ' ',
+        )
         .replaceAll(RegExp(r'<[^>]+>'), ' ')
         .replaceAll('&lt;', '<')
         .replaceAll('&gt;', '>')
@@ -413,22 +446,27 @@ class ContextIngestionService {
   }) {
     final rows = const _CsvParser().parse(document);
     if (rows.isEmpty) throw const FormatException('CSV report is empty.');
-    final headers = rows.first.map((value) => value.trim().toLowerCase()).toList();
+    final headers = rows.first
+        .map((value) => value.trim().toLowerCase())
+        .toList();
     final findings = <PriorFindingContext>[];
     String valueAt(List<String> row, String name) {
       final index = headers.indexOf(name);
       return index >= 0 && index < row.length ? row[index].trim() : '';
     }
+
     for (final row in rows.skip(1)) {
       final title = valueAt(row, 'title');
       if (title.isEmpty) continue;
-      findings.add(PriorFindingContext(
-        title: title,
-        severity: valueAt(row, 'severity').toUpperCase(),
-        status: valueAt(row, 'status').toLowerCase(),
-        evidence: valueAt(row, 'evidence'),
-        remediation: valueAt(row, 'remediation'),
-      ));
+      findings.add(
+        PriorFindingContext(
+          title: title,
+          severity: valueAt(row, 'severity').toUpperCase(),
+          status: valueAt(row, 'status').toLowerCase(),
+          evidence: valueAt(row, 'evidence'),
+          remediation: valueAt(row, 'remediation'),
+        ),
+      );
     }
     return _result(
       projectId: projectId,
@@ -458,15 +496,25 @@ class ContextIngestionService {
       if (line.isEmpty || line.startsWith('-')) continue;
       final match = pattern.firstMatch(line);
       if (match == null) continue;
-      dependencies.add(DependencyContext(
-        name: match.group(1)!,
-        versionConstraint: (match.group(2) ?? '').trim(),
-        ecosystem: 'pypi',
-      ));
+      dependencies.add(
+        DependencyContext(
+          name: match.group(1)!,
+          versionConstraint: (match.group(2) ?? '').trim(),
+          ecosystem: 'pypi',
+        ),
+      );
     }
     dependencies.sort((a, b) => a.name.compareTo(b.name));
-    return _dependencyResult(projectId, fileName, bytes, digest, ingestedAt,
-        'python-requirements-deterministic', dependencies, document);
+    return _dependencyResult(
+      projectId,
+      fileName,
+      bytes,
+      digest,
+      ingestedAt,
+      'python-requirements-deterministic',
+      dependencies,
+      document,
+    );
   }
 
   ContextIngestionResult _dartManifest({
@@ -482,18 +530,29 @@ class ContextIngestionService {
       if (value is! Map) return;
       final names = value.keys.map((key) => key.toString()).toList()..sort();
       for (final name in names) {
-        dependencies.add(DependencyContext(
-          name: name,
-          versionConstraint: value[name]?.toString() ?? '',
-          ecosystem: 'pub',
-          developmentOnly: developmentOnly,
-        ));
+        dependencies.add(
+          DependencyContext(
+            name: name,
+            versionConstraint: value[name]?.toString() ?? '',
+            ecosystem: 'pub',
+            developmentOnly: developmentOnly,
+          ),
+        );
       }
     }
+
     add(document['dependencies'], false);
     add(document['dev_dependencies'], true);
-    return _dependencyResult(projectId, fileName, bytes, digest, ingestedAt,
-        'dart-pubspec-deterministic', dependencies, jsonEncode(document));
+    return _dependencyResult(
+      projectId,
+      fileName,
+      bytes,
+      digest,
+      ingestedAt,
+      'dart-pubspec-deterministic',
+      dependencies,
+      jsonEncode(document),
+    );
   }
 
   ContextIngestionResult _dartLock({
@@ -511,16 +570,28 @@ class ContextIngestionService {
       for (final name in names) {
         final details = packages[name];
         final map = details is Map ? details : const {};
-        dependencies.add(DependencyContext(
-          name: name,
-          versionConstraint: map['version']?.toString() ?? '',
-          ecosystem: 'pub',
-          developmentOnly: (map['dependency']?.toString() ?? '').contains('dev'),
-        ));
+        dependencies.add(
+          DependencyContext(
+            name: name,
+            versionConstraint: map['version']?.toString() ?? '',
+            ecosystem: 'pub',
+            developmentOnly: (map['dependency']?.toString() ?? '').contains(
+              'dev',
+            ),
+          ),
+        );
       }
     }
-    return _dependencyResult(projectId, fileName, bytes, digest, ingestedAt,
-        'dart-pub-lock-deterministic', dependencies, jsonEncode(document));
+    return _dependencyResult(
+      projectId,
+      fileName,
+      bytes,
+      digest,
+      ingestedAt,
+      'dart-pub-lock-deterministic',
+      dependencies,
+      jsonEncode(document),
+    );
   }
 
   ContextIngestionResult _packageLock({
@@ -541,16 +612,26 @@ class ContextIngestionService {
         if (name.isEmpty || name.contains('/node_modules/')) continue;
         final details = packages[path];
         final map = details is Map ? details : const {};
-        dependencies.add(DependencyContext(
-          name: name,
-          versionConstraint: map['version']?.toString() ?? '',
-          ecosystem: 'npm',
-          developmentOnly: map['dev'] == true,
-        ));
+        dependencies.add(
+          DependencyContext(
+            name: name,
+            versionConstraint: map['version']?.toString() ?? '',
+            ecosystem: 'npm',
+            developmentOnly: map['dev'] == true,
+          ),
+        );
       }
     }
-    return _dependencyResult(projectId, fileName, bytes, digest, ingestedAt,
-        'npm-package-lock-deterministic', dependencies, jsonEncode(document));
+    return _dependencyResult(
+      projectId,
+      fileName,
+      bytes,
+      digest,
+      ingestedAt,
+      'npm-package-lock-deterministic',
+      dependencies,
+      jsonEncode(document),
+    );
   }
 
   ContextIngestionResult _pythonTomlManifest({
@@ -567,15 +648,25 @@ class ContextIngestionService {
     for (final match in quoted.allMatches(document)) {
       final name = match.group(1) ?? '';
       if (name.isEmpty || !seen.add(name)) continue;
-      dependencies.add(DependencyContext(
-        name: name,
-        versionConstraint: (match.group(2) ?? '').trim(),
-        ecosystem: 'pypi',
-      ));
+      dependencies.add(
+        DependencyContext(
+          name: name,
+          versionConstraint: (match.group(2) ?? '').trim(),
+          ecosystem: 'pypi',
+        ),
+      );
     }
     dependencies.sort((a, b) => a.name.compareTo(b.name));
-    return _dependencyResult(projectId, fileName, bytes, digest, ingestedAt,
-        'python-toml-lock-deterministic', dependencies, document);
+    return _dependencyResult(
+      projectId,
+      fileName,
+      bytes,
+      digest,
+      ingestedAt,
+      'python-toml-lock-deterministic',
+      dependencies,
+      document,
+    );
   }
 
   ContextIngestionResult _gradleManifest({
@@ -592,15 +683,25 @@ class ContextIngestionService {
     );
     for (final match in pattern.allMatches(document)) {
       final configuration = match.group(0) ?? '';
-      dependencies.add(DependencyContext(
-        name: '${match.group(1)}:${match.group(2)}',
-        versionConstraint: match.group(3) ?? '',
-        ecosystem: 'maven',
-        developmentOnly: configuration.startsWith('testImplementation'),
-      ));
+      dependencies.add(
+        DependencyContext(
+          name: '${match.group(1)}:${match.group(2)}',
+          versionConstraint: match.group(3) ?? '',
+          ecosystem: 'maven',
+          developmentOnly: configuration.startsWith('testImplementation'),
+        ),
+      );
     }
-    return _dependencyResult(projectId, fileName, bytes, digest, ingestedAt,
-        'gradle-dependencies-deterministic', dependencies, document);
+    return _dependencyResult(
+      projectId,
+      fileName,
+      bytes,
+      digest,
+      ingestedAt,
+      'gradle-dependencies-deterministic',
+      dependencies,
+      document,
+    );
   }
 
   ContextIngestionResult _mavenManifest({
@@ -624,15 +725,25 @@ class ContextIngestionService {
       final artifact = child('artifactId');
       if (artifact.isEmpty) continue;
       final group = child('groupId');
-      dependencies.add(DependencyContext(
-        name: group.isEmpty ? artifact : '$group:$artifact',
-        versionConstraint: child('version'),
-        ecosystem: 'maven',
-        developmentOnly: child('scope') == 'test',
-      ));
+      dependencies.add(
+        DependencyContext(
+          name: group.isEmpty ? artifact : '$group:$artifact',
+          versionConstraint: child('version'),
+          ecosystem: 'maven',
+          developmentOnly: child('scope') == 'test',
+        ),
+      );
     }
-    return _dependencyResult(projectId, fileName, bytes, digest, ingestedAt,
-        'maven-pom-deterministic', dependencies, document);
+    return _dependencyResult(
+      projectId,
+      fileName,
+      bytes,
+      digest,
+      ingestedAt,
+      'maven-pom-deterministic',
+      dependencies,
+      document,
+    );
   }
 
   ContextIngestionResult _dotnetManifest({
@@ -646,25 +757,39 @@ class ContextIngestionService {
     final xml = XmlDocument.parse(document);
     final dependencies = <DependencyContext>[];
     for (final element in xml.descendants.whereType<XmlElement>().where(
-      (element) => element.name.local == 'PackageReference' || element.name.local == 'package',
+      (element) =>
+          element.name.local == 'PackageReference' ||
+          element.name.local == 'package',
     )) {
-      final name = element.getAttribute('Include') ?? element.getAttribute('id') ?? '';
+      final name =
+          element.getAttribute('Include') ?? element.getAttribute('id') ?? '';
       if (name.isEmpty) continue;
-      final version = element.getAttribute('Version') ??
+      final version =
+          element.getAttribute('Version') ??
           element.getAttribute('version') ??
           element.children
               .whereType<XmlElement>()
               .where((value) => value.name.local == 'Version')
               .map((value) => value.innerText.trim())
               .firstWhere((value) => value.isNotEmpty, orElse: () => '');
-      dependencies.add(DependencyContext(
-        name: name,
-        versionConstraint: version,
-        ecosystem: 'nuget',
-      ));
+      dependencies.add(
+        DependencyContext(
+          name: name,
+          versionConstraint: version,
+          ecosystem: 'nuget',
+        ),
+      );
     }
-    return _dependencyResult(projectId, fileName, bytes, digest, ingestedAt,
-        'dotnet-package-deterministic', dependencies, document);
+    return _dependencyResult(
+      projectId,
+      fileName,
+      bytes,
+      digest,
+      ingestedAt,
+      'dotnet-package-deterministic',
+      dependencies,
+      document,
+    );
   }
 
   ContextIngestionResult _dependencyResult(
@@ -778,10 +903,36 @@ class ContextIngestionService {
     var extractedTextBytes = 0;
     final selectedText = StringBuffer();
     const textExtensions = <String>{
-      '.dart', '.py', '.js', '.ts', '.java', '.kt', '.go', '.rs', '.rb',
-      '.php', '.cs', '.xml', '.json', '.yaml', '.yml', '.toml', '.ini',
-      '.conf', '.properties', '.md', '.txt', '.rst', '.html', '.css',
-      '.sql', '.graphql', '.proto', '.sh', '.ps1', '.gradle',
+      '.dart',
+      '.py',
+      '.js',
+      '.ts',
+      '.java',
+      '.kt',
+      '.go',
+      '.rs',
+      '.rb',
+      '.php',
+      '.cs',
+      '.xml',
+      '.json',
+      '.yaml',
+      '.yml',
+      '.toml',
+      '.ini',
+      '.conf',
+      '.properties',
+      '.md',
+      '.txt',
+      '.rst',
+      '.html',
+      '.css',
+      '.sql',
+      '.graphql',
+      '.proto',
+      '.sh',
+      '.ps1',
+      '.gradle',
     };
     for (final entry in archive.files) {
       if (!entry.isFile) continue;
@@ -1070,7 +1221,9 @@ class _CsvParser {
         row.add(field.toString());
         field = StringBuffer();
       } else if ((character == '\n' || character == '\r') && !quoted) {
-        if (character == '\r' && index + 1 < source.length && source[index + 1] == '\n') {
+        if (character == '\r' &&
+            index + 1 < source.length &&
+            source[index + 1] == '\n') {
           index++;
         }
         row.add(field.toString());
@@ -1081,7 +1234,9 @@ class _CsvParser {
         field.write(character);
       }
     }
-    if (quoted) throw const FormatException('CSV contains an unterminated quote.');
+    if (quoted) {
+      throw const FormatException('CSV contains an unterminated quote.');
+    }
     row.add(field.toString());
     if (row.any((value) => value.isNotEmpty)) rows.add(row);
     return rows;

@@ -59,4 +59,49 @@ void main() {
       );
     },
   );
+
+  test('validation lock is owner-bound and expires deterministically', () async {
+    final db = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
+    addTearDown(db.close);
+    await db.execute(
+      'CREATE TABLE validation_runs (id INTEGER PRIMARY KEY, projectId INTEGER NOT NULL, vulnerabilityId INTEGER)',
+    );
+    await db.insert('validation_runs', {
+      'id': 20,
+      'projectId': 3,
+      'vulnerabilityId': 12,
+    });
+    await IndependentValidationRepository.createTable(db);
+    final repository = IndependentValidationRepository(db);
+    final start = DateTime.utc(2026, 11, 4, 12);
+
+    expect(
+      await repository.acquireLock(
+        validationRunId: 20,
+        ownerId: 'worker-a',
+        acquiredAt: start,
+        ttl: const Duration(minutes: 10),
+      ),
+      isTrue,
+    );
+    expect(
+      await repository.acquireLock(
+        validationRunId: 20,
+        ownerId: 'worker-b',
+        acquiredAt: start.add(const Duration(minutes: 1)),
+        ttl: const Duration(minutes: 10),
+      ),
+      isFalse,
+    );
+    await repository.releaseLock(validationRunId: 20, ownerId: 'worker-b');
+    expect(
+      await repository.acquireLock(
+        validationRunId: 20,
+        ownerId: 'worker-b',
+        acquiredAt: start.add(const Duration(minutes: 11)),
+        ttl: const Duration(minutes: 10),
+      ),
+      isTrue,
+    );
+  });
 }

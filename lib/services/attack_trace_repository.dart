@@ -60,6 +60,17 @@ class AttackTraceRepository {
       )
     ''');
     await db.execute('''
+      CREATE TABLE IF NOT EXISTS attack_trace_locks (
+        trace_id INTEGER NOT NULL,
+        lock_kind TEXT NOT NULL,
+        owner_id TEXT NOT NULL,
+        acquired_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        PRIMARY KEY (trace_id, lock_kind),
+        FOREIGN KEY (trace_id) REFERENCES attack_traces(id) ON DELETE CASCADE
+      )
+    ''');
+    await db.execute('''
       CREATE TABLE IF NOT EXISTS attack_trace_checkpoints (
         trace_id INTEGER NOT NULL,
         checkpoint_key TEXT NOT NULL,
@@ -144,19 +155,22 @@ class AttackTraceRepository {
       whereArgs: [traceId],
       orderBy: 'sequence_no ASC',
     );
-    final edgeRows = await db.rawQuery('''
+    final edgeRows = await db.rawQuery(
+      '''
       SELECT parent.step_key AS parent_key, child.step_key AS child_key
       FROM attack_trace_edges edge
       JOIN attack_trace_steps parent ON parent.id = edge.parent_step_id
       JOIN attack_trace_steps child ON child.id = edge.child_step_id
       WHERE edge.trace_id = ?
-    ''', [traceId]);
+    ''',
+      [traceId],
+    );
     final parentsByChild = <String, List<String>>{};
     for (final edge in edgeRows) {
       final child = edge['child_key'] as String;
-      parentsByChild.putIfAbsent(child, () => []).add(
-        edge['parent_key'] as String,
-      );
+      parentsByChild
+          .putIfAbsent(child, () => [])
+          .add(edge['parent_key'] as String);
     }
     final steps = stepRows
         .map(
@@ -192,7 +206,8 @@ class AttackTraceRepository {
       whereArgs: [trace.targetId],
       limit: 1,
     );
-    if (targetRows.isEmpty || targetRows.single['projectId'] != trace.projectId) {
+    if (targetRows.isEmpty ||
+        targetRows.single['projectId'] != trace.projectId) {
       throw StateError('Attack trace target does not belong to its project.');
     }
     final findingId = trace.vulnerabilityId;

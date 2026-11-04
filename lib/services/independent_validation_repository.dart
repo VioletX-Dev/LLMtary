@@ -36,6 +36,68 @@ class IndependentValidationRepository {
       'CREATE INDEX IF NOT EXISTS idx_independent_validation_project '
       'ON independent_validation_results(project_id, vulnerability_id)',
     );
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS independent_validation_locks (
+        validation_run_id INTEGER PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        acquired_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        FOREIGN KEY (validation_run_id) REFERENCES validation_runs(id) ON DELETE CASCADE
+      )
+    ''');
+  }
+
+  Future<bool> acquireLock({
+    required int validationRunId,
+    required String ownerId,
+    required DateTime acquiredAt,
+    required Duration ttl,
+  }) async => db.transaction((txn) async {
+    await txn.delete(
+      'independent_validation_locks',
+      where: 'validation_run_id = ? AND expires_at <= ?',
+      whereArgs: [validationRunId, acquiredAt.toUtc().toIso8601String()],
+    );
+    final id = await txn.insert('independent_validation_locks', {
+      'validation_run_id': validationRunId,
+      'owner_id': ownerId,
+      'acquired_at': acquiredAt.toUtc().toIso8601String(),
+      'expires_at': acquiredAt.toUtc().add(ttl).toIso8601String(),
+    }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    return id != 0;
+  });
+
+  Future<void> releaseLock({
+    required int validationRunId,
+    required String ownerId,
+  }) async {
+    await db.delete(
+      'independent_validation_locks',
+      where: 'validation_run_id = ? AND owner_id = ?',
+      whereArgs: [validationRunId, ownerId],
+    );
+  }
+
+  Future<List<int>> validEvidenceIds({
+    required int projectId,
+    required int? vulnerabilityId,
+    required Iterable<int> evidenceIds,
+  }) async {
+    final ids = evidenceIds.where((id) => id > 0).toSet().toList()..sort();
+    if (ids.isEmpty) return const [];
+    final placeholders = List.filled(ids.length, '?').join(',');
+    final rows = await db.query(
+      'evidence_artifacts',
+      columns: const ['id'],
+      where: vulnerabilityId == null
+          ? 'project_id = ? AND id IN ($placeholders)'
+          : 'project_id = ? AND vulnerability_id = ? AND id IN ($placeholders)',
+      whereArgs: vulnerabilityId == null
+          ? [projectId, ...ids]
+          : [projectId, vulnerabilityId, ...ids],
+      orderBy: 'id ASC',
+    );
+    return rows.map((row) => row['id'] as int).toList(growable: false);
   }
 
   Future<int> persist(IndependentValidationRecord record) async {
@@ -69,6 +131,16 @@ class IndependentValidationRepository {
       limit: 1,
     );
     return rows.isEmpty ? null : _fromMap(rows.single);
+  }
+
+  Future<List<IndependentValidationRecord>> forProject(int projectId) async {
+    final rows = await db.query(
+      'independent_validation_results',
+      where: 'project_id = ?',
+      whereArgs: [projectId],
+      orderBy: 'created_at ASC, id ASC',
+    );
+    return rows.map(_fromMap).toList(growable: false);
   }
 
   Future<IndependentValidationRecord> forValidationRun(

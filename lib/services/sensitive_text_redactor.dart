@@ -19,6 +19,13 @@ class SensitiveTextRedactor {
     );
     value = value.replaceAllMapped(
       RegExp(
+        r'\b(password|passwd|secret|client[_-]?secret|api[_-]?key|token|access[_-]?token|refresh[_-]?token|authorization|cookie|set-cookie)(%3[dDaA])[^&\s,;]+',
+        caseSensitive: false,
+      ),
+      (match) => '${match.group(1)}${match.group(2)}%5BREDACTED%5D',
+    );
+    value = value.replaceAllMapped(
+      RegExp(
         r'\b(password|passwd|secret|client[_-]?secret|api[_-]?key|token|access[_-]?token|refresh[_-]?token|cookie|set-cookie)\s*([=:])\s*[^\s,;]+',
         caseSensitive: false,
       ),

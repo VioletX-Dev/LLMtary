@@ -5,6 +5,13 @@ import 'package:crypto/crypto.dart';
 import '../models/browser_test.dart';
 import 'attack_trace_recorder.dart';
 
+class BrowserExecutionResult {
+  final BrowserActionRecord record;
+  final BrowserDriverObservation observation;
+
+  const BrowserExecutionResult({required this.record, required this.observation});
+}
+
 class BrowserTestingService {
   static const _sensitiveHeaders = {
     'authorization',
@@ -31,7 +38,12 @@ class BrowserTestingService {
     }
   }
 
-  Future<BrowserActionRecord> execute(BrowserActionRequest request) async {
+  Future<BrowserActionRecord> execute(BrowserActionRequest request) async =>
+      (await executeDetailed(request)).record;
+
+  Future<BrowserExecutionResult> executeDetailed(
+    BrowserActionRequest request,
+  ) async {
     final observation = await driver.perform(request);
     final exchanges = observation.networkExchanges
         .map(
@@ -68,7 +80,7 @@ class BrowserTestingService {
       );
     }
 
-    return record;
+    return BrowserExecutionResult(record: record, observation: observation);
   }
 
   String _actionDescription(BrowserActionRequest request) =>

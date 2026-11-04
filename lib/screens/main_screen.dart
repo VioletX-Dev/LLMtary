@@ -868,6 +868,11 @@ class _MainScreenState extends State<MainScreen> {
                     targetId: target.id ?? 0,
                   );
                 },
+                assessmentContextProvider: (phase) =>
+                    DatabaseHelper.getAssessmentContextPrompt(
+                      appState.currentProject?.id ?? 0,
+                      phase,
+                    ),
               );
               final vulns = await analyzer.analyzeDevice(
                 deviceJson,
@@ -1168,6 +1173,11 @@ class _MainScreenState extends State<MainScreen> {
           received,
           targetId: target.id ?? 0,
         ),
+        assessmentContextProvider: (phase) =>
+            DatabaseHelper.getAssessmentContextPrompt(
+              appState.currentProject?.id ?? 0,
+              phase,
+            ),
       );
       final vulns = await analyzer.analyzeDevice(
         deviceJson,
@@ -2405,6 +2415,11 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
         onTokensUsed: (sent, received) {
           appState.recordTokenUsage('analyze', sent, received);
         },
+        assessmentContextProvider: (phase) =>
+            DatabaseHelper.getAssessmentContextPrompt(
+              appState.currentProject?.id ?? 0,
+              phase,
+            ),
       );
       final authVulns = await analyzer.analyzeDevice(
         deviceJson,

@@ -15,6 +15,7 @@ import '../../models/candidate_closure.dart';
 import '../../models/controlled_exploitation.dart';
 import '../../models/validation_run.dart';
 import '../../models/attack_trace.dart';
+import '../../models/independent_validation.dart';
 import '../../services/report_generator.dart';
 import '../../services/report_content_service.dart';
 import '../../services/assessment_narrative_service.dart';
@@ -86,6 +87,16 @@ class _ResultReportTabState extends State<ResultReportTab> {
           'wsdl',
           'xml',
           'zip',
+          'pdf',
+          'docx',
+          'html',
+          'htm',
+          'csv',
+          'toml',
+          'lock',
+          'gradle',
+          'csproj',
+          'fsproj',
           'md',
           'txt',
           'rst',
@@ -96,7 +107,9 @@ class _ResultReportTabState extends State<ResultReportTab> {
       final file = File(selected!.path!);
       final length = await file.length();
       if (length > 100 * 1024 * 1024) {
-        throw const FormatException('Context artifact exceeds the 100 MB limit.');
+        throw const FormatException(
+          'Context artifact exceeds the 100 MB limit.',
+        );
       }
       final result = await const ContextIngestionService().ingestBytesAsync(
         projectId: projectId,
@@ -112,9 +125,7 @@ class _ResultReportTabState extends State<ResultReportTab> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Context import failed: ${error.runtimeType}'),
-        ),
+        SnackBar(content: Text('Context import failed: ${error.runtimeType}')),
       );
     }
   }
@@ -501,6 +512,9 @@ class _InlineReportFormState extends State<_InlineReportForm> {
       final validationRuns = updatedProject.id != null
           ? await DatabaseHelper.getValidationRuns(updatedProject.id!)
           : const <ValidationRun>[];
+      final independentValidations = updatedProject.id != null
+          ? await DatabaseHelper.getIndependentValidations(updatedProject.id!)
+          : const <IndependentValidationRecord>[];
       final attackTraces = updatedProject.id != null
           ? await DatabaseHelper.getAttackTraceGraphs(updatedProject.id!)
           : const <AttackTraceGraph>[];
@@ -570,6 +584,7 @@ class _InlineReportFormState extends State<_InlineReportForm> {
           closures: closures,
           controlledExploitations: controlledExploitations,
           validationRuns: validationRuns,
+          independentValidations: independentValidations,
           attackTraces: attackTraces,
         ),
         'md' => ReportGenerator.generateMarkdown(
@@ -590,6 +605,7 @@ class _InlineReportFormState extends State<_InlineReportForm> {
           closures: closures,
           controlledExploitations: controlledExploitations,
           validationRuns: validationRuns,
+          independentValidations: independentValidations,
           attackTraces: attackTraces,
         ),
         'csv' => ReportGenerator.generateCsv(
@@ -599,6 +615,7 @@ class _InlineReportFormState extends State<_InlineReportForm> {
           closures: closures,
           controlledExploitations: controlledExploitations,
           validationRuns: validationRuns,
+          independentValidations: independentValidations,
           attackTraces: attackTraces,
         ),
         _ => '',
@@ -700,6 +717,8 @@ class _InlineReportFormState extends State<_InlineReportForm> {
       final validationRuns = await DatabaseHelper.getValidationRuns(
         project.id!,
       );
+      final independentValidations =
+          await DatabaseHelper.getIndependentValidations(project.id!);
       final attackTraces = await DatabaseHelper.getAttackTraceGraphs(
         project.id!,
       );
@@ -722,6 +741,7 @@ class _InlineReportFormState extends State<_InlineReportForm> {
         closures: closures,
         controlledExploitations: controlledExploitations,
         validationRuns: validationRuns,
+        independentValidations: independentValidations,
         attackTraces: attackTraces,
       );
       final packageBytes = await EvidencePackageBuilder.build(

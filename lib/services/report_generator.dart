@@ -9,6 +9,7 @@ import '../models/candidate_closure.dart';
 import '../models/controlled_exploitation.dart';
 import '../models/validation_run.dart';
 import '../models/attack_trace.dart';
+import '../models/independent_validation.dart';
 import '../utils/cvss_calculator.dart';
 import 'assessment_narrative_service.dart';
 import 'report_evidence_quality.dart';
@@ -41,6 +42,7 @@ class ReportGenerator {
     List<CandidateClosure> closures = const [],
     List<ControlledExploitationRecord> controlledExploitations = const [],
     List<ValidationRun> validationRuns = const [],
+    List<IndependentValidationRecord> independentValidations = const [],
     List<AttackTraceGraph> attackTraces = const [],
   }) {
     final decisions = <Vulnerability, ReportEvidenceDecision>{
@@ -306,6 +308,7 @@ ${qualityExceptions.isNotEmpty ? _qualityExceptionsSection(qualityExceptions, de
 ${assessmentCandidates.isNotEmpty ? _assessmentCandidatesSection(assessmentCandidates) : ''}
 ${_closureCoverageHtml(vulnerabilities, closures)}
 ${_validationAssuranceHtml(validationRuns)}
+${_independentValidationHtml(independentValidations)}
 ${_attackTracesHtml(attackTraces)}
 ${_controlledExploitationHtml(vulnerabilities, controlledExploitations)}
 
@@ -347,6 +350,7 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     List<CandidateClosure> closures = const [],
     List<ControlledExploitationRecord> controlledExploitations = const [],
     List<ValidationRun> validationRuns = const [],
+    List<IndependentValidationRecord> independentValidations = const [],
     List<AttackTraceGraph> attackTraces = const [],
   }) {
     final decisions = <Vulnerability, ReportEvidenceDecision>{
@@ -656,6 +660,7 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
 
     buf.write(_closureCoverageMarkdown(vulnerabilities, closures));
     buf.write(_validationAssuranceMarkdown(validationRuns));
+    buf.write(_independentValidationMarkdown(independentValidations));
     buf.write(_attackTracesMarkdown(attackTraces));
     buf.write(
       _controlledExploitationMarkdown(vulnerabilities, controlledExploitations),
@@ -685,6 +690,7 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
     List<CandidateClosure> closures = const [],
     List<ControlledExploitationRecord> controlledExploitations = const [],
     List<ValidationRun> validationRuns = const [],
+    List<IndependentValidationRecord> independentValidations = const [],
     List<AttackTraceGraph> attackTraces = const [],
   }) {
     final decisions = <Vulnerability, ReportEvidenceDecision>{
@@ -906,6 +912,65 @@ Human-supervised runs are AI-operated under continuous human supervision with ex
 | ${assessmentRuns.length} | $supervisedCount | ${assessmentRuns.length - supervisedCount} | ${counts[ValidationRunOutcome.conditionObserved]} | ${counts[ValidationRunOutcome.conditionNotObserved]} | ${counts[ValidationRunOutcome.inconclusive]} | ${counts[ValidationRunOutcome.error]} | ${counts[ValidationRunOutcome.pending]} |
 
 ''';
+  }
+
+  static String _independentValidationHtml(
+    List<IndependentValidationRecord> records,
+  ) {
+    if (records.isEmpty) return '';
+    final ordered = records.toList()
+      ..sort(
+        (left, right) => left.validationRunId.compareTo(right.validationRunId),
+      );
+    final rows = ordered.map((record) {
+      final controls =
+          record.completedControls.map((value) => value.name).toList()..sort();
+      final missing = record.missingControls.map((value) => value.name).toList()
+        ..sort();
+      final evidence = record.directEvidenceArtifactIds.isEmpty
+          ? 'none'
+          : record.directEvidenceArtifactIds.join(', ');
+      final score = (record.reproducibilityScore * 100).toStringAsFixed(1);
+      return '<tr><td>${record.validationRunId}</td><td>${record.vulnerabilityId ?? ''}</td><td>${_esc(record.vulnerabilityClass.name)}</td><td>${_esc(record.proposerDecision.name)}</td><td>${_esc(record.validatorDecision.name)}</td><td>${_esc(record.outcome.name)}</td><td>$score%</td><td>${_esc(evidence)}</td><td>${_esc(controls.join(', '))}</td><td>${_esc(missing.join(', '))}</td><td>${_esc(SensitiveTextRedactor.redact(record.reason, maxLength: 2000))}</td></tr>';
+    }).join();
+    return '''<section id="independent-validation">
+  <h2>Independent Finding Validation</h2>
+  <p>Proposer and validator model contexts are isolated. Deterministic policy remains authoritative; disagreement, missing controls, missing direct evidence, or failed repeatability remains inconclusive.</p>
+  <table><thead><tr><th>Run</th><th>Finding</th><th>Class</th><th>Proposer</th><th>Validator</th><th>Outcome</th><th>Reproducibility</th><th>Evidence IDs</th><th>Controls</th><th>Missing</th><th>Reason</th></tr></thead><tbody>$rows</tbody></table>
+</section>''';
+  }
+
+  static String _independentValidationMarkdown(
+    List<IndependentValidationRecord> records,
+  ) {
+    if (records.isEmpty) return '';
+    final ordered = records.toList()
+      ..sort(
+        (left, right) => left.validationRunId.compareTo(right.validationRunId),
+      );
+    final buffer = StringBuffer()
+      ..writeln('## Independent Finding Validation')
+      ..writeln()
+      ..writeln(
+        'Proposer and validator contexts are isolated; deterministic policy remains authoritative.',
+      )
+      ..writeln()
+      ..writeln(
+        '| Run | Finding | Class | Proposer | Validator | Outcome | Reproducibility | Evidence IDs | Controls | Missing | Reason |',
+      )
+      ..writeln('|---:|---:|---|---|---|---|---:|---|---|---|---|');
+    for (final record in ordered) {
+      final controls =
+          record.completedControls.map((value) => value.name).toList()..sort();
+      final missing = record.missingControls.map((value) => value.name).toList()
+        ..sort();
+      final score = (record.reproducibilityScore * 100).toStringAsFixed(1);
+      buffer.writeln(
+        '| ${record.validationRunId} | ${record.vulnerabilityId ?? ''} | ${record.vulnerabilityClass.name} | ${record.proposerDecision.name} | ${record.validatorDecision.name} | ${record.outcome.name} | $score% | ${record.directEvidenceArtifactIds.join(', ')} | ${controls.join(', ')} | ${missing.join(', ')} | ${_markdownCell(SensitiveTextRedactor.redact(record.reason, maxLength: 2000))} |',
+      );
+    }
+    buffer.writeln();
+    return buffer.toString();
   }
 
   static String _attackTracesHtml(List<AttackTraceGraph> traces) {

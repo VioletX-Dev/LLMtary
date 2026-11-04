@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -6,8 +7,15 @@ import '../models/attack_trace.dart';
 import 'attack_trace_repository.dart';
 import 'sensitive_text_redactor.dart';
 
-enum TraceActionClass { command, browser, stateChanging, supervised }
-enum TracePlannerDecisionStatus { planned, approvalRequired, blocked, budgetExhausted }
+enum TraceActionClass { reasoning, command, browser, stateChanging, supervised }
+
+enum TracePlannerDecisionStatus {
+  planned,
+  approvalRequired,
+  blocked,
+  budgetExhausted,
+}
+
 enum TracePlannerCheckpointStatus { running, paused, completed, blocked }
 
 class TraceActionProposal {
@@ -60,13 +68,13 @@ class TracePlannerCheckpoint {
   });
 
   Map<String, Object?> toJson() => {
-        'status': status.name,
-        'requestsUsed': requestsUsed,
-        'toolsUsed': toolsUsed,
-        'retriesUsed': retriesUsed,
-        'pendingStepKey': pendingStepKey,
-        'updatedAt': updatedAt.toUtc().toIso8601String(),
-      };
+    'status': status.name,
+    'requestsUsed': requestsUsed,
+    'toolsUsed': toolsUsed,
+    'retriesUsed': retriesUsed,
+    'pendingStepKey': pendingStepKey,
+    'updatedAt': updatedAt.toUtc().toIso8601String(),
+  };
 
   factory TracePlannerCheckpoint.fromJson(Map<String, Object?> value) =>
       TracePlannerCheckpoint(
@@ -78,8 +86,8 @@ class TracePlannerCheckpoint {
         toolsUsed: (value['toolsUsed'] as num?)?.toInt() ?? 0,
         retriesUsed: (value['retriesUsed'] as num?)?.toInt() ?? 0,
         pendingStepKey: value['pendingStepKey']?.toString() ?? '',
-        updatedAt: DateTime.tryParse(value['updatedAt']?.toString() ?? '')
-                ?.toUtc() ??
+        updatedAt:
+            DateTime.tryParse(value['updatedAt']?.toString() ?? '')?.toUtc() ??
             DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
       );
 }
@@ -104,13 +112,17 @@ class TracePlannerFacade {
   final AttackTraceRepository repository;
   final TracePlannerConfig config;
   final DateTime Function() now;
-  final Set<int> _proofLocks = <int>{};
+  final String lockOwnerId;
+  final Duration proofLockTtl;
 
   TracePlannerFacade(
     this.repository, {
     this.config = const TracePlannerConfig(),
     DateTime Function()? now,
-  }) : now = now ?? (() => DateTime.now().toUtc());
+    String? lockOwnerId,
+    this.proofLockTtl = const Duration(minutes: 10),
+  }) : now = now ?? (() => DateTime.now().toUtc()),
+       lockOwnerId = lockOwnerId ?? _randomOwnerId();
 
   Future<TracePlannerDecision> evaluateProposal({
     required int traceId,
@@ -118,6 +130,7 @@ class TracePlannerFacade {
   }) async {
     final graph = await repository.graph(traceId);
     final current = await _loadCheckpoint(traceId);
+    final usesTool = proposal.actionClass != TraceActionClass.reasoning;
     if (current.status == TracePlannerCheckpointStatus.paused) {
       return const TracePlannerDecision(
         status: TracePlannerDecisionStatus.blocked,
@@ -126,7 +139,7 @@ class TracePlannerFacade {
     }
     if (now().toUtc().difference(graph.trace.startedAt) > config.maxRuntime ||
         current.requestsUsed >= config.maxRequests ||
-        current.toolsUsed >= config.maxTools ||
+        (usesTool && current.toolsUsed >= config.maxTools) ||
         (proposal.isRetry && current.retriesUsed >= config.maxRetries)) {
       return const TracePlannerDecision(
         status: TracePlannerDecisionStatus.budgetExhausted,
@@ -140,7 +153,8 @@ class TracePlannerFacade {
         reason: 'Action is empty or prohibited by deterministic safety policy.',
       );
     }
-    final stateful = proposal.actionClass == TraceActionClass.stateChanging ||
+    final stateful =
+        proposal.actionClass == TraceActionClass.stateChanging ||
         proposal.actionClass == TraceActionClass.supervised;
     if (stateful && proposal.cleanupAction.trim().isEmpty) {
       return const TracePlannerDecision(
@@ -157,14 +171,17 @@ class TracePlannerFacade {
     }
 
     final stepKey = 'planned-${current.requestsUsed + 1}';
-    await _saveCheckpoint(traceId, TracePlannerCheckpoint(
-      status: TracePlannerCheckpointStatus.running,
-      requestsUsed: current.requestsUsed + 1,
-      toolsUsed: current.toolsUsed + 1,
-      retriesUsed: current.retriesUsed + (proposal.isRetry ? 1 : 0),
-      pendingStepKey: stepKey,
-      updatedAt: now().toUtc(),
-    ));
+    await _saveCheckpoint(
+      traceId,
+      TracePlannerCheckpoint(
+        status: TracePlannerCheckpointStatus.running,
+        requestsUsed: current.requestsUsed + 1,
+        toolsUsed: current.toolsUsed + (usesTool ? 1 : 0),
+        retriesUsed: current.retriesUsed + (proposal.isRetry ? 1 : 0),
+        pendingStepKey: stepKey,
+        updatedAt: now().toUtc(),
+      ),
+    );
     return TracePlannerDecision(
       status: TracePlannerDecisionStatus.planned,
       reason: 'Bounded action planned under deterministic policy.',
@@ -174,14 +191,17 @@ class TracePlannerFacade {
 
   Future<void> pause(int traceId) async {
     final current = await _loadCheckpoint(traceId);
-    await _saveCheckpoint(traceId, TracePlannerCheckpoint(
-      status: TracePlannerCheckpointStatus.paused,
-      requestsUsed: current.requestsUsed,
-      toolsUsed: current.toolsUsed,
-      retriesUsed: current.retriesUsed,
-      pendingStepKey: current.pendingStepKey,
-      updatedAt: now().toUtc(),
-    ));
+    await _saveCheckpoint(
+      traceId,
+      TracePlannerCheckpoint(
+        status: TracePlannerCheckpointStatus.paused,
+        requestsUsed: current.requestsUsed,
+        toolsUsed: current.toolsUsed,
+        retriesUsed: current.retriesUsed,
+        pendingStepKey: current.pendingStepKey,
+        updatedAt: now().toUtc(),
+      ),
+    );
   }
 
   Future<TracePlannerCheckpoint> resume(int traceId) async {
@@ -198,8 +218,32 @@ class TracePlannerFacade {
     return resumed;
   }
 
-  Future<bool> acquireProof(int traceId) async => _proofLocks.add(traceId);
-  void releaseProof(int traceId) => _proofLocks.remove(traceId);
+  Future<bool> acquireProof(int traceId) async {
+    final acquiredAt = now().toUtc();
+    return repository.db.transaction((txn) async {
+      await txn.delete(
+        'attack_trace_locks',
+        where: 'trace_id = ? AND lock_kind = ? AND expires_at <= ?',
+        whereArgs: [traceId, 'proof', acquiredAt.toIso8601String()],
+      );
+      final id = await txn.insert('attack_trace_locks', {
+        'trace_id': traceId,
+        'lock_kind': 'proof',
+        'owner_id': lockOwnerId,
+        'acquired_at': acquiredAt.toIso8601String(),
+        'expires_at': acquiredAt.add(proofLockTtl).toIso8601String(),
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      return id != 0;
+    });
+  }
+
+  Future<void> releaseProof(int traceId) async {
+    await repository.db.delete(
+      'attack_trace_locks',
+      where: 'trace_id = ? AND lock_kind = ? AND owner_id = ?',
+      whereArgs: [traceId, 'proof', lockOwnerId],
+    );
+  }
 
   Future<void> completeStateChange({
     required int traceId,
@@ -207,17 +251,22 @@ class TracePlannerFacade {
     required bool cleanupVerified,
   }) async {
     if (!cleanupVerified) {
-      throw StateError('State-changing action cannot complete before verified cleanup.');
+      throw StateError(
+        'State-changing action cannot complete before verified cleanup.',
+      );
     }
     final current = await _loadCheckpoint(traceId);
-    await _saveCheckpoint(traceId, TracePlannerCheckpoint(
-      status: TracePlannerCheckpointStatus.completed,
-      requestsUsed: current.requestsUsed,
-      toolsUsed: current.toolsUsed,
-      retriesUsed: current.retriesUsed,
-      pendingStepKey: '',
-      updatedAt: now().toUtc(),
-    ));
+    await _saveCheckpoint(
+      traceId,
+      TracePlannerCheckpoint(
+        status: TracePlannerCheckpointStatus.completed,
+        requestsUsed: current.requestsUsed,
+        toolsUsed: current.toolsUsed,
+        retriesUsed: current.retriesUsed,
+        pendingStepKey: '',
+        updatedAt: now().toUtc(),
+      ),
+    );
   }
 
   /// Backward-compatible selection of the oldest pending deduplicated hypothesis.
@@ -240,14 +289,16 @@ class TracePlannerFacade {
       final key = hypothesis.hypothesis.trim();
       if (key.isEmpty) continue;
       final previous = unique[key];
-      if (previous == null || previous.createdAt.isBefore(hypothesis.createdAt)) {
+      if (previous == null ||
+          previous.createdAt.isBefore(hypothesis.createdAt)) {
         unique[key] = hypothesis;
       }
     }
-    final pending = unique.values
-        .where((step) => graph.childrenOf(step.stepKey).isEmpty)
-        .toList()
-      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final pending =
+        unique.values
+            .where((step) => graph.childrenOf(step.stepKey).isEmpty)
+            .toList()
+          ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     if (pending.isEmpty) return null;
     final selected = pending.first;
     final payload = jsonEncode({
@@ -256,16 +307,12 @@ class TracePlannerFacade {
       'tactic': selected.tactic,
       'created_at': now().toUtc().toIso8601String(),
     });
-    await repository.db.insert(
-      'attack_trace_checkpoints',
-      {
-        'trace_id': traceId,
-        'checkpoint_key': 'next_action',
-        'payload': payload,
-        'created_at': now().toUtc().toIso8601String(),
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await repository.db.insert('attack_trace_checkpoints', {
+      'trace_id': traceId,
+      'checkpoint_key': 'next_action',
+      'payload': payload,
+      'created_at': now().toUtc().toIso8601String(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
     return {
       'traceId': traceId,
       'checkpointKey': 'next_action',
@@ -292,32 +339,53 @@ class TracePlannerFacade {
       );
     }
     return TracePlannerCheckpoint.fromJson(
-      Map<String, Object?>.from(jsonDecode(rows.single['payload'] as String) as Map),
+      Map<String, Object?>.from(
+        jsonDecode(rows.single['payload'] as String) as Map,
+      ),
     );
   }
 
   Future<void> _saveCheckpoint(int traceId, TracePlannerCheckpoint value) =>
-      repository.db.insert(
-        'attack_trace_checkpoints',
-        {
-          'trace_id': traceId,
-          'checkpoint_key': 'planner_state',
-          'payload': jsonEncode(value.toJson()),
-          'created_at': value.updatedAt.toUtc().toIso8601String(),
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      repository.db.insert('attack_trace_checkpoints', {
+        'trace_id': traceId,
+        'checkpoint_key': 'planner_state',
+        'payload': jsonEncode(value.toJson()),
+        'created_at': value.updatedAt.toUtc().toIso8601String(),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
 
   bool _isProhibited(String action) {
     final normalized = action.toLowerCase();
     const prohibited = <String>[
-      'mimikatz', 'sekurlsa', 'credential dump', 'dump password',
-      'disable mfa', 'bypass mfa', 'reverse shell', 'bind shell',
-      'create backdoor', 'persistence', 'scheduled task', 'startup folder',
-      'external callback', 'interactsh', 'ngrok', 'unbounded tunnel',
-      'pivot all', 'delete database', 'format disk', 'rm -rf',
+      'mimikatz',
+      'sekurlsa',
+      'credential dump',
+      'dump password',
+      'disable mfa',
+      'bypass mfa',
+      'reverse shell',
+      'bind shell',
+      'create backdoor',
+      'persistence',
+      'scheduled task',
+      'startup folder',
+      'external callback',
+      'interactsh',
+      'ngrok',
+      'unbounded tunnel',
+      'pivot all',
+      'delete database',
+      'format disk',
+      'rm -rf',
     ];
     return prohibited.any(normalized.contains);
+  }
+
+  static String _randomOwnerId() {
+    final random = Random.secure();
+    return List<int>.generate(
+      16,
+      (_) => random.nextInt(256),
+    ).map((value) => value.toRadixString(16).padLeft(2, '0')).join();
   }
 }
 
@@ -333,15 +401,17 @@ class AttackTraceInstrumentation {
     required String tactic,
     required DateTime createdAt,
     List<String> parentStepKeys = const [],
-  }) => _append(AttackTraceStep(
-        traceId: traceId,
-        stepKey: stepKey,
-        parentStepKeys: parentStepKeys,
-        kind: AttackTraceStepKind.hypothesis,
-        hypothesis: _redact(hypothesis, 4000),
-        tactic: _redact(tactic, 1000),
-        createdAt: createdAt,
-      ));
+  }) => _append(
+    AttackTraceStep(
+      traceId: traceId,
+      stepKey: stepKey,
+      parentStepKeys: parentStepKeys,
+      kind: AttackTraceStepKind.hypothesis,
+      hypothesis: _redact(hypothesis, 4000),
+      tactic: _redact(tactic, 1000),
+      createdAt: createdAt,
+    ),
+  );
 
   Future<int> recordCommand({
     required int traceId,
@@ -353,18 +423,20 @@ class AttackTraceInstrumentation {
     required DateTime createdAt,
     List<String> parentStepKeys = const [],
     List<int> evidenceArtifactIds = const [],
-  }) => _append(AttackTraceStep(
-        traceId: traceId,
-        stepKey: stepKey,
-        parentStepKeys: parentStepKeys,
-        kind: AttackTraceStepKind.command,
-        action: _redact(command, 2000),
-        output: _redact(output, 8000),
-        interpretation: _redact(interpretation, 4000),
-        adaptation: _redact(adaptation, 4000),
-        evidenceArtifactIds: evidenceArtifactIds,
-        createdAt: createdAt,
-      ));
+  }) => _append(
+    AttackTraceStep(
+      traceId: traceId,
+      stepKey: stepKey,
+      parentStepKeys: parentStepKeys,
+      kind: AttackTraceStepKind.command,
+      action: _redact(command, 2000),
+      output: _redact(output, 8000),
+      interpretation: _redact(interpretation, 4000),
+      adaptation: _redact(adaptation, 4000),
+      evidenceArtifactIds: evidenceArtifactIds,
+      createdAt: createdAt,
+    ),
+  );
 
   Future<int> recordBrowserAction({
     required int traceId,
@@ -374,16 +446,18 @@ class AttackTraceInstrumentation {
     required DateTime createdAt,
     List<String> parentStepKeys = const [],
     List<int> evidenceArtifactIds = const [],
-  }) => _append(AttackTraceStep(
-        traceId: traceId,
-        stepKey: stepKey,
-        parentStepKeys: parentStepKeys,
-        kind: AttackTraceStepKind.browserAction,
-        action: _redact(action, 2000),
-        output: _redact(output, 8000),
-        evidenceArtifactIds: evidenceArtifactIds,
-        createdAt: createdAt,
-      ));
+  }) => _append(
+    AttackTraceStep(
+      traceId: traceId,
+      stepKey: stepKey,
+      parentStepKeys: parentStepKeys,
+      kind: AttackTraceStepKind.browserAction,
+      action: _redact(action, 2000),
+      output: _redact(output, 8000),
+      evidenceArtifactIds: evidenceArtifactIds,
+      createdAt: createdAt,
+    ),
+  );
 
   Future<int> recordControlRequest({
     required int traceId,
@@ -391,14 +465,16 @@ class AttackTraceInstrumentation {
     required String action,
     required DateTime createdAt,
     List<String> parentStepKeys = const [],
-  }) => _append(AttackTraceStep(
-        traceId: traceId,
-        stepKey: stepKey,
-        parentStepKeys: parentStepKeys,
-        kind: AttackTraceStepKind.controlRequest,
-        action: _redact(action, 2000),
-        createdAt: createdAt,
-      ));
+  }) => _append(
+    AttackTraceStep(
+      traceId: traceId,
+      stepKey: stepKey,
+      parentStepKeys: parentStepKeys,
+      kind: AttackTraceStepKind.controlRequest,
+      action: _redact(action, 2000),
+      createdAt: createdAt,
+    ),
+  );
 
   Future<int> recordValidation({
     required int traceId,
@@ -408,16 +484,18 @@ class AttackTraceInstrumentation {
     required String interpretation,
     required DateTime createdAt,
     List<String> parentStepKeys = const [],
-  }) => _append(AttackTraceStep(
-        traceId: traceId,
-        stepKey: stepKey,
-        parentStepKeys: parentStepKeys,
-        kind: AttackTraceStepKind.validatorResult,
-        validationRunId: validationRunId,
-        validatorResult: result,
-        interpretation: _redact(interpretation, 4000),
-        createdAt: createdAt,
-      ));
+  }) => _append(
+    AttackTraceStep(
+      traceId: traceId,
+      stepKey: stepKey,
+      parentStepKeys: parentStepKeys,
+      kind: AttackTraceStepKind.validatorResult,
+      validationRunId: validationRunId,
+      validatorResult: result,
+      interpretation: _redact(interpretation, 4000),
+      createdAt: createdAt,
+    ),
+  );
 
   Future<int> recordCleanup({
     required int traceId,
@@ -426,15 +504,17 @@ class AttackTraceInstrumentation {
     required bool verified,
     required DateTime createdAt,
     List<String> parentStepKeys = const [],
-  }) => _append(AttackTraceStep(
-        traceId: traceId,
-        stepKey: stepKey,
-        parentStepKeys: parentStepKeys,
-        kind: AttackTraceStepKind.cleanup,
-        action: _redact(action, 2000),
-        cleanupStatus: verified ? 'verified' : 'failed',
-        createdAt: createdAt,
-      ));
+  }) => _append(
+    AttackTraceStep(
+      traceId: traceId,
+      stepKey: stepKey,
+      parentStepKeys: parentStepKeys,
+      kind: AttackTraceStepKind.cleanup,
+      action: _redact(action, 2000),
+      cleanupStatus: verified ? 'verified' : 'failed',
+      createdAt: createdAt,
+    ),
+  );
 
   Future<int> _append(AttackTraceStep step) => repository.append(step);
 
@@ -442,9 +522,8 @@ class AttackTraceInstrumentation {
       SensitiveTextRedactor.redact(value, maxLength: maxLength);
 }
 
-typedef ValidatedCommandRunner = Future<Map<String, dynamic>> Function(
-  String command,
-);
+typedef ValidatedCommandRunner =
+    Future<Map<String, dynamic>> Function(String command);
 
 class TracedCommandRunner {
   final TracePlannerFacade planner;
@@ -506,7 +585,8 @@ class AttackTraceSummaryBuilder {
         if (step.tactic.isNotEmpty) 'tactic=${step.tactic}',
         if (step.action.isNotEmpty) 'action=${step.action}',
         if (step.output.isNotEmpty) 'output=${step.output}',
-        if (step.interpretation.isNotEmpty) 'interpretation=${step.interpretation}',
+        if (step.interpretation.isNotEmpty)
+          'interpretation=${step.interpretation}',
         if (step.adaptation.isNotEmpty) 'adaptation=${step.adaptation}',
         if (step.evidenceArtifactIds.isNotEmpty)
           'evidence=${step.evidenceArtifactIds.join(',')}',
@@ -514,7 +594,9 @@ class AttackTraceSummaryBuilder {
           'validator=${step.validatorResult.name}',
         if (step.cleanupStatus.isNotEmpty) 'cleanup=${step.cleanupStatus}',
       ];
-      buffer.writeln('${step.sequence}. ${step.kind.name}: ${details.join(' | ')}');
+      buffer.writeln(
+        '${step.sequence}. ${step.kind.name}: ${details.join(' | ')}',
+      );
     }
     return SensitiveTextRedactor.redact(buffer.toString(), maxLength: 64000);
   }
