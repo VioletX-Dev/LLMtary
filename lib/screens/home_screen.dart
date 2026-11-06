@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../branding.dart';
 import 'package:provider/provider.dart';
 import '../database/database_helper.dart';
 import '../models/project.dart';
@@ -219,7 +220,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     const Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _BungeeSpiceText('LLMtary', fontSize: 28),
+                        _BungeeSpiceText(appDisplayName, fontSize: 24),
                         Text('Automated Penetration Testing', style: TextStyle(color: Colors.white38, fontSize: 13)),
                       ],
                     ),

@@ -1007,7 +1007,7 @@ class LLMService {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer ${settings.apiKey ?? ''}',
         'HTTP-Referer': 'https://llmtary.app',
-        'X-Title': 'LLMtary Security Scanner',
+        'X-Title': 'VioletX Pentesting Agent',
       },
       body,
       timeout,

@@ -416,7 +416,7 @@ class EvidenceStorageService {
     final normalizedParent = p.normalize(parent.path);
     if (!p.isWithin(systemTemp, normalizedParent) ||
         !p.basename(normalizedParent).startsWith('llmtary-evidence-')) {
-      throw StateError('Refusing to delete a non-LLMtary temporary directory');
+      throw StateError('Refusing to delete a non-application temporary directory');
     }
     if (await parent.exists()) await parent.delete(recursive: true);
   }
@@ -427,7 +427,7 @@ class EvidenceStorageService {
     final normalizedParent = p.normalize(parent.path);
     if (!p.isWithin(systemTemp, normalizedParent) ||
         !p.basename(normalizedParent).startsWith('llmtary-evidence-')) {
-      throw StateError('Refusing to delete a non-LLMtary temporary directory');
+      throw StateError('Refusing to delete a non-application temporary directory');
     }
     if (parent.existsSync()) parent.deleteSync(recursive: true);
   }

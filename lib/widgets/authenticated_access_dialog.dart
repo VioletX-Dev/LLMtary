@@ -92,7 +92,7 @@ class _AuthenticatedAccessDialogState extends State<AuthenticatedAccessDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
-              'Stored in memory for this project session only. MFA must be completed manually; LLMtary does not bypass MFA.',
+              'Stored in memory for this project session only. MFA must be completed manually; VioletX Pentesting Agent does not bypass MFA.',
             ),
             TextField(
               controller: _url,

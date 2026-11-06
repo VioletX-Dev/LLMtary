@@ -192,7 +192,7 @@ class _OllamaSshTunnelDialogState extends State<OllamaSshTunnelDialog> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                'Paste the SSH values from RunPod’s Connect panel. LLMtary opens the encrypted tunnel and verifies /api/tags automatically.',
+                'Paste the SSH values from RunPod’s Connect panel. VioletX Pentesting Agent opens the encrypted tunnel and verifies /api/tags automatically.',
                 style: TextStyle(color: Colors.white70),
               ),
               const SizedBox(height: 10),
@@ -279,7 +279,7 @@ class _OllamaSshTunnelDialogState extends State<OllamaSshTunnelDialog> {
               ),
               const SizedBox(height: 16),
               const Text(
-                'LLMtary SSH command',
+                'VioletX Pentesting Agent SSH command',
                 style: TextStyle(
                   color: Color(0xFF00F5FF),
                   fontWeight: FontWeight.w600,
@@ -309,7 +309,7 @@ class _OllamaSshTunnelDialogState extends State<OllamaSshTunnelDialog> {
                     ),
                     IconButton(
                       key: const Key('copy-llmtary-ssh-command'),
-                      tooltip: 'Copy SSH command for LLMtary',
+                      tooltip: 'Copy SSH command for VioletX Pentesting Agent',
                       onPressed:
                           currentConfig.host.isEmpty || currentConfig.identityFile.isEmpty
                           ? null
@@ -319,7 +319,7 @@ class _OllamaSshTunnelDialogState extends State<OllamaSshTunnelDialog> {
                               );
                               if (mounted) {
                                 setState(() => _message =
-                                    'SSH command copied. Paste it into LLMtary on the appliance that has this key path.');
+                                    'SSH command copied. Paste it into VioletX Pentesting Agent on the appliance that has this key path.');
                               }
                             },
                       icon: const Icon(Icons.copy, size: 18),

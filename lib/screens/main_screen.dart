@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import '../branding.dart';
 import 'package:provider/provider.dart';
 import '../utils/file_dialog.dart';
 import '../models/vulnerability.dart';
@@ -501,7 +502,7 @@ class _MainScreenState extends State<MainScreen> {
             child: const Icon(Icons.security, color: Colors.white, size: 18),
           ),
           const SizedBox(width: 10),
-          _BungeeSpiceText('LLMtary', fontSize: 16),
+          _BungeeSpiceText(appDisplayName, fontSize: 14),
           const SizedBox(width: 28),
           // Tab bar
           Flexible(
@@ -2463,7 +2464,7 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
       appState.vulnerabilities,
       appState.commandLogs,
       target?.address ?? 'unknown',
-      projectName: appState.currentProject?.name ?? 'LLMtary',
+      projectName: appState.currentProject?.name ?? appDisplayName,
     );
   }
 
@@ -2559,7 +2560,7 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
               '${l.output}',
         )
         .join('\n---\n\n');
-    final projectName = appState.currentProject?.name ?? 'LLMtary';
+    final projectName = appState.currentProject?.name ?? appDisplayName;
     final path = await FileDialog.saveFile(
       dialogTitle: 'Save Command Logs',
       fileName: _buildExportFileName(projectName, 'CommandLogs', 'txt'),
@@ -2576,7 +2577,7 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
               '=== PROMPT ===\n${log.prompt}\n\n=== RESPONSE ===\n${log.response}\n',
         )
         .join('\n---\n\n');
-    final projectName = state.currentProject?.name ?? 'LLMtary';
+    final projectName = state.currentProject?.name ?? appDisplayName;
     final path = await FileDialog.saveFile(
       dialogTitle: 'Save Prompts',
       fileName: _buildExportFileName(projectName, 'PromptLogs', 'txt'),
@@ -2593,7 +2594,7 @@ when the original vulnerable behavior is actively tested and cannot be reproduce
               '[${log.timestamp.toString().substring(11, 19)}] ${log.message}',
         )
         .join('\n');
-    final projectName = state.currentProject?.name ?? 'LLMtary';
+    final projectName = state.currentProject?.name ?? appDisplayName;
     final path = await FileDialog.saveFile(
       dialogTitle: 'Save Debug Log',
       fileName: _buildExportFileName(projectName, 'DebugLogs', 'txt'),

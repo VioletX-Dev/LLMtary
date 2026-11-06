@@ -1,4 +1,6 @@
-# LLMtary (Elementary) — AI-Powered Penetration Testing Platform
+# VioletX Pentesting Agent — AI-Powered Penetration Testing Platform
+
+> Formerly known as LLMtary. Technical package names, executable paths, and storage locations remain unchanged for upgrade compatibility.
 
 > **Autonomous, LLM-driven penetration testing for security professionals.**
 > From passive recon to active exploit validation and professional report generation — all running locally, all under your control.
@@ -32,9 +34,9 @@
 
 ---
 
-## What Is LLMtary?
+## What Is VioletX Pentesting Agent?
 
-LLMtary is an open-source Flutter desktop application that brings **large language model intelligence** to non-destructive penetration-test assessment. Enter an authorized target — an IP, hostname, FQDN, or CIDR range — and LLMtary runs recon, identifies potential vulnerabilities, then proposes bounded validation commands for explicit operator approval.
+VioletX Pentesting Agent is a Flutter desktop application that brings **large language model intelligence** to non-destructive penetration-test assessment. Enter an authorized target — an IP, hostname, FQDN, or CIDR range — and VioletX Pentesting Agent runs recon, identifies potential vulnerabilities, then proposes bounded validation commands for explicit operator approval.
 
 Whether you're running a local model on your own GPU with **zero data leaving your network**, or using an optional cloud model, LLMtary provides a structured workflow: **passive recon → service fingerprinting → vulnerability discovery → bounded safe proof → professional reporting**.
 

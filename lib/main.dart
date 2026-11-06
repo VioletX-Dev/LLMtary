@@ -5,6 +5,7 @@ import 'dart:io';
 import 'screens/home_screen.dart';
 import 'widgets/app_state.dart';
 import 'widgets/resize_border.dart';
+import 'branding.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,7 +24,7 @@ class MyApp extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (_) => AppState()..initialize(),
       child: MaterialApp(
-          title: 'LLMtary',
+          title: appDisplayName,
           debugShowCheckedModeBanner: false,
           theme: ThemeData(
             brightness: Brightness.dark,

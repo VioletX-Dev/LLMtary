@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:llmtary/main.dart';
 
 void main() {
-  testWidgets('LLMtary app renders', (WidgetTester tester) async {
+  testWidgets('VioletX Pentesting Agent app renders', (WidgetTester tester) async {
     await tester.pumpWidget(const MyApp());
     await tester.pump();
     expect(find.byType(MyApp), findsOneWidget);

@@ -138,7 +138,7 @@ class _CloudAssistDialogState extends State<_CloudAssistDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Local completion never depends on cloud. If the provider is unavailable or the cap is reached, LLMtary records the skip and completes locally.',
+                'Local completion never depends on cloud. If the provider is unavailable or the cap is reached, VioletX Pentesting Agent records the skip and completes locally.',
                 style: TextStyle(color: Colors.white70),
               ),
               const SizedBox(height: 12),

@@ -80,7 +80,7 @@ class ReportGenerator {
         : project.name;
     final preparedBy = project.pentesterName?.isNotEmpty == true
         ? project.pentesterName!
-        : 'LLMtary';
+        : 'VioletX Pentesting Agent';
     final proofByCommand = <int, CommandLog>{
       for (final vulnerability in sorted)
         if (vulnerability.id != null &&
@@ -387,7 +387,7 @@ ${credentials.isNotEmpty ? _credentialsSection(credentials) : ''}
         : project.name;
     final preparedBy = project.pentesterName?.isNotEmpty == true
         ? project.pentesterName!
-        : 'LLMtary';
+        : 'VioletX Pentesting Agent';
     final proofByCommand = <int, CommandLog>{
       for (final vulnerability in sorted)
         if (vulnerability.id != null &&

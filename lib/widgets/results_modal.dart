@@ -24,14 +24,14 @@ class ResultsModal extends StatelessWidget {
   final List<ConfirmedResult> results;
   final String projectName;
 
-  const ResultsModal({super.key, required this.results, this.projectName = 'LLMtary'});
+  const ResultsModal({super.key, required this.results, this.projectName = 'VioletX Pentesting Agent'});
 
   static Future<void> show(
     BuildContext context,
     List<Vulnerability> vulnerabilities,
     List<CommandLog> commandLogs,
     String targetAddress, {
-    String projectName = 'LLMtary',
+    String projectName = 'VioletX Pentesting Agent',
   }) {
     final confirmed = vulnerabilities
         .where((v) => v.status == VulnerabilityStatus.confirmed)

@@ -42,7 +42,7 @@ Architecture: amd64
 Installed-Size: $installed_size
 Maintainer: VioletX
 Depends: libgtk-3-0 | libgtk-3-0t64, scrot, chromium | chromium-browser
-Description: LLMtary Security Validation Platform
+Description: VioletX Pentesting Agent
  AI-operated, human-supervised authorized security validation with local-LLM,
  browser-native testing, deterministic evidence, and report generation.
 EOF

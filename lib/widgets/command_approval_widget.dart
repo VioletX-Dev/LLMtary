@@ -81,7 +81,7 @@ class CommandApprovalWidget extends StatelessWidget {
               Row(
                 children: [
                   const Text(
-                    'LLMtary wants to run ',
+                    'VioletX Pentesting Agent wants to run ',
                     style: TextStyle(color: Colors.white, fontSize: 14),
                   ),
                   Tooltip(

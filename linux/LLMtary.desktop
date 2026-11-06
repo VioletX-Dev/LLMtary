@@ -1,6 +1,6 @@
 [Desktop Entry]
-Name=LLMtary
-Comment=Automated Penetration Testing
+Name=VioletX Pentesting Agent
+Comment=AI-assisted penetration testing by VioletX
 Exec=/opt/LLMtary/llmtary
 Icon=LLMtary
 Terminal=false
